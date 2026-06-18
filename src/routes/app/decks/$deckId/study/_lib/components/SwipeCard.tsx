@@ -62,7 +62,13 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
     const deltaY = event.clientY - startYRef.current;
     if (axisRef.current === "none") {
       if (Math.abs(deltaX) < INTENT_THRESHOLD && Math.abs(deltaY) < INTENT_THRESHOLD) return;
-      axisRef.current = Math.abs(deltaX) > Math.abs(deltaY) ? "x" : "y";
+      if (Math.abs(deltaX) > Math.abs(deltaY)) {
+        axisRef.current = "x";
+        // Горизонтальный жест — захватываем указатель, чтобы свайп не «слетал» на полпути.
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } else {
+        axisRef.current = "y";
+      }
     }
     if (axisRef.current === "y") return; // вертикаль — пусть скроллится контент
     setDragX(deltaX);
@@ -121,7 +127,6 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
           onPointerMove={handlePointerMove}
           onPointerUp={finishDrag}
           onPointerCancel={finishDrag}
-          onPointerLeave={finishDrag}
           onKeyDown={handleKeyDown}
           className="relative cursor-grab touch-pan-y outline-none"
           style={{ transform: cardTransform, transition: cardTransition, opacity: exiting ? 0 : 1, transformStyle: "preserve-3d" }}

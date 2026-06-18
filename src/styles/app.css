@@ -108,6 +108,12 @@
   --font-headings: var(--font-family-headings);
 }
 
+html,
+body {
+  /* Карточка при свайпе улетает за край экрана — гасим горизонтальную прокрутку. */
+  overflow-x: hidden;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
