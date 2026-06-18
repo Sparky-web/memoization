@@ -41,9 +41,7 @@ export function CardRow({ card }: CardRowProps) {
         <Text bold>{typo(card.question)}</Text>
         <Badge variant={stageMeta.variant}>{stageMeta.label}</Badge>
       </HStack>
-      <Text variant="small" color="supplementary">
-        {typo(card.answer)}
-      </Text>
+      <MarkdownView>{card.answer}</MarkdownView>
       <HStack gap="sm" wrap>
         {card.answerDeep && (
           <Button

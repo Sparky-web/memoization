@@ -11,7 +11,7 @@
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**"],
   "ignore": ["src/components/**"],
-  "ignoreDependencies": ["tailwindcss"],
+  "ignoreDependencies": ["tailwindcss", "katex"],
   "ignoreBinaries": ["claude"],
   "ignoreExportsUsedInFile": true
 }

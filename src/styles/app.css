@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Стили формул KaTeX (рендер математики в markdown). Vite сам подтянет шрифты. */
+@import "katex/dist/katex.min.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -168,6 +170,14 @@ body {
 .markdown {
   line-height: 1.55;
   text-align: left;
+  /* Длинные слова/формулы переносим, а не вылезаем за карточку (без авто-дефисов). */
+  overflow-wrap: break-word;
+}
+/* Широкие выключные формулы — горизонтальная прокрутка вместо вылезания за край. */
+.markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2em 0;
 }
 .markdown h1,
 .markdown h2,

@@ -245,24 +245,24 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
                 {typo("Ответ")}
               </Text>
               <div ref={backPaneRef} className="flex-1 overflow-y-auto">
-                <div className="flex min-h-full flex-col items-center justify-center gap-4">
-                  <Text variant="large" align="center" breakWords>
-                    {typo(answer)}
-                  </Text>
+                <div className="flex min-h-full flex-col gap-4">
+                  <MarkdownView>{answer}</MarkdownView>
                   {answerDeep && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                      }}
-                      onClick={() => {
-                        setDetailOpen(true);
-                      }}
-                    >
-                      <BookOpen className="size-4" />
-                      {typo("Изучить подробнее")}
-                    </Button>
+                    <div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                        }}
+                        onClick={() => {
+                          setDetailOpen(true);
+                        }}
+                      >
+                        <BookOpen className="size-4" />
+                        {typo("Изучить подробнее")}
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
