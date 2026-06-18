@@ -1,0 +1,115 @@
+---
+description: Архитектура проекта — стек, слои, сегменты страниц, бэкенд, железные правила. Обязательна к соблюдению.
+alwaysApply: true
+---
+
+# TanStack Start Template — правила проекта
+
+Эти правила обязательны. Их соблюдение контролируется ESLint'ом (`pnpm check`) — код, нарушающий правила, не пройдёт CI. Не отключай и не ослабляй eslint-правила; если правило мешает — перестрой код.
+
+## Стек
+
+- TanStack Start (Vite, file-based роуты в `src/routes`) + React 19 + TypeScript strict
+- Данные: Server Functions (`src/server/fn/*`) + @tanstack/react-query; НЕ tRPC, НЕ REST-контроллеры
+- БД: Prisma + PostgreSQL, клиент генерируется в `generated/prisma`
+- Auth: better-auth (`src/server/auth.ts`, клиент `src/components/base/authClient.ts`)
+- Формы: @tanstack/react-form; валидация: zod 4 через `zodRussian` из `~/lib`
+- Стили: Tailwind 4 + библиотека `src/components`; кастомный CSS — крайняя мера
+- Ошибки: Sentry; `console.error`/`console.warn` СЧИТАЮТСЯ ошибками и улетают в Sentry — используй их только для настоящих проблем; `console.log` запрещён eslint'ом
+- env: только через `~/env.server` (сервер) / `~/env-client` (клиент); новые переменные добавляй в схему
+
+## Железные правила кода
+
+1. **Запрещён оператор `as`** — включая `as const`. Разрешён только `satisfies`. Нужен литеральный тип — явная аннотация (`const X: readonly Foo[] = [...]`); нужно сузить unknown — type guard или `zodRussian.parse`. Запрещены `@ts-ignore`, `@ts-expect-error`, `any`.
+2. **Вся кириллица в UI — через `typo()`** из `~/lib` (неразрывные пробелы). Контролируется eslint.
+3. **Комментарии и TSDoc — только по-русски**, и только про намерения, ограничения и трейд-оффы. Не комментируй очевидное.
+4. **Нейминг**: camelCase для модулей, PascalCase для компонентов (по имени экспорта).
+5. **Баррели**: экспорт из `index.ts` существует, только если его импортируют снаружи модуля; внутри модуля — прямые импорты. Контроль: `pnpm check:exports`.
+6. **Нет мёртвого кода**: функция/компонент/экспорт без живого потребителя удаляется.
+
+## Слои (охраняются eslint-plugin-boundaries)
+
+```
+src/lib         — изоморфные утилиты; НИ ОТ ЧЕГО не зависит (server-only код — отдельный баррель lib/server.ts, появляется при необходимости)
+src/components  — UI-библиотека; зависит только от lib
+src/server      — db, auth, middleware, fn/*; зависит от lib и env
+src/routes      — страницы; видят все слои
+```
+
+## Страница (file-based роут + сегменты)
+
+Страница — каталог в `src/routes` с файлами роутов и сегментами рядом. Префикс `-` исключает файл/папку из роутинга:
+
+```
+src/routes/posts/
+├── index.tsx                # роут списка (/posts)
+├── $postId.tsx              # роут детали (/posts/:id)
+└── -lib/                    # сегменты страниц posts (роутером игнорируется)
+    ├── components/          # рендер; можно model, api, lib-сегмент, ~/components, ~/lib
+    ├── model/               # бизнес-логика, формы, состояние; можно api, lib-сегмент; НЕЛЬЗЯ components
+    ├── api/                 # queryOptions/мутации над server fn; можно lib-сегмент; НЕЛЬЗЯ model, components
+    ├── lib/                 # продукт-агностичные хелперы и ассеты; без импортов из других сегментов
+    └── index.ts             # только если что-то нужно ДРУГОЙ странице
+```
+
+Других файлов и папок в `-lib` быть не должно. Реиспользуемое между страницами поднимается: логика → `src/lib`, UI → `src/components`, серверное → `src/server`.
+
+Шаблон роута:
+
+```tsx
+export const Route = createFileRoute("/posts/")({
+  loader: () => getPosts(),                          // SSR-данные — через loader
+  head: () => ({ meta: [{ title: "Посты" }] }),      // метаданные — через head()
+  component: PostsPage,
+});
+
+function PostsPage() {
+  const posts = Route.useLoaderData();
+  // интерактив — useQuery/useMutation поверх server fn
+}
+```
+
+Не найдено — `throw notFound()` в loader + `notFoundComponent`. Guard приватных разделов — `beforeLoad` с `redirect` (см. `src/routes/admin/route.tsx`).
+
+## Бэкенд (Server Functions)
+
+Один файл на сущность: `src/server/fn/<entity>.ts`. Правила — те же, что были выработаны для tRPC-эпохи:
+
+- **Без CRUD-абстракций**: каждая функция пишется явно прямыми вызовами `context.db`. Повторение формы get/getById/create/update/delete между сущностями — осознанная цена за читаемость. Никаких фабрик роутеров.
+- **Тиры доступа через middleware**: `baseMiddleware` (кладёт db) / `authMiddleware` (требует сессию). Выбирается на функцию, не на файл; мутации по умолчанию auth.
+- **Настоящие схемы**: каждый input — `.validator(zodRussian-схема)` полей формы; никаких `z.unknown()`/`z.any()`. Relation-поля приходят `string[]` id и явно мапятся в `connect` (create) / `set` (update).
+- **Белые списки фильтров**: клиентский where — только явная схема разрешённых полей.
+- **Тонкие функции**: валидация → авторизация → db → ответ. Ошибки: `setResponseStatus(код)` + `throw new Error("русское сообщение")`.
+- **Побочные эффекты** (уведомления и т.п.) не валят мутацию: try/catch + `console.error`.
+- **Нет мёртвой поверхности API**: функция существует только при живом потребителе.
+- Типы строк для фронта — `export type XListItem = Awaited<ReturnType<typeof getXs>>[number];` фронт НЕ импортирует Prisma-типы напрямую.
+
+Шаблон функции:
+
+```ts
+export const updatePost = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ id: zodRussian.string(), data: postFieldsInput }))
+  .handler(async ({ data: input, context }) => {
+    await context.db.post.update({ where: { id: input.id }, data: input.data });
+    return true;
+  });
+```
+
+## Файлы и картинки
+
+- Хранилище ВНЕ проекта: `FILES_DIR` (оригиналы), `IMAGE_CACHE_DIR` (кэш ресайза) — env.
+- Загрузка: multipart `POST /api/upload` (НЕ base64); создаёт запись `File` с метаданными картинки.
+- Показ картинок: ТОЛЬКО компонент `AdaptiveImage` (`fileId`, `alt`, обязательный `sizes`, прокидывай `width`/`height` из записи File). Никаких прямых `<img src="/api/files/...">` для картинок — иначе пользователь скачает оригинал вместо нужного размера.
+- Оригинал (вложения, скачивание): `fileUrl(id)` из `~/lib`.
+
+## Как добавить сущность (чек-лист)
+
+1. Модель в `prisma/schema.prisma` → `pnpm db:generate` (миграция).
+2. `src/server/fn/<entity>.ts`: схемы полей + функции с нужными тирами.
+3. Роуты страниц + `-lib` сегменты.
+4. `pnpm check` — должен быть зелёным (eslint + tsc + check:exports).
+
+## Проверки
+
+`pnpm check` = `eslint + tsc --noEmit + check:exports`. Прогоняй после каждой содержательной правки. CI-зелёность обязательна; правило мешает — перестрой код, а не правило.

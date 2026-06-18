@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Auth (better-auth, каноничная схема) ---
+
+model User {
+  id            String   @id @default(cuid())
+  name          String?
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+  decks    Deck[]
+  reviews  Review[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  ipAddress String?
+  userAgent String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id         String @id @default(cuid())
+  accountId  String
+  providerId String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  /// bcrypt-хэш для providerId = "credential"
+  password              String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+}
+
+// --- Доменная модель: колоды (экзамены), карточки и журнал повторений ---
+
+/// Колода = подготовка к одному экзамену. Принадлежит пользователю; весь прогресс по карточкам — его.
+model Deck {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  cards   Card[]
+  reviews Review[]
+
+  @@index([userId])
+}
+
+/// Карточка: вопрос + ответ и состояние интервального повторения (SM-2 + Leitner-бокс).
+model Card {
+  id       String @id @default(cuid())
+  question String
+  answer   String
+  /// Порядок добавления (для стабильного показа в списке колоды).
+  position Int    @default(0)
+
+  /// Leitner-уровень: 0 — новая, выше — лучше усвоена.
+  box Int @default(0)
+  /// Коэффициент лёгкости SM-2 (как быстро растёт интервал).
+  ease Float @default(2.5)
+  /// Текущий интервал до следующего показа, в днях.
+  intervalDays Float @default(0)
+  /// Когда карточка снова станет к показу. Новая карточка due сразу.
+  dueAt DateTime @default(now())
+  /// Всего повторений.
+  reps         Int @default(0)
+  correctCount Int @default(0)
+  wrongCount   Int @default(0)
+  /// Подряд верных ответов (сбрасывается при «сложно»).
+  streak         Int       @default(0)
+  lastReviewedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deckId String
+  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  reviews Review[]
+
+  @@index([deckId, dueAt])
+}
+
+/// Журнал каждого свайпа — основа статистики (точность, активность по дням, серия).
+model Review {
+  id String @id @default(cuid())
+  /// "good" (вспомнил, свайп вправо) | "again" (сложно, свайп влево).
+  grade      String
+  reviewedAt DateTime @default(now())
+
+  cardId String
+  card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  deckId String
+  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([deckId, reviewedAt])
+  @@index([userId, reviewedAt])
+}

@@ -1,0 +1,60 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  # Пре-флайт: убеждаемся, что код собирается, прежде чем катить на сервер.
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # build идёт ПЕРВЫМ: плагин TanStack генерирует routeTree.gen.ts (он не в git),
+      # без него typecheck/lint/knip не находят роуты.
+      - run: SKIP_ENV_VALIDATION=1 pnpm build
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm check:exports
+      - run: pnpm knip
+
+  # Доставка исходников на VDS и сборка/запуск образа ПРЯМО ТАМ (без реестра).
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Rsync исходников на сервер
+        run: |
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+          rsync -az --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='dist' \
+            --exclude='.env' \
+            ./ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/
+
+      - name: Сборка и перезапуск на сервере
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "cd ${{ secrets.DEPLOY_PATH }} \
+             && docker compose build \
+             && docker compose up -d \
+             && docker image prune -f \
+             && docker builder prune -f --filter until=168h"

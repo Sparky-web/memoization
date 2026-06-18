@@ -1,0 +1,9 @@
+node_modules
+dist
+.nitro
+.tanstack
+.env
+generated
+src/routeTree.gen.ts
+*.tsbuildinfo
+.DS_Store

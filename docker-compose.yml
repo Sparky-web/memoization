@@ -1,0 +1,23 @@
+# Прод-стек на VDS: SSR-приложение в одном контейнере.
+# Образ собирается ПРЯМО НА СЕРВЕРЕ из исходников (их доставляет rsync в GitHub Actions) — без реестра.
+# Postgres НЕ в docker — он на хосте; контейнер ходит в него через host.docker.internal
+# (пропишите этот хост в DATABASE_URL внутри .env).
+# TLS/домен — на внешнем nginx хоста: он проксирует домен → 127.0.0.1:${APP_PORT}.
+services:
+  app:
+    build:
+      context: .
+      args:
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+    restart: unless-stopped
+    # Доступ к Postgres хоста: host.docker.internal → IP хоста.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # DATABASE_URL, BETTER_AUTH_* и т.п. — из .env
+    env_file:
+      - .env
+    environment:
+      PORT: "3000"
+    # Публикуем только на localhost — наружу отдаёт nginx хоста (он же терминирует HTTPS).
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
