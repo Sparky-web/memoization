@@ -50,7 +50,7 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, initialCards,
 
   if (!initialCards.length) {
     return (
-      <VStack gap="md" justify="center" className="items-center py-16">
+      <VStack gap="md" align="center" justify="center" className="mx-auto h-full w-full max-w-xl px-4 text-center">
         <Heading variant="h2" align="center">
           {typo("На сегодня всё повторено")}
         </Heading>
@@ -66,7 +66,7 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, initialCards,
 
   if (!current) {
     return (
-      <VStack gap="lg" justify="center" className="items-center py-16">
+      <VStack gap="lg" align="center" justify="center" className="mx-auto h-full w-full max-w-xl px-4">
         <Heading variant="h2" align="center">
           {typo("Сессия завершена")}
         </Heading>
@@ -110,7 +110,7 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, initialCards,
   const currentProgress = progress[current.id] ?? 0;
 
   return (
-    <VStack gap="lg" className="items-center">
+    <div className="mx-auto flex h-full w-full max-w-xl flex-col gap-3 px-4 py-3">
       {goodPulse > 0 && (
         <div
           key={goodPulse}
@@ -119,23 +119,28 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, initialCards,
           style={{ background: "radial-gradient(circle at 50% 45%, var(--success), transparent 60%)" }}
         />
       )}
-      <HStack justify="between" align="center" gap="md" className="w-full max-w-md">
-        <Text variant="small" color="supplementary">
+
+      <HStack justify="between" align="center" gap="sm" className="shrink-0">
+        <Text variant="small" color="supplementary" maxLines={1}>
           {typo(deckTitle)}
         </Text>
-        <Text variant="small" color="supplementary">
-          {typo(`Осталось: ${queue.length}`)}
-        </Text>
+        <HStack gap="sm" align="center">
+          <Text variant="small" color="supplementary">
+            {typo(`Осталось: ${queue.length}`)}
+          </Text>
+          <Button variant="link" size="inline" onClick={goToDeck}>
+            {typo("Завершить")}
+          </Button>
+        </HStack>
       </HStack>
+
       <SwipeCard key={current.id} question={current.question} answer={current.answer} onSwipe={handleSwipe} />
+
       {requiredCorrect > 1 && (
-        <Text variant="small" color="supplementary">
+        <Text variant="small" color="supplementary" align="center">
           {typo(`Вправо для запоминания: ${currentProgress} из ${requiredCorrect}`)}
         </Text>
       )}
-      <Button variant="link" onClick={goToDeck}>
-        {typo("Завершить")}
-      </Button>
-    </VStack>
+    </div>
   );
 }

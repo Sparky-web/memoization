@@ -18,8 +18,6 @@ const EXIT_MS = 280;
 
 // Скрываем обратную сторону грани при 3D-перевороте.
 const hiddenBackface: CSSProperties = { backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
-// Карточка занимает почти весь экран; контент внутри скроллится, если не помещается.
-const cardSize: CSSProperties = { height: "calc(100dvh - 16rem)", minHeight: "20rem" };
 
 export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
   const [flipped, setFlipped] = useState(false);
@@ -117,8 +115,8 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
   const againOpacity = dragX < 0 ? Math.min(-dragX / SWIPE_THRESHOLD, 1) : 0;
 
   return (
-    <VStack gap="md" className="w-full max-w-xl select-none">
-      <div className="w-full" style={{ perspective: "1200px" }}>
+    <VStack gap="sm" className="min-h-0 w-full flex-1 select-none">
+      <div className="min-h-0 w-full flex-1" style={{ perspective: "1200px" }}>
         <div
           role="button"
           tabIndex={0}
@@ -128,13 +126,12 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
           onPointerUp={finishDrag}
           onPointerCancel={finishDrag}
           onKeyDown={handleKeyDown}
-          className="relative cursor-grab touch-pan-y outline-none"
+          className="relative h-full cursor-grab touch-pan-y outline-none"
           style={{ transform: cardTransform, transition: cardTransition, opacity: exiting ? 0 : 1, transformStyle: "preserve-3d" }}
         >
           <div
-            className="relative"
+            className="relative h-full"
             style={{
-              ...cardSize,
               transformStyle: "preserve-3d",
               transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
               transition: "transform 0.45s ease",
@@ -196,7 +193,7 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
         </div>
       </div>
 
-      <HStack gap="sm" justify="center" className="w-full">
+      <HStack gap="sm" justify="center" className="w-full shrink-0">
         <Button
           variant="outline"
           onClick={() => {

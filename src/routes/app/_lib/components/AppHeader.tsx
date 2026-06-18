@@ -12,7 +12,7 @@ export function AppHeader() {
   };
 
   return (
-    <header className="border-border border-b">
+    <header className="border-border shrink-0 border-b">
       <Container className="py-3">
         <HStack justify="between" align="center" gap="md">
           <Link to="/app" className="font-semibold">

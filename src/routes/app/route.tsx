@@ -6,7 +6,7 @@ import { getSession } from "~/server/fn/auth";
 
 import { AppHeader } from "./_lib/components/AppHeader";
 
-// Приватный раздел: guard beforeLoad + общий каркас (шапка с навигацией).
+// Приватный раздел: guard beforeLoad + каркас на весь экран (h-dvh: учитывает динамическую панель iOS).
 export const Route = createFileRoute("/app")({
   beforeLoad: async () => {
     const session = await getSession();
@@ -17,17 +17,25 @@ export const Route = createFileRoute("/app")({
 });
 
 function AppLayout() {
-  // Меняется при навигации → обёртка перемонтируется и проигрывает анимацию появления.
+  // Меняется при навигации → область содержимого перемонтируется и проигрывает анимацию появления.
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  // Экран повторения занимает весь экран без прокрутки страницы (скролл — только внутри карточки).
+  const isStudy = pathname.endsWith("/study");
 
   return (
-    <>
+    <div className="flex h-dvh flex-col">
       <AppHeader />
-      <Container className="py-8">
-        <div key={pathname} className="page-enter">
+      {isStudy ? (
+        <main key={pathname} className="min-h-0 flex-1 overflow-hidden">
           <Outlet />
-        </div>
-      </Container>
-    </>
+        </main>
+      ) : (
+        <main key={pathname} className="page-enter min-h-0 flex-1 overflow-y-auto">
+          <Container className="py-8">
+            <Outlet />
+          </Container>
+        </main>
+      )}
+    </div>
   );
 }
