@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Badge, Button, HStack, Text, Textarea, VStack } from "~/components";
+import { Badge, Button, HStack, MarkdownView, ResponsiveModal, Text, Textarea, VStack } from "~/components";
 import { type CardStage, cardStage, typo } from "~/lib";
 
 import { useCardEditor } from "../model/deckMutations";
@@ -21,12 +21,15 @@ export function CardRow({ card }: CardRowProps) {
   const [editing, setEditing] = useState(false);
   const [question, setQuestion] = useState(card.question);
   const [answer, setAnswer] = useState(card.answer);
+  const [answerDeep, setAnswerDeep] = useState(card.answerDeep ?? "");
+  const [detailOpen, setDetailOpen] = useState(false);
   const { update, remove } = useCardEditor();
   const stageMeta = STAGE_META[cardStage(card)];
 
   const startEdit = () => {
     setQuestion(card.question);
     setAnswer(card.answer);
+    setAnswerDeep(card.answerDeep ?? "");
     setEditing(true);
   };
 
@@ -36,7 +39,7 @@ export function CardRow({ card }: CardRowProps) {
       return;
     }
     update.mutate(
-      { id: card.id, data: { question: question.trim(), answer: answer.trim() } },
+      { id: card.id, data: { question: question.trim(), answer: answer.trim(), answerDeep: answerDeep.trim() || null } },
       {
         onSuccess: () => {
           setEditing(false);
@@ -63,6 +66,14 @@ export function CardRow({ card }: CardRowProps) {
           value={answer}
           onChange={(event) => {
             setAnswer(event.target.value);
+          }}
+        />
+        <Textarea
+          className="min-h-24 font-mono"
+          placeholder={typo("Развёрнутый ответ (markdown, необязательно)")}
+          value={answerDeep}
+          onChange={(event) => {
+            setAnswerDeep(event.target.value);
           }}
         />
         <HStack gap="sm">
@@ -92,7 +103,18 @@ export function CardRow({ card }: CardRowProps) {
       <Text variant="small" color="supplementary">
         {typo(card.answer)}
       </Text>
-      <HStack gap="sm">
+      <HStack gap="sm" wrap>
+        {card.answerDeep && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setDetailOpen(true);
+            }}
+          >
+            {typo("Развернуть")}
+          </Button>
+        )}
         <Button variant="ghost" size="sm" onClick={startEdit}>
           {typo("Изменить")}
         </Button>
@@ -100,6 +122,11 @@ export function CardRow({ card }: CardRowProps) {
           {typo("Удалить")}
         </Button>
       </HStack>
+      {card.answerDeep && (
+        <ResponsiveModal open={detailOpen} onOpenChange={setDetailOpen} title={typo(card.question)}>
+          <MarkdownView>{card.answerDeep}</MarkdownView>
+        </ResponsiveModal>
+      )}
     </VStack>
   );
 }

@@ -6,9 +6,6 @@ import { authMiddleware } from "~/server/middleware";
 
 // Колода — подготовка к экзамену. Все операции скоупятся по userId сессии.
 
-// Порог «усвоено» в днях (синхронизирован с cardStage в ~/lib).
-const MASTERED_INTERVAL_DAYS = 21;
-
 const deckFieldsInput = zodRussian.object({
   title: zodRussian.string().min(1).max(200),
   description: zodRussian.string().max(2000).nullable(),
@@ -47,14 +44,16 @@ export const getDecks = createServerFn({ method: "GET" })
       where: { deck: { userId }, dueAt: { lte: now } },
       _count: { _all: true },
     });
-    const masteredGroups = await context.db.card.groupBy({
-      by: ["deckId"],
-      where: { deck: { userId }, reps: { gt: 0 }, intervalDays: { gte: MASTERED_INTERVAL_DAYS } },
-      _count: { _all: true },
-    });
+    // «Усвоено» = карточки, у которых серия верных ответов ≥ требуемого числа повторений колоды.
+    const masteredRows = await context.db.$queryRaw<{ deckId: string; n: number }[]>`
+      SELECT c."deckId" AS "deckId", count(*)::int AS n
+      FROM "Card" c JOIN "Deck" d ON d.id = c."deckId"
+      WHERE d."userId" = ${userId} AND c.streak >= d."requiredCorrect"
+      GROUP BY c."deckId"
+    `;
 
     const dueByDeck = new Map(dueGroups.map((group) => [group.deckId, group._count._all]));
-    const masteredByDeck = new Map(masteredGroups.map((group) => [group.deckId, group._count._all]));
+    const masteredByDeck = new Map(masteredRows.map((row) => [row.deckId, row.n]));
 
     return decks.map((deck) => ({
       id: deck.id,

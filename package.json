@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "@radix-ui/react-dialog": "^1.1.17",
     "@sentry/tanstackstart-react": "^10.57.0",
     "@t3-oss/env-core": "^0.13.11",
     "@tanstack/react-query": "^5.101.0",
@@ -42,6 +43,7 @@
     "srvx": "^0.11.16",
     "tailwind-merge": "^3.6.0",
     "typograf": "^6.8.2",
+    "vaul": "^1.1.2",
     "word-extractor": "^1.0.4",
     "zod": "^4.4.3"
   },

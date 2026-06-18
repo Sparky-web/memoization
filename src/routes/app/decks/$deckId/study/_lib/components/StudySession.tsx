@@ -18,13 +18,12 @@ interface StudySessionProps {
   deckTitle: string;
   /** Сколько раз свайпнуть вправо, чтобы карточка считалась выученной в этой сессии. */
   requiredCorrect: number;
-  /** Режим ответа: краткий (обычный текст) или глубокий (markdown). */
-  mode: "short" | "deep";
   initialCards: StudyCardView[];
   onReview: (cardId: string, grade: ReviewGrade) => Promise<unknown>;
+  onRestart: () => void;
+  restartPending: boolean;
 }
 
-// Куда вернуть карточку: «сложно» — близко (повторить скорее), «вспомнил, но ещё не выучена» — дальше.
 const REQUEUE_AGAIN_GAP = 2;
 const REQUEUE_GOOD_GAP = 6;
 
@@ -37,14 +36,20 @@ function requeue(queue: StudyCardView[], gap: number): StudyCardView[] {
   return next;
 }
 
-export function StudySession({ deckId, deckTitle, requiredCorrect, mode, initialCards, onReview }: StudySessionProps) {
+export function StudySession({
+  deckId,
+  deckTitle,
+  requiredCorrect,
+  initialCards,
+  onReview,
+  onRestart,
+  restartPending,
+}: StudySessionProps) {
   const navigate = useNavigate();
   const [queue, setQueue] = useState(initialCards);
-  // Сколько раз карточку уже свайпнули вправо в этой сессии.
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [reviewed, setReviewed] = useState(0);
   const [learned, setLearned] = useState(0);
-  // Счётчик «вспомнил» — каждое увеличение перезапускает зелёную пульсацию.
   const [goodPulse, setGoodPulse] = useState(0);
 
   const goToDeck = () => {
@@ -58,9 +63,16 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, mode, initial
           {typo("На сегодня всё повторено")}
         </Heading>
         <Text color="supplementary" align="center">
-          {typo("Возвращайтесь позже — карточки появятся, когда подойдёт срок повторения.")}
+          {typo("Карточки появятся, когда подойдёт срок повторения. Можно пройти колоду заново.")}
         </Text>
-        <Button onClick={goToDeck}>{typo("К колоде")}</Button>
+        <HStack gap="sm" wrap justify="center">
+          <Button onClick={onRestart} disabled={restartPending}>
+            {typo("Начать заново")}
+          </Button>
+          <Button variant="outline" onClick={goToDeck}>
+            {typo("К колоде")}
+          </Button>
+        </HStack>
       </VStack>
     );
   }
@@ -68,6 +80,7 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, mode, initial
   const current = queue[0];
 
   if (!current) {
+    const accuracy = reviewed > 0 ? Math.round((learned / initialCards.length) * 100) : 0;
     return (
       <VStack gap="lg" align="center" justify="center" className="mx-auto h-full w-full max-w-xl px-4">
         <Heading variant="h2" align="center">
@@ -76,8 +89,16 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, mode, initial
         <HStack gap="md" wrap justify="center">
           <Stat label={typo("Повторено")} value={reviewed} />
           <Stat label={typo("Выучено")} value={`${learned} / ${initialCards.length}`} />
+          <Stat label={typo("Готово")} value={`${accuracy}%`} />
         </HStack>
-        <Button onClick={goToDeck}>{typo("К колоде")}</Button>
+        <HStack gap="sm" wrap justify="center">
+          <Button onClick={onRestart} disabled={restartPending}>
+            {typo("Начать заново")}
+          </Button>
+          <Button variant="outline" onClick={goToDeck}>
+            {typo("К колоде")}
+          </Button>
+        </HStack>
       </VStack>
     );
   }
@@ -92,7 +113,6 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, mode, initial
     const goodCount = grade === "good" ? (progress[card.id] ?? 0) + 1 : 0;
     const graduated = grade === "good" && goodCount >= requiredCorrect;
 
-    // Оптимистично продвигаем сессию...
     setReviewed((value) => value + 1);
     if (grade === "good") setGoodPulse((value) => value + 1);
     setProgress((map) => ({ ...map, [card.id]: goodCount }));
@@ -101,7 +121,6 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, mode, initial
       graduated ? previousQueue.slice(1) : requeue(previousQueue, grade === "good" ? REQUEUE_GOOD_GAP : REQUEUE_AGAIN_GAP),
     );
 
-    // ...и откатываем всё, если ответ не удалось сохранить на сервере (тост покажет мутация).
     void onReview(card.id, grade).catch(() => {
       setQueue(previousQueue);
       setProgress(previousProgress);
@@ -140,8 +159,8 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, mode, initial
       <SwipeCard
         key={current.id}
         question={current.question}
-        answer={mode === "deep" ? (current.answerDeep ?? current.answer) : current.answer}
-        answerMarkdown={mode === "deep" && current.answerDeep !== null}
+        answer={current.answer}
+        answerDeep={current.answerDeep}
         onSwipe={handleSwipe}
       />
 

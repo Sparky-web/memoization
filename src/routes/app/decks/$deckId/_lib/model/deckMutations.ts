@@ -5,14 +5,21 @@ import { toast } from "sonner";
 import { typo } from "~/lib";
 import { addCard, deleteCard, updateCard } from "~/server/fn/cards";
 import { deleteDeck, updateDeck } from "~/server/fn/decks";
+import { resetDeckProgress } from "~/server/fn/study";
 
 // Все мутации инвалидируют корневой ключ ["decks"] — он покрывает список, деталь и статистику.
 const DECKS_KEY = ["decks"];
 
+interface CardFields {
+  question: string;
+  answer: string;
+  answerDeep: string | null;
+}
+
 export function useAddCard(deckId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { question: string; answer: string }) => addCard({ data: { deckId, data } }),
+    mutationFn: (data: CardFields) => addCard({ data: { deckId, data } }),
     onSuccess: () => {
       toast.success(typo("Карточка добавлена"));
       void queryClient.invalidateQueries({ queryKey: DECKS_KEY });
@@ -29,7 +36,7 @@ export function useCardEditor() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: DECKS_KEY });
 
   const update = useMutation({
-    mutationFn: (input: { id: string; data: { question: string; answer: string } }) => updateCard({ data: input }),
+    mutationFn: (input: { id: string; data: CardFields }) => updateCard({ data: input }),
     onSuccess: () => {
       toast.success(typo("Карточка обновлена"));
       void invalidate();
@@ -87,4 +94,21 @@ export function useDeckActions(deckId: string) {
   });
 
   return { rename, removeDeck };
+}
+
+export function useResetDeck(deckId: string) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  return useMutation({
+    mutationFn: () => resetDeckProgress({ data: { deckId } }),
+    onSuccess: () => {
+      toast.success(typo("Прогресс сброшен — начинаем заново"));
+      void queryClient.invalidateQueries({ queryKey: DECKS_KEY });
+      void navigate({ to: "/app/decks/$deckId/study", params: { deckId } });
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось сбросить прогресс"));
+    },
+  });
 }

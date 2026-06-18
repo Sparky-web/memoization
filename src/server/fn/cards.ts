@@ -9,6 +9,7 @@ import { authMiddleware } from "~/server/middleware";
 const cardFieldsInput = zodRussian.object({
   question: zodRussian.string().min(1).max(4000),
   answer: zodRussian.string().min(1).max(8000),
+  answerDeep: zodRussian.string().max(30000).nullable(),
 });
 
 export const addCard = createServerFn({ method: "POST" })
@@ -33,6 +34,7 @@ export const addCard = createServerFn({ method: "POST" })
         deckId: deck.id,
         question: input.data.question,
         answer: input.data.answer,
+        answerDeep: input.data.answerDeep,
         position: (lastCard?.position ?? -1) + 1,
       },
     });

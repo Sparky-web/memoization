@@ -1,10 +1,16 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { FileText, Repeat, Sparkles } from "lucide-react";
 
 import { AdaptiveGrid, Button, Container, Heading, HStack, SimpleCard, Text, VStack } from "~/components";
 import { typo } from "~/lib";
+import { getSession } from "~/server/fn/auth";
 
 export const Route = createFileRoute("/")({
+  beforeLoad: async () => {
+    // Авторизованного пользователя сразу ведём в приложение.
+    const session = await getSession();
+    if (session) throw redirect({ to: "/app" });
+  },
   head: () => ({
     meta: [
       { title: typo("Мемокарты — подготовка к экзаменам") },

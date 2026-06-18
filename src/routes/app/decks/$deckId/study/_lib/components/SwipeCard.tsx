@@ -1,36 +1,32 @@
-import { Check, RotateCcw, X } from "lucide-react";
+import { BookOpen, Check, RotateCcw, X } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
-import Markdown from "react-markdown";
 
-import { Button, HStack, Text, VStack } from "~/components";
+import { Button, HStack, MarkdownView, ResponsiveModal, Text, VStack } from "~/components";
 import { type ReviewGrade, typo } from "~/lib";
 
 interface SwipeCardProps {
   question: string;
   answer: string;
-  /** Ответ в markdown (режим «глубинное изучение») — рендерим как markdown, иначе обычный текст. */
-  answerMarkdown?: boolean;
+  /** Развёрнутый ответ (markdown) — показывается по кнопке «Изучить подробнее»; null — кнопки нет. */
+  answerDeep: string | null;
   onSwipe: (grade: ReviewGrade) => void;
 }
 
-// Сдвиг для засчитывания свайпа, порог тапа (переворот), порог определения оси и время вылета.
 const SWIPE_THRESHOLD = 110;
 const TAP_THRESHOLD = 8;
 const INTENT_THRESHOLD = 8;
 const EXIT_MS = 280;
 
-// Скрываем обратную сторону грани при 3D-перевороте.
 const hiddenBackface: CSSProperties = { backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
 
-export function SwipeCard({ question, answer, answerMarkdown, onSwipe }: SwipeCardProps) {
+export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardProps) {
   const [flipped, setFlipped] = useState(false);
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
-  // Направление вылета карточки: -1 влево («сложно»), +1 вправо («вспомнил»), 0 — на месте.
   const [exitDir, setExitDir] = useState(0);
+  const [detailOpen, setDetailOpen] = useState(false);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
-  // Ось жеста: пока не определена — none; горизонталь — свайп, вертикаль — отдаём прокрутке контента.
   const axisRef = useRef<"none" | "x" | "y">("none");
   const submittedRef = useRef(false);
 
@@ -38,7 +34,6 @@ export function SwipeCard({ question, answer, answerMarkdown, onSwipe }: SwipeCa
     setFlipped((value) => !value);
   };
 
-  // Запускаем анимацию вылета, а сам ответ отправляем, когда карточка «улетела».
   const commit = (grade: ReviewGrade) => {
     if (submittedRef.current) return;
     submittedRef.current = true;
@@ -50,7 +45,7 @@ export function SwipeCard({ question, answer, answerMarkdown, onSwipe }: SwipeCa
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (submittedRef.current) return;
+    if (submittedRef.current || detailOpen) return;
     setDragging(true);
     startXRef.current = event.clientX;
     startYRef.current = event.clientY;
@@ -65,13 +60,12 @@ export function SwipeCard({ question, answer, answerMarkdown, onSwipe }: SwipeCa
       if (Math.abs(deltaX) < INTENT_THRESHOLD && Math.abs(deltaY) < INTENT_THRESHOLD) return;
       if (Math.abs(deltaX) > Math.abs(deltaY)) {
         axisRef.current = "x";
-        // Горизонтальный жест — захватываем указатель, чтобы свайп не «слетал» на полпути.
         event.currentTarget.setPointerCapture(event.pointerId);
       } else {
         axisRef.current = "y";
       }
     }
-    if (axisRef.current === "y") return; // вертикаль — пусть скроллится контент
+    if (axisRef.current === "y") return;
     setDragX(deltaX);
   };
 
@@ -94,7 +88,7 @@ export function SwipeCard({ question, answer, answerMarkdown, onSwipe }: SwipeCa
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (submittedRef.current) return;
+    if (submittedRef.current || detailOpen) return;
     if (event.key === "ArrowRight") {
       commit("good");
       return;
@@ -140,11 +134,7 @@ export function SwipeCard({ question, answer, answerMarkdown, onSwipe }: SwipeCa
               transition: "transform 0.45s ease",
             }}
           >
-            {/* Лицо: вопрос */}
-            <div
-              className="bg-card absolute inset-0 flex flex-col gap-4 rounded-3xl p-6 shadow-md"
-              style={hiddenBackface}
-            >
+            <div className="bg-card absolute inset-0 flex flex-col gap-4 rounded-3xl p-6 shadow-md" style={hiddenBackface}>
               <Text variant="mini" color="supplementary" align="center">
                 {typo("Вопрос")}
               </Text>
@@ -160,7 +150,6 @@ export function SwipeCard({ question, answer, answerMarkdown, onSwipe }: SwipeCa
               </Text>
             </div>
 
-            {/* Оборот: ответ */}
             <div
               className="bg-card absolute inset-0 flex flex-col gap-4 rounded-3xl p-6 shadow-md"
               style={{ ...hiddenBackface, transform: "rotateY(180deg)" }}
@@ -169,17 +158,26 @@ export function SwipeCard({ question, answer, answerMarkdown, onSwipe }: SwipeCa
                 {typo("Ответ")}
               </Text>
               <div className="flex-1 overflow-y-auto">
-                {answerMarkdown ? (
-                  <div className="markdown">
-                    <Markdown>{answer}</Markdown>
-                  </div>
-                ) : (
-                  <div className="flex min-h-full items-center justify-center">
-                    <Text variant="large" align="center" breakWords>
-                      {typo(answer)}
-                    </Text>
-                  </div>
-                )}
+                <div className="flex min-h-full flex-col items-center justify-center gap-4">
+                  <Text variant="large" align="center" breakWords>
+                    {typo(answer)}
+                  </Text>
+                  {answerDeep && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                      }}
+                      onClick={() => {
+                        setDetailOpen(true);
+                      }}
+                    >
+                      <BookOpen className="size-4" />
+                      {typo("Изучить подробнее")}
+                    </Button>
+                  )}
+                </div>
               </div>
               <Text variant="mini" color="supplementary" align="center">
                 {typo("Свайп вправо — вспомнил, влево — было сложно")}
@@ -225,6 +223,12 @@ export function SwipeCard({ question, answer, answerMarkdown, onSwipe }: SwipeCa
           {typo("Вспомнил")}
         </Button>
       </HStack>
+
+      {answerDeep && (
+        <ResponsiveModal open={detailOpen} onOpenChange={setDetailOpen} title={typo(question)}>
+          <MarkdownView>{answerDeep}</MarkdownView>
+        </ResponsiveModal>
+      )}
     </VStack>
   );
 }

@@ -8,7 +8,6 @@ import { authMiddleware } from "~/server/middleware";
 
 const ACTIVITY_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MASTERED_INTERVAL_DAYS = 21;
 
 // Ключ дня в таймзоне приложения (МСК): активность и серия считаются по местным календарным дням,
 // а не по UTC — иначе вечерние повторения утекали бы в следующий день.
@@ -58,16 +57,20 @@ export const getOverallStats = createServerFn({ method: "GET" })
     const now = new Date();
     const since = new Date(now.getTime() - ACTIVITY_DAYS * DAY_MS);
 
-    const [totalDecks, totalCards, masteredCards, dueCards, gradeGroups, recentReviews, reviewDays] = await Promise.all([
+    const [totalDecks, totalCards, masteredRows, dueCards, gradeGroups, recentReviews, reviewDays] = await Promise.all([
       context.db.deck.count({ where: { userId } }),
       context.db.card.count({ where: { deck: { userId } } }),
-      context.db.card.count({ where: { deck: { userId }, reps: { gt: 0 }, intervalDays: { gte: MASTERED_INTERVAL_DAYS } } }),
+      context.db.$queryRaw<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM "Card" c JOIN "Deck" d ON d.id = c."deckId"
+        WHERE d."userId" = ${userId} AND c.streak >= d."requiredCorrect"
+      `,
       context.db.card.count({ where: { deck: { userId }, dueAt: { lte: now } } }),
       context.db.review.groupBy({ by: ["grade"], where: { userId }, _count: { _all: true } }),
       context.db.review.findMany({ where: { userId, reviewedAt: { gte: since } }, select: { reviewedAt: true } }),
       context.db.review.findMany({ where: { userId }, select: { reviewedAt: true }, orderBy: { reviewedAt: "desc" }, take: 1000 }),
     ]);
 
+    const masteredCards = masteredRows[0]?.n ?? 0;
     const goodCount = gradeGroups.find((group) => group.grade === "good")?._count._all ?? 0;
     const totalReviews = gradeGroups.reduce((sum, group) => sum + group._count._all, 0);
     const accuracy = totalReviews > 0 ? goodCount / totalReviews : 0;
@@ -84,7 +87,7 @@ export const getDeckStats = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const deck = await context.db.deck.findFirst({
       where: { id: data.deckId, userId: context.session.user.id },
-      select: { id: true },
+      select: { id: true, requiredCorrect: true },
     });
     if (!deck) {
       setResponseStatus(404);
@@ -96,7 +99,7 @@ export const getDeckStats = createServerFn({ method: "GET" })
     const [totalCards, newCards, masteredCards, dueCards, gradeGroups, recentReviews] = await Promise.all([
       context.db.card.count({ where: { deckId: deck.id } }),
       context.db.card.count({ where: { deckId: deck.id, reps: 0 } }),
-      context.db.card.count({ where: { deckId: deck.id, reps: { gt: 0 }, intervalDays: { gte: MASTERED_INTERVAL_DAYS } } }),
+      context.db.card.count({ where: { deckId: deck.id, streak: { gte: deck.requiredCorrect } } }),
       context.db.card.count({ where: { deckId: deck.id, dueAt: { lte: now } } }),
       context.db.review.groupBy({ by: ["grade"], where: { deckId: deck.id }, _count: { _all: true } }),
       context.db.review.findMany({ where: { deckId: deck.id, reviewedAt: { gte: since } }, select: { reviewedAt: true } }),

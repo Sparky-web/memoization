@@ -8,6 +8,7 @@ import { AddCardForm } from "./_lib/components/AddCardForm";
 import { CardRow } from "./_lib/components/CardRow";
 import { DeckHeader } from "./_lib/components/DeckHeader";
 import { DeckStatsPanel } from "./_lib/components/DeckStatsPanel";
+import { useResetDeck } from "./_lib/model/deckMutations";
 import { deckQueries } from "./_lib/model/deckQueries";
 
 export const Route = createFileRoute("/app/decks/$deckId/")({
@@ -25,9 +26,10 @@ function DeckDetailPage() {
   const navigate = useNavigate();
   const { data: deck } = useSuspenseQuery(deckQueries.detail(deckId));
   const { data: stats } = useSuspenseQuery(deckQueries.stats(deckId));
+  const reset = useResetDeck(deckId);
 
-  const startStudy = (mode: "short" | "deep") => {
-    void navigate({ to: "/app/decks/$deckId/study", params: { deckId }, search: { mode } });
+  const startStudy = () => {
+    void navigate({ to: "/app/decks/$deckId/study", params: { deckId } });
   };
 
   return (
@@ -58,25 +60,21 @@ function DeckDetailPage() {
         <>
           <DeckStatsPanel stats={stats} />
           <HStack gap="sm" wrap>
-            <Button
-              size="lg"
-              disabled={stats.dueCards === 0}
-              onClick={() => {
-                startStudy("short");
-              }}
-            >
+            <Button size="lg" disabled={stats.dueCards === 0} onClick={startStudy}>
               {stats.dueCards > 0 ? typo(`Учить · ${stats.dueCards}`) : typo("Всё повторено")}
             </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              disabled={stats.dueCards === 0}
-              onClick={() => {
-                startStudy("deep");
-              }}
-            >
-              {typo("Глубокое изучение")}
-            </Button>
+            {stats.totalCards > 0 && (
+              <Button
+                size="lg"
+                variant="outline"
+                disabled={reset.isPending}
+                onClick={() => {
+                  reset.mutate();
+                }}
+              >
+                {typo("Начать заново")}
+              </Button>
+            )}
           </HStack>
 
           <VStack gap="md">

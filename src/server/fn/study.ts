@@ -87,3 +87,25 @@ export const reviewCard = createServerFn({ method: "POST" })
 
     return true;
   });
+
+// «Начать заново»: сбрасываем состояние повторения у всех карточек колоды — они снова становятся due.
+export const resetDeckProgress = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ deckId: zodRussian.string() }))
+  .handler(async ({ data, context }) => {
+    const result = await context.db.card.updateMany({
+      where: { deckId: data.deckId, deck: { userId: context.session.user.id } },
+      data: {
+        box: 0,
+        ease: 2.5,
+        intervalDays: 0,
+        dueAt: new Date(),
+        reps: 0,
+        streak: 0,
+        correctCount: 0,
+        wrongCount: 0,
+        lastReviewedAt: null,
+      },
+    });
+    return { reset: result.count };
+  });

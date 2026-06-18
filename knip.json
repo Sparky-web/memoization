@@ -10,7 +10,7 @@
     "scripts/*.{ts,mjs}"
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**"],
-  "ignore": ["src/components/**", "src/types/**"],
+  "ignore": ["src/components/**"],
   "ignoreDependencies": ["tailwindcss"],
   "ignoreBinaries": ["claude"],
   "ignoreExportsUsedInFile": true
