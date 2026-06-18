@@ -4,7 +4,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Button, Heading, HStack, SimpleCard, Text, VStack } from "~/components";
 import { typo } from "~/lib";
 
-import { AddCardForm } from "./_lib/components/AddCardForm";
+import { AddCardButton } from "./_lib/components/AddCardButton";
 import { CardRow } from "./_lib/components/CardRow";
 import { DeckHeader } from "./_lib/components/DeckHeader";
 import { DeckStatsPanel } from "./_lib/components/DeckStatsPanel";
@@ -79,7 +79,7 @@ function DeckDetailPage() {
 
           <VStack gap="md">
             <Heading variant="h3">{typo(`Карточки · ${stats.totalCards}`)}</Heading>
-            <AddCardForm deckId={deckId} />
+            <AddCardButton deckId={deckId} />
             {deck.cards.length ? (
               <VStack gap="sm">
                 {deck.cards.map((card) => (

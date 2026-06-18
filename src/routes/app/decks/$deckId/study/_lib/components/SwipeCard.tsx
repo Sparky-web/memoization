@@ -16,28 +16,74 @@ const SWIPE_THRESHOLD = 110;
 const TAP_THRESHOLD = 8;
 const INTENT_THRESHOLD = 8;
 const EXIT_MS = 280;
+const REST_TRANSITION = "transform 0.28s ease, opacity 0.28s ease";
 
 const hiddenBackface: CSSProperties = { backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
 
+type Axis = "none" | "x" | "y";
+
 export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardProps) {
   const [flipped, setFlipped] = useState(false);
-  const [dragX, setDragX] = useState(0);
-  const [dragging, setDragging] = useState(false);
   const [exitDir, setExitDir] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
+
+  // Перетаскивание ведём через ref + прямой DOM, а не setState на каждый pointermove:
+  // так первый move не теряется из-за асинхронного коммита состояния и нет ре-рендера на кадр.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const frontPaneRef = useRef<HTMLDivElement>(null);
+  const backPaneRef = useRef<HTMLDivElement>(null);
+  const goodBadgeRef = useRef<HTMLSpanElement>(null);
+  const againBadgeRef = useRef<HTMLSpanElement>(null);
+
+  const draggingRef = useRef(false);
+  const dragXRef = useRef(0);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
-  const axisRef = useRef<"none" | "x" | "y">("none");
+  const lastYRef = useRef(0);
+  const axisRef = useRef<Axis>("none");
+  const flippedRef = useRef(false);
   const submittedRef = useRef(false);
 
+  // Прямая запись трансформа карточки и непрозрачности бейджей — без ре-рендера.
+  const paintDrag = (deltaX: number) => {
+    const card = cardRef.current;
+    if (card) {
+      card.style.transition = "none";
+      card.style.transform = `translateX(${deltaX}px) rotate(${deltaX / 25}deg)`;
+    }
+    const good = goodBadgeRef.current;
+    if (good) good.style.opacity = `${deltaX > 0 ? Math.min(deltaX / SWIPE_THRESHOLD, 1) : 0}`;
+    const again = againBadgeRef.current;
+    if (again) again.style.opacity = `${deltaX < 0 ? Math.min(-deltaX / SWIPE_THRESHOLD, 1) : 0}`;
+  };
+
+  // Возврат карточки в центр с анимацией (не деструктивно: вызывается и на cancel).
+  const animateBack = () => {
+    dragXRef.current = 0;
+    const card = cardRef.current;
+    if (card) {
+      card.style.transition = REST_TRANSITION;
+      card.style.transform = "translateX(0px) rotate(0deg)";
+    }
+    if (goodBadgeRef.current) goodBadgeRef.current.style.opacity = "0";
+    if (againBadgeRef.current) againBadgeRef.current.style.opacity = "0";
+  };
+
   const toggleFlip = () => {
-    setFlipped((value) => !value);
+    setFlipped((value) => {
+      flippedRef.current = !value;
+      return !value;
+    });
   };
 
   const commit = (grade: ReviewGrade) => {
     if (submittedRef.current) return;
     submittedRef.current = true;
-    setDragging(false);
+    draggingRef.current = false;
+    // Во время перетаскивания transition был снят (paintDrag) — возвращаем плавность,
+    // иначе улёт карточки произошёл бы мгновенно. React зададим только сам трансформ улёта.
+    const card = cardRef.current;
+    if (card) card.style.transition = REST_TRANSITION;
     setExitDir(grade === "good" ? 1 : -1);
     setTimeout(() => {
       onSwipe(grade);
@@ -46,35 +92,49 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (submittedRef.current || detailOpen) return;
-    setDragging(true);
+    // Флаг ставим синхронно в ref — следующий pointermove увидит его сразу.
+    draggingRef.current = true;
+    dragXRef.current = 0;
     startXRef.current = event.clientX;
     startYRef.current = event.clientY;
+    lastYRef.current = event.clientY;
     axisRef.current = "none";
   };
 
+  const activePane = (): HTMLDivElement | null => (flippedRef.current ? backPaneRef.current : frontPaneRef.current);
+
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!dragging || submittedRef.current) return;
+    if (!draggingRef.current || submittedRef.current) return;
     const deltaX = event.clientX - startXRef.current;
     const deltaY = event.clientY - startYRef.current;
+
     if (axisRef.current === "none") {
       if (Math.abs(deltaX) < INTENT_THRESHOLD && Math.abs(deltaY) < INTENT_THRESHOLD) return;
-      if (Math.abs(deltaX) > Math.abs(deltaY)) {
-        axisRef.current = "x";
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } else {
-        axisRef.current = "y";
-      }
+      // Захватываем указатель в ОБЕИХ осях: при x — тащим карточку, при y — сами прокручиваем
+      // содержимое. Поверхность имеет touch-action:none, поэтому браузер уже не отнимет жест.
+      event.currentTarget.setPointerCapture(event.pointerId);
+      axisRef.current = Math.abs(deltaX) > Math.abs(deltaY) ? "x" : "y";
     }
-    if (axisRef.current === "y") return;
-    setDragX(deltaX);
+
+    if (axisRef.current === "y") {
+      // Ручной проброс вертикальной прокрутки внутрь активной грани карточки.
+      const pane = activePane();
+      if (pane) pane.scrollTop -= event.clientY - lastYRef.current;
+      lastYRef.current = event.clientY;
+      return;
+    }
+
+    dragXRef.current = deltaX;
+    paintDrag(deltaX);
   };
 
   const finishDrag = () => {
-    if (!dragging || submittedRef.current) return;
-    setDragging(false);
-    const delta = dragX;
+    if (!draggingRef.current || submittedRef.current) return;
+    draggingRef.current = false;
+    const delta = dragXRef.current;
     const axis = axisRef.current;
     axisRef.current = "none";
+
     if (axis === "x" && delta > SWIPE_THRESHOLD) {
       commit("good");
       return;
@@ -84,7 +144,7 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
       return;
     }
     if (axis === "none" && Math.abs(delta) < TAP_THRESHOLD) toggleFlip();
-    setDragX(0);
+    animateBack();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -104,17 +164,17 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
   };
 
   const exiting = exitDir !== 0;
+  // В покое трансформ карточки и бейджей задаёт DOM (paintDrag/animateBack); React управляет
+  // только улётом за экран. Начальные значения берутся из inline-style при монтировании.
   const cardTransform = exiting
     ? `translateX(${exitDir * 100}vw) rotate(${exitDir * 18}deg)`
-    : `translateX(${dragX}px) rotate(${dragX / 25}deg)`;
-  const cardTransition = dragging ? "none" : "transform 0.28s ease, opacity 0.28s ease";
-  const goodOpacity = dragX > 0 ? Math.min(dragX / SWIPE_THRESHOLD, 1) : 0;
-  const againOpacity = dragX < 0 ? Math.min(-dragX / SWIPE_THRESHOLD, 1) : 0;
+    : "translateX(0px) rotate(0deg)";
 
   return (
     <VStack gap="sm" className="min-h-0 w-full flex-1 select-none">
       <div className="min-h-0 w-full flex-1" style={{ perspective: "1200px" }}>
         <div
+          ref={cardRef}
           role="button"
           tabIndex={0}
           aria-label={typo("Карточка. Нажмите, чтобы перевернуть; стрелки влево и вправо — оценка")}
@@ -123,8 +183,10 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
           onPointerUp={finishDrag}
           onPointerCancel={finishDrag}
           onKeyDown={handleKeyDown}
-          className="relative h-full cursor-grab touch-pan-y outline-none"
-          style={{ transform: cardTransform, transition: cardTransition, opacity: exiting ? 0 : 1, transformStyle: "preserve-3d" }}
+          // touch-none: поверхность сама владеет жестом, браузер не запускает нативный pan
+          // и не шлёт pointercancel посреди свайпа (вертикальный скролл пробрасываем вручную).
+          className="relative h-full cursor-grab touch-none outline-none"
+          style={{ transform: cardTransform, transition: REST_TRANSITION, opacity: exiting ? 0 : 1, transformStyle: "preserve-3d" }}
         >
           <div
             className="relative h-full"
@@ -138,7 +200,7 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
               <Text variant="mini" color="supplementary" align="center">
                 {typo("Вопрос")}
               </Text>
-              <div className="flex-1 overflow-y-auto">
+              <div ref={frontPaneRef} className="flex-1 overflow-y-auto">
                 <div className="flex min-h-full items-center justify-center">
                   <Text variant="large" align="center" breakWords>
                     {typo(question)}
@@ -157,7 +219,7 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
               <Text variant="mini" color="supplementary" align="center">
                 {typo("Ответ")}
               </Text>
-              <div className="flex-1 overflow-y-auto">
+              <div ref={backPaneRef} className="flex-1 overflow-y-auto">
                 <div className="flex min-h-full flex-col items-center justify-center gap-4">
                   <Text variant="large" align="center" breakWords>
                     {typo(answer)}
@@ -186,14 +248,16 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
           </div>
 
           <span
+            ref={goodBadgeRef}
             className="border-success text-success pointer-events-none absolute top-4 left-4 rounded-md border-2 px-2 py-1 text-sm font-bold"
-            style={{ opacity: goodOpacity, transform: "translateZ(60px)" }}
+            style={{ opacity: 0, transform: "translateZ(60px)" }}
           >
             {typo("Вспомнил")}
           </span>
           <span
+            ref={againBadgeRef}
             className="border-destructive text-destructive pointer-events-none absolute top-4 right-4 rounded-md border-2 px-2 py-1 text-sm font-bold"
-            style={{ opacity: againOpacity, transform: "translateZ(60px)" }}
+            style={{ opacity: 0, transform: "translateZ(60px)" }}
           >
             {typo("Сложно")}
           </span>
