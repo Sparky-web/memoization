@@ -34,6 +34,11 @@ DATABASE_URL=postgresql://memoization:ПАРОЛЬ@host.docker.internal:5432/mem
 BETTER_AUTH_URL=https://memoization.studentto.ru
 BETTER_AUTH_SECRET=...        # openssl rand -hex 32
 VITE_SENTRY_DSN=              # опционально
+
+# Прокси для Claude (из РФ api.anthropic.com отдаёт 403 — нужен HTTP(S)-прокси вне РФ):
+HTTPS_PROXY=http://ЛОГИН:ПАРОЛЬ@ХОСТ:ПОРТ
+HTTP_PROXY=http://ЛОГИН:ПАРОЛЬ@ХОСТ:ПОРТ
+NO_PROXY=localhost,127.0.0.1,host.docker.internal
 ```
 
 ## Подготовка сервера (один раз)
@@ -79,3 +84,26 @@ cd ~/memoization && docker compose up -d --force-recreate
 ```
 
 Клиентские `VITE_*` впекаются в бандл на сборке → их смена требует пересборки (`docker compose build`).
+
+## Генерация колод (Claude CLI)
+
+Режим «Сгенерировать» запускает `claude -p` (модель `opus`) внутри контейнера: claude читает материалы
+пользователя из `data/jobs/<deckId>/inputs/` и пишет `output.json` с карточками (вопрос + краткий и
+развёрнутый ответы). Процесс асинхронный: колода создаётся со статусом `processing`, по готовности —
+`ready`, при ошибке — `failed`. Очередь последовательная (один claude за раз).
+
+- **claude CLI** ставится в образ (`Dockerfile`: `npm i -g @anthropic-ai/claude-code`).
+- **Авторизация** хранится в томе `./claude-home:/root/.claude` и переживает пересоздание/деплой.
+  Войти нужно один раз:
+  ```bash
+  cd ~/memoization
+  docker compose exec -it app claude   # выбрать вход в аккаунт, открыть ссылку в браузере, затем /exit
+  ```
+- **Прокси (для РФ обязателен):** `api.anthropic.com` напрямую отдаёт 403 — нужен HTTP(S)-прокси вне РФ.
+  Пропишите `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` в `.env` (см. выше) и пересоздайте контейнер
+  (`docker compose up -d --force-recreate`). Приложение спавнит claude с `env: process.env` — прокси
+  подхватывается автоматически и для входа, и для генерации.
+- **Файлы**: до 5 шт по 10 МБ в каждом поле. `.doc/.docx` конвертируются в текст на сервере
+  (`word-extractor`) до передачи claude; `.pdf`, изображения и текстовые форматы claude читает сам.
+- **Проверка связи/входа:** `docker compose exec -T app claude -p "ответь: ок"` — должен ответить.
+- При рестарте контейнера «зависшие» задания `processing` помечаются `failed` (сброс на старте `src/server.ts`).
