@@ -8,6 +8,9 @@ import { getStudyQueue, reviewCard } from "~/server/fn/study";
 import { StudySession } from "./_lib/components/StudySession";
 
 export const Route = createFileRoute("/app/decks/$deckId/study/")({
+  validateSearch: (search: Record<string, unknown>): { mode: "short" | "deep" } => ({
+    mode: search.mode === "deep" ? "deep" : "short",
+  }),
   loader: ({ params }) => getStudyQueue({ data: { deckId: params.deckId } }),
   head: () => ({ meta: [{ title: typo("Повторение") }] }),
   component: StudyPage,
@@ -15,6 +18,7 @@ export const Route = createFileRoute("/app/decks/$deckId/study/")({
 
 function StudyPage() {
   const data = Route.useLoaderData();
+  const { mode } = Route.useSearch();
   const queryClient = useQueryClient();
 
   const reviewMutation = useMutation({
@@ -38,6 +42,7 @@ function StudyPage() {
       deckId={data.deckId}
       deckTitle={data.deckTitle}
       requiredCorrect={data.requiredCorrect}
+      mode={mode}
       initialCards={data.cards}
       onReview={handleReview}
     />

@@ -11,6 +11,8 @@ export const deckQueries = {
     queryOptions({
       queryKey: ["decks", "detail", deckId],
       queryFn: () => getDeckById({ data: { id: deckId } }),
+      // Пока колода генерируется — опрашиваем статус, чтобы экран обновился сам.
+      refetchInterval: (query) => (query.state.data?.status === "processing" ? 4000 : false),
     }),
   stats: (deckId: string) =>
     queryOptions({

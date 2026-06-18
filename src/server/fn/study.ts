@@ -35,7 +35,7 @@ export const getStudyQueue = createServerFn({ method: "GET" })
       where: { deckId: deck.id, dueAt: { lte: new Date() } },
       orderBy: { dueAt: "asc" },
       take: STUDY_BATCH,
-      select: { id: true, question: true, answer: true },
+      select: { id: true, question: true, answer: true, answerDeep: true },
     });
 
     // Карточки к показу берём по сроку (самые «просроченные» вперёд), а внутри сессии тасуем.

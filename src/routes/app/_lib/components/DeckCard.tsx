@@ -23,24 +23,30 @@ export function DeckCard({ deck }: DeckCardProps) {
           <Heading variant="h3" maxLines={2}>
             {typo(deck.title)}
           </Heading>
-          {deck.dueCount > 0 && <Badge variant="primary">{typo(`${deck.dueCount} к повторению`)}</Badge>}
+          {deck.status === "processing" && <Badge variant="muted">{typo("В обработке")}</Badge>}
+          {deck.status === "failed" && <Badge variant="muted">{typo("Ошибка")}</Badge>}
+          {deck.status === "ready" && deck.dueCount > 0 && (
+            <Badge variant="primary">{typo(`${deck.dueCount} к повторению`)}</Badge>
+          )}
         </HStack>
         {deck.description && (
           <Text variant="small" color="supplementary" maxLines={2}>
             {typo(deck.description)}
           </Text>
         )}
-        <VStack gap="2xs">
-          <ProgressBar value={mastery} />
-          <HStack justify="between">
-            <Text variant="mini" color="supplementary">
-              {typo(`Усвоено ${deck.masteredCount} из ${deck.totalCards}`)}
-            </Text>
-            <Text variant="mini" color="supplementary">
-              {`${Math.round(mastery * 100)}%`}
-            </Text>
-          </HStack>
-        </VStack>
+        {deck.status === "ready" && (
+          <VStack gap="2xs">
+            <ProgressBar value={mastery} />
+            <HStack justify="between">
+              <Text variant="mini" color="supplementary">
+                {typo(`Усвоено ${deck.masteredCount} из ${deck.totalCards}`)}
+              </Text>
+              <Text variant="mini" color="supplementary">
+                {`${Math.round(mastery * 100)}%`}
+              </Text>
+            </HStack>
+          </VStack>
+        )}
       </VStack>
     </Link>
   );

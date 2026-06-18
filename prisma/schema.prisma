@@ -76,6 +76,10 @@ model Deck {
   description String?
   /// Сколько раз свайпнуть карточку вправо, чтобы считать её выученной в сессии.
   requiredCorrect Int    @default(2)
+  /// Статус колоды: "ready" | "processing" (идёт генерация Claude) | "failed".
+  status          String  @default("ready")
+  /// Текст ошибки генерации (если status = "failed").
+  generationError String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -93,6 +97,8 @@ model Card {
   id       String @id @default(cuid())
   question String
   answer   String
+  /// Развёрнутый ответ (markdown) для режима «глубинное изучение»; null — если не сгенерирован.
+  answerDeep String?
   /// Порядок добавления (для стабильного показа в списке колоды).
   position Int    @default(0)
 

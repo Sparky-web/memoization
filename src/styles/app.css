@@ -161,3 +161,76 @@ body {
     animation: none;
   }
 }
+
+/* Рендер markdown-ответа в режиме «глубинное изучение» (Tailwind preflight сбрасывает теги — возвращаем стили). */
+.markdown {
+  line-height: 1.55;
+  text-align: left;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  font-weight: 600;
+  margin: 0.7em 0 0.3em;
+  line-height: 1.25;
+}
+.markdown h1 {
+  font-size: 1.3rem;
+}
+.markdown h2 {
+  font-size: 1.15rem;
+}
+.markdown h3 {
+  font-size: 1.05rem;
+}
+.markdown p {
+  margin: 0.5em 0;
+}
+.markdown ul,
+.markdown ol {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown li {
+  margin: 0.2em 0;
+}
+.markdown strong {
+  font-weight: 700;
+}
+.markdown em {
+  font-style: italic;
+}
+.markdown code {
+  background: var(--muted);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+  font-size: 0.9em;
+}
+.markdown pre {
+  background: var(--muted);
+  border-radius: 8px;
+  padding: 0.7em;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+.markdown blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.8em;
+  color: var(--muted-foreground);
+  margin: 0.5em 0;
+}
+.markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+}

@@ -1,5 +1,5 @@
 export type { ImportedDeck } from "./src/cardImport";
-export { importedCardSchema, importedDeckSchema, parseImportedDeck } from "./src/cardImport";
+export { importedCardSchema, importedDeckSchema, parseGeneratedDeck, parseImportedDeck } from "./src/cardImport";
 export { exhaustiveCheck } from "./src/exhaustiveCheck";
 export type { CardStage, ReviewGrade } from "./src/spacedRepetition";
 export { cardStage, scheduleNextReview } from "./src/spacedRepetition";

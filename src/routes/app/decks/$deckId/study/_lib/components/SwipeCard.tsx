@@ -1,5 +1,6 @@
 import { Check, RotateCcw, X } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
+import Markdown from "react-markdown";
 
 import { Button, HStack, Text, VStack } from "~/components";
 import { type ReviewGrade, typo } from "~/lib";
@@ -7,6 +8,8 @@ import { type ReviewGrade, typo } from "~/lib";
 interface SwipeCardProps {
   question: string;
   answer: string;
+  /** Ответ в markdown (режим «глубинное изучение») — рендерим как markdown, иначе обычный текст. */
+  answerMarkdown?: boolean;
   onSwipe: (grade: ReviewGrade) => void;
 }
 
@@ -19,7 +22,7 @@ const EXIT_MS = 280;
 // Скрываем обратную сторону грани при 3D-перевороте.
 const hiddenBackface: CSSProperties = { backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
 
-export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
+export function SwipeCard({ question, answer, answerMarkdown, onSwipe }: SwipeCardProps) {
   const [flipped, setFlipped] = useState(false);
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -166,11 +169,17 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
                 {typo("Ответ")}
               </Text>
               <div className="flex-1 overflow-y-auto">
-                <div className="flex min-h-full items-center justify-center">
-                  <Text variant="large" align="center" breakWords>
-                    {typo(answer)}
-                  </Text>
-                </div>
+                {answerMarkdown ? (
+                  <div className="markdown">
+                    <Markdown>{answer}</Markdown>
+                  </div>
+                ) : (
+                  <div className="flex min-h-full items-center justify-center">
+                    <Text variant="large" align="center" breakWords>
+                      {typo(answer)}
+                    </Text>
+                  </div>
+                )}
               </div>
               <Text variant="mini" color="supplementary" align="center">
                 {typo("Свайп вправо — вспомнил, влево — было сложно")}

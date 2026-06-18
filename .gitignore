@@ -7,3 +7,5 @@ generated
 src/routeTree.gen.ts
 *.tsbuildinfo
 .DS_Store
+data
+claude-home

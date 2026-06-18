@@ -1,20 +1,11 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { toast } from "sonner";
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 
-import { Button, Heading, Input, Label, Text, Textarea, VStack } from "~/components";
-import { type ImportedDeck, parseImportedDeck, typo } from "~/lib";
-import { createDeck } from "~/server/fn/decks";
+import { Button, Heading, HStack, VStack } from "~/components";
+import { typo } from "~/lib";
 
-import { ClaudePromptCard } from "./_lib/components/ClaudePromptCard";
-
-type ParseState = { status: "ok"; deck: ImportedDeck } | { status: "error" } | null;
-
-function clampRequired(value: number): number {
-  if (Number.isNaN(value)) return 1;
-  return Math.min(Math.max(Math.round(value), 1), 10);
-}
+import { GenerateDeckForm } from "./_lib/components/GenerateDeckForm";
+import { ManualDeckForm } from "./_lib/components/ManualDeckForm";
 
 export const Route = createFileRoute("/app/decks/new/")({
   head: () => ({ meta: [{ title: typo("Новая колода") }] }),
@@ -22,141 +13,30 @@ export const Route = createFileRoute("/app/decks/new/")({
 });
 
 function NewDeckPage() {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [requiredCorrect, setRequiredCorrect] = useState(2);
-  const [jsonText, setJsonText] = useState("");
-
-  const parseResult = useMemo<ParseState>(() => {
-    const trimmed = jsonText.trim();
-    if (!trimmed) return null;
-    try {
-      return { status: "ok", deck: parseImportedDeck(trimmed) };
-    } catch {
-      return { status: "error" };
-    }
-  }, [jsonText]);
-
-  const parsedTitle = parseResult?.status === "ok" ? parseResult.deck.title : "";
-  const effectiveTitle = title.trim() || parsedTitle;
-  const cardCount = parseResult?.status === "ok" ? parseResult.deck.cards.length : 0;
-
-  const createMutation = useMutation({
-    mutationFn: (payload: {
-      title: string;
-      description: string | null;
-      requiredCorrect: number;
-      cards: ImportedDeck["cards"];
-    }) => createDeck({ data: payload }),
-    onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: ["decks"] });
-      toast.success(typo("Колода создана"));
-      void navigate({ to: "/app/decks/$deckId", params: { deckId: result.id } });
-    },
-    onError: (error) => {
-      console.error(error);
-      toast.error(typo("Не удалось создать колоду"));
-    },
-  });
-
-  const handleSubmit = (event: { preventDefault: () => void }) => {
-    event.preventDefault();
-    if (!effectiveTitle) {
-      toast.error(typo("Укажите название колоды"));
-      return;
-    }
-    if (jsonText.trim() && parseResult?.status !== "ok") {
-      toast.error(typo("JSON не распознан. Проверьте формат по образцу."));
-      return;
-    }
-    createMutation.mutate({
-      title: effectiveTitle,
-      description: description.trim() || null,
-      requiredCorrect: clampRequired(requiredCorrect),
-      cards: parseResult?.status === "ok" ? parseResult.deck.cards : [],
-    });
-  };
+  const [mode, setMode] = useState<"generate" | "manual">("generate");
 
   return (
     <VStack gap="xl" className="max-w-2xl">
       <Heading variant="h1">{typo("Новая колода")}</Heading>
-
-      <ClaudePromptCard />
-
-      <form onSubmit={handleSubmit}>
-        <VStack gap="md">
-          <div>
-            <Label htmlFor="title">{typo("Название")}</Label>
-            <Input
-              id="title"
-              value={title}
-              placeholder={parsedTitle || undefined}
-              onChange={(event) => {
-                setTitle(event.target.value);
-              }}
-            />
-            {!title.trim() && parsedTitle && (
-              <Text variant="mini" color="supplementary">
-                {typo(`Название из файла: ${parsedTitle}`)}
-              </Text>
-            )}
-          </div>
-
-          <div>
-            <Label htmlFor="description">{typo("Описание (необязательно)")}</Label>
-            <Textarea
-              id="description"
-              value={description}
-              onChange={(event) => {
-                setDescription(event.target.value);
-              }}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="required">{typo("Сколько раз свайпнуть вправо для запоминания")}</Label>
-            <Input
-              id="required"
-              type="number"
-              min={1}
-              max={10}
-              value={requiredCorrect}
-              onChange={(event) => {
-                setRequiredCorrect(Number(event.target.value));
-              }}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="json">{typo("JSON с карточками")}</Label>
-            <Textarea
-              id="json"
-              className="min-h-40 font-mono"
-              value={jsonText}
-              placeholder={'{ "title": "…", "cards": [ { "question": "…", "answer": "…" } ] }'}
-              onChange={(event) => {
-                setJsonText(event.target.value);
-              }}
-            />
-            {parseResult?.status === "ok" && (
-              <Text variant="small" color="primary">
-                {typo(`Распознано карточек: ${cardCount}`)}
-              </Text>
-            )}
-            {parseResult?.status === "error" && (
-              <Text variant="small" color="destructive">
-                {typo("Не удалось разобрать JSON. Проверьте, что вставлен ответ Клода по образцу.")}
-              </Text>
-            )}
-          </div>
-
-          <Button type="submit" disabled={createMutation.isPending}>
-            {typo("Создать колоду")}
-          </Button>
-        </VStack>
-      </form>
+      <HStack gap="sm">
+        <Button
+          variant={mode === "generate" ? "default" : "outline"}
+          onClick={() => {
+            setMode("generate");
+          }}
+        >
+          {typo("Сгенерировать")}
+        </Button>
+        <Button
+          variant={mode === "manual" ? "default" : "outline"}
+          onClick={() => {
+            setMode("manual");
+          }}
+        >
+          {typo("Вручную (JSON)")}
+        </Button>
+      </HStack>
+      {mode === "generate" ? <GenerateDeckForm /> : <ManualDeckForm />}
     </VStack>
   );
 }

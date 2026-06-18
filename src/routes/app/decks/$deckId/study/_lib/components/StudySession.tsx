@@ -10,6 +10,7 @@ interface StudyCardView {
   id: string;
   question: string;
   answer: string;
+  answerDeep: string | null;
 }
 
 interface StudySessionProps {
@@ -17,6 +18,8 @@ interface StudySessionProps {
   deckTitle: string;
   /** Сколько раз свайпнуть вправо, чтобы карточка считалась выученной в этой сессии. */
   requiredCorrect: number;
+  /** Режим ответа: краткий (обычный текст) или глубокий (markdown). */
+  mode: "short" | "deep";
   initialCards: StudyCardView[];
   onReview: (cardId: string, grade: ReviewGrade) => Promise<unknown>;
 }
@@ -34,7 +37,7 @@ function requeue(queue: StudyCardView[], gap: number): StudyCardView[] {
   return next;
 }
 
-export function StudySession({ deckId, deckTitle, requiredCorrect, initialCards, onReview }: StudySessionProps) {
+export function StudySession({ deckId, deckTitle, requiredCorrect, mode, initialCards, onReview }: StudySessionProps) {
   const navigate = useNavigate();
   const [queue, setQueue] = useState(initialCards);
   // Сколько раз карточку уже свайпнули вправо в этой сессии.
@@ -134,7 +137,13 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, initialCards,
         </HStack>
       </HStack>
 
-      <SwipeCard key={current.id} question={current.question} answer={current.answer} onSwipe={handleSwipe} />
+      <SwipeCard
+        key={current.id}
+        question={current.question}
+        answer={mode === "deep" ? (current.answerDeep ?? current.answer) : current.answer}
+        answerMarkdown={mode === "deep" && current.answerDeep !== null}
+        onSwipe={handleSwipe}
+      />
 
       {requiredCorrect > 1 && (
         <Text variant="small" color="supplementary" align="center">

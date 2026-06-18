@@ -18,6 +18,9 @@ services:
       - .env
     environment:
       PORT: "3000"
+    # Авторизация claude (вход один раз: `docker compose exec -it app claude`) сохраняется между рестартами.
+    volumes:
+      - ./claude-home:/root/.claude
     # Публикуем только на localhost — наружу отдаёт nginx хоста (он же терминирует HTTPS).
     ports:
       - "127.0.0.1:${APP_PORT:-3000}:3000"

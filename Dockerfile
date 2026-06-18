@@ -27,6 +27,9 @@ RUN SKIP_ENV_VALIDATION=1 pnpm build
 FROM base AS runtime
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV HOME=/root
+# claude CLI для режима «Сгенерировать» (claude -p). Авторизация — через том /root/.claude (вход один раз).
+RUN npm install -g @anthropic-ai/claude-code
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
