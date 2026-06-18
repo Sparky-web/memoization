@@ -94,6 +94,8 @@ cd ~/memoization && docker compose up -d --force-recreate
 
 - **claude CLI** ставится в образ (`Dockerfile`: `npm i -g @anthropic-ai/claude-code`).
 - **Авторизация** хранится в томе `./claude-home:/root/.claude` и переживает пересоздание/деплой.
+  Каталог `claude-home` (и `data`) исключён из rsync деплоя (как `.env`) — иначе `--delete` падает
+  на root-овых файлах, созданных claude в контейнере.
   Войти нужно один раз:
   ```bash
   cd ~/memoization

@@ -48,6 +48,8 @@ jobs:
             --exclude='node_modules' \
             --exclude='dist' \
             --exclude='.env' \
+            --exclude='claude-home' \
+            --exclude='data' \
             ./ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/
 
       - name: Сборка и перезапуск на сервере
