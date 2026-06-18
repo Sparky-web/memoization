@@ -17,6 +17,8 @@ export interface GenerationFile {
 export interface GenerationInput {
   materialsText: string;
   questionsText: string;
+  /** Произвольные пожелания пользователя к стилю/форме ответов (может быть пустым). */
+  instructions: string;
   files: GenerationFile[];
 }
 
@@ -55,17 +57,25 @@ const GENERATION_PROMPT = typo(`Ты готовишь карточки для п
 
 Не выводи ничего в ответ — просто создай файл ./output.json. Не выходи за пределы текущей папки.`);
 
+// Добавляем пожелания пользователя к стилю/форме ответов. Они приоритетнее стиля по умолчанию,
+// но НЕ отменяют JSON-схему вывода и язык. Текст пользователя — динамический, typo() не нужен.
+function buildPrompt(instructions: string): string {
+  const trimmed = instructions.trim();
+  if (!trimmed) return GENERATION_PROMPT;
+  return `${GENERATION_PROMPT}\n\n${typo("Дополнительные пожелания пользователя к стилю и форме ответов — следуй им, но сохрани требуемую JSON-схему вывода и язык карточек:")}\n${trimmed}`;
+}
+
 function safeName(name: string): string {
   const cleaned = name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
   return cleaned || "file";
 }
 
 // Запуск claude -p в папке задания: читает ./inputs, пишет ./output.json. Возвращает содержимое output.json.
-function runClaude(jobDir: string): Promise<string> {
+function runClaude(jobDir: string, prompt: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const child = spawn(
       "claude",
-      ["-p", GENERATION_PROMPT, "--model", CLAUDE_MODEL, "--permission-mode", "acceptEdits", "--allowedTools", "Read,Write,Edit,Bash"],
+      ["-p", prompt, "--model", CLAUDE_MODEL, "--permission-mode", "acceptEdits", "--allowedTools", "Read,Write,Edit,Bash"],
       { cwd: jobDir, env: process.env, stdio: ["ignore", "ignore", "pipe"] },
     );
 
@@ -121,7 +131,7 @@ async function runGenerationJob(deckId: string, input: GenerationInput): Promise
       await writeFile(path.join(inputsDir, base), file.bytes);
     }
 
-    const output = await runClaude(jobDir);
+    const output = await runClaude(jobDir, buildPrompt(input.instructions));
     const result = parseGeneratedDeck(output);
 
     await db.$transaction([

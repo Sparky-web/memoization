@@ -39,6 +39,8 @@ export const Route = createFileRoute("/api/generate")({
         const form = await request.formData();
         const materialsText = asString(form.get("materials"));
         const questionsText = asString(form.get("questions"));
+        // Пожелания к стилю/форме ответов — ограничиваем длину, чтобы не раздувать промпт.
+        const instructions = asString(form.get("instructions")).slice(0, 4000);
         const requiredCorrect = clampRequired(Number(asString(form.get("requiredCorrect"))));
 
         let files: GenerationFile[];
@@ -64,7 +66,7 @@ export const Route = createFileRoute("/api/generate")({
           select: { id: true },
         });
 
-        enqueueGeneration(deck.id, { materialsText, questionsText, files });
+        enqueueGeneration(deck.id, { materialsText, questionsText, instructions, files });
 
         return Response.json({ deckId: deck.id });
       },

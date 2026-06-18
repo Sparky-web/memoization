@@ -36,6 +36,7 @@ export function GenerateDeckForm() {
   const [materialsFiles, setMaterialsFiles] = useState<File[]>([]);
   const [questions, setQuestions] = useState("");
   const [questionsFiles, setQuestionsFiles] = useState<File[]>([]);
+  const [instructions, setInstructions] = useState("");
   const [requiredCorrect, setRequiredCorrect] = useState(2);
   const generate = useGenerateDeck();
 
@@ -49,6 +50,7 @@ export function GenerateDeckForm() {
     const form = new FormData();
     form.set("materials", materials);
     form.set("questions", questions);
+    form.set("instructions", instructions);
     form.set("requiredCorrect", String(clampRequired(requiredCorrect)));
     for (const file of materialsFiles) form.append("materialsFiles", file);
     for (const file of questionsFiles) form.append("questionsFiles", file);
@@ -118,6 +120,24 @@ export function GenerateDeckForm() {
               {typo(`Файлов: ${questionsFiles.length}`)}
             </Text>
           )}
+        </VStack>
+
+        <VStack gap="2xs">
+          <Label htmlFor="gen-instructions">{typo("Дополнительные инструкции к ответам (необязательно)")}</Label>
+          <Textarea
+            id="gen-instructions"
+            className="min-h-24"
+            value={instructions}
+            placeholder={typo(
+              "Стиль и подача ответов: «объясняй просто, как пятилетнему», «добавляй примеры», «без воды, только суть», «формальным языком»…",
+            )}
+            onChange={(event) => {
+              setInstructions(event.target.value);
+            }}
+          />
+          <Text variant="mini" color="supplementary">
+            {typo("Применяется к краткому и развёрнутому ответам; формат вывода и язык карточек не меняются.")}
+          </Text>
         </VStack>
 
         <div>
