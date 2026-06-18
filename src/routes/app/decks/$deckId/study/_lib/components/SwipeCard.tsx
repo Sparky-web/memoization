@@ -15,6 +15,9 @@ interface SwipeCardProps {
 const SWIPE_THRESHOLD = 110;
 const TAP_THRESHOLD = 8;
 const INTENT_THRESHOLD = 8;
+// Во сколько раз вертикаль должна превышать горизонталь, чтобы жест считался скроллом,
+// а не свайпом (>1 — щедрый запас под диагональ: реальный палец редко идёт строго вбок).
+const VERTICAL_BIAS = 1.5;
 const EXIT_MS = 280;
 const REST_TRANSITION = "transform 0.28s ease, opacity 0.28s ease";
 
@@ -109,11 +112,18 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
     const deltaY = event.clientY - startYRef.current;
 
     if (axisRef.current === "none") {
-      if (Math.abs(deltaX) < INTENT_THRESHOLD && Math.abs(deltaY) < INTENT_THRESHOLD) return;
-      // Захватываем указатель в ОБЕИХ осях: при x — тащим карточку, при y — сами прокручиваем
-      // содержимое. Поверхность имеет touch-action:none, поэтому браузер уже не отнимет жест.
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+      if (absX < INTENT_THRESHOLD && absY < INTENT_THRESHOLD) return;
+      // Захватываем указатель: при x — тащим карточку, при y — сами прокручиваем контент.
+      // Поверхность имеет touch-action:none, поэтому браузер уже не отнимет жест.
       event.currentTarget.setPointerCapture(event.pointerId);
-      axisRef.current = Math.abs(deltaX) > Math.abs(deltaY) ? "x" : "y";
+      // Свайп — основной жест. Вертикалью (скроллом) считаем движение, только если контент
+      // реально прокручивается И жест заметно круче горизонтали; иначе любая диагональ — свайп.
+      const pane = activePane();
+      let canScroll = false;
+      if (pane) canScroll = pane.scrollHeight > pane.clientHeight;
+      axisRef.current = canScroll && absY > absX * VERTICAL_BIAS ? "y" : "x";
     }
 
     if (axisRef.current === "y") {
