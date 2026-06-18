@@ -126,7 +126,7 @@ interface TextProps extends PropsWithChildren {
   bold?: boolean;
   /** Обрезка по числу строк (`line-clamp`), 1–10. */
   maxLines?: MaxLines;
-  /** Перенос длинных слов (`break-words`) и `hyphens-auto`. */
+  /** Перенос только слишком длинных слов (`break-words`), без авто-дефисов. */
   breakWords?: boolean;
 }
 

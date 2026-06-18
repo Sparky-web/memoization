@@ -143,10 +143,12 @@ export function StudySession({
       )}
 
       <HStack justify="between" align="center" gap="sm" className="shrink-0">
-        <Text variant="small" color="supplementary" maxLines={1}>
-          {typo(deckTitle)}
-        </Text>
-        <HStack gap="sm" align="center">
+        <div className="min-w-0 flex-1">
+          <Text variant="small" color="supplementary" maxLines={1}>
+            {typo(deckTitle)}
+          </Text>
+        </div>
+        <HStack gap="sm" align="center" className="shrink-0 whitespace-nowrap">
           <Text variant="small" color="supplementary">
             {typo(`Осталось: ${queue.length}`)}
           </Text>

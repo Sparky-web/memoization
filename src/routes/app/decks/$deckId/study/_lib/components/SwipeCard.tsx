@@ -93,6 +93,21 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
     }, EXIT_MS);
   };
 
+  // iOS Safari ненадёжно соблюдает touch-action:none и перехватывает диагональный жест
+  // под прокрутку всей страницы (свайп при этом срывается). Поэтому на нативном touchmove
+  // (passive:false) глушим прокрутку, пока идёт жест по карточке. Колбэк-ref, не useEffect.
+  const setCardRef = (node: HTMLDivElement | null) => {
+    cardRef.current = node;
+    if (!node) return () => undefined;
+    const onTouchMove = (event: TouchEvent) => {
+      if (draggingRef.current) event.preventDefault();
+    };
+    node.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => {
+      node.removeEventListener("touchmove", onTouchMove);
+    };
+  };
+
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (submittedRef.current || detailOpen) return;
     // Флаг ставим синхронно в ref — следующий pointermove увидит его сразу.
@@ -184,7 +199,7 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
     <VStack gap="sm" className="min-h-0 w-full flex-1 select-none">
       <div className="min-h-0 w-full flex-1" style={{ perspective: "1200px" }}>
         <div
-          ref={cardRef}
+          ref={setCardRef}
           role="button"
           tabIndex={0}
           aria-label={typo("Карточка. Нажмите, чтобы перевернуть; стрелки влево и вправо — оценка")}

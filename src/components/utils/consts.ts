@@ -67,5 +67,5 @@ export const maxLinesClasses = {
 };
 export type MaxLines = keyof typeof maxLinesClasses;
 
-/** Перенос длинных слов и авто-переносы. */
-export const breakWordsTypographyClasses = "break-words hyphens-auto";
+/** Перенос только слишком длинных слов; без авто-дефисов — они рвут слова посреди. */
+export const breakWordsTypographyClasses = "break-words";
