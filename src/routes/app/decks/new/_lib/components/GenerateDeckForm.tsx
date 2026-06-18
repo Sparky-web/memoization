@@ -80,7 +80,7 @@ export function GenerateDeckForm() {
           <input
             type="file"
             multiple
-            accept=".txt,.md,.markdown,.pdf,.png,.jpg,.jpeg,.csv,.json"
+            accept=".txt,.md,.markdown,.pdf,.doc,.docx,.png,.jpg,.jpeg,.csv,.json"
             className={fileInputClass}
             onChange={(event) => {
               setMaterialsFiles(pickFiles(event.target.files));
@@ -107,7 +107,7 @@ export function GenerateDeckForm() {
           <input
             type="file"
             multiple
-            accept=".txt,.md,.markdown,.pdf,.png,.jpg,.jpeg,.csv,.json"
+            accept=".txt,.md,.markdown,.pdf,.doc,.docx,.png,.jpg,.jpeg,.csv,.json"
             className={fileInputClass}
             onChange={(event) => {
               setQuestionsFiles(pickFiles(event.target.files));

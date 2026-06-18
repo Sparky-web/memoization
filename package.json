@@ -42,6 +42,7 @@
     "srvx": "^0.11.16",
     "tailwind-merge": "^3.6.0",
     "typograf": "^6.8.2",
+    "word-extractor": "^1.0.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import WordExtractor from "word-extractor";
+
 import { parseGeneratedDeck, typo } from "~/lib";
 
 import { db } from "./db";
@@ -21,6 +23,9 @@ export interface GenerationInput {
 const JOBS_ROOT = path.join(process.cwd(), "data", "jobs");
 const CLAUDE_MODEL = "opus";
 const JOB_TIMEOUT_MS = 30 * 60 * 1000;
+
+// Word (.doc/.docx) claude напрямую не читает — извлекаем текст на сервере.
+const wordExtractor = new WordExtractor();
 
 // Промпт для claude -p: он сам читает ./inputs и пишет ./output.json. Обёрнут в typo() по правилу проекта.
 const GENERATION_PROMPT = typo(`Ты готовишь карточки для подготовки к экзамену. В папке ./inputs/ лежат входные данные пользователя:
@@ -102,7 +107,18 @@ async function runGenerationJob(deckId: string, input: GenerationInput): Promise
     if (input.materialsText.trim()) await writeFile(path.join(inputsDir, "materials.md"), input.materialsText, "utf8");
     if (input.questionsText.trim()) await writeFile(path.join(inputsDir, "questions.md"), input.questionsText, "utf8");
     for (const [index, file] of input.files.entries()) {
-      await writeFile(path.join(inputsDir, `${file.field}_${index}_${safeName(file.name)}`), file.bytes);
+      const base = `${file.field}_${index}_${safeName(file.name)}`;
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith(".doc") || lower.endsWith(".docx")) {
+        try {
+          const document = await wordExtractor.extract(file.bytes);
+          await writeFile(path.join(inputsDir, `${base}.txt`), document.getBody(), "utf8");
+          continue;
+        } catch (error) {
+          console.error("word extract failed:", error);
+        }
+      }
+      await writeFile(path.join(inputsDir, base), file.bytes);
     }
 
     const output = await runClaude(jobDir);
