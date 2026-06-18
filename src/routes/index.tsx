@@ -21,7 +21,7 @@ function HomePage() {
   const navigate = useNavigate();
 
   return (
-    <Container className="py-16">
+    <Container className="page-enter py-16">
       <VStack gap="2xl">
         <VStack gap="md" className="max-w-2xl">
           <Heading variant="h1">{typo("Готовьтесь к экзаменам с умными карточками")}</Heading>

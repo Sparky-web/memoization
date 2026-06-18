@@ -1,5 +1,5 @@
 import { Check, RotateCcw, X } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
 
 import { Button, HStack, Text, VStack } from "~/components";
 import { type ReviewGrade, typo } from "~/lib";
@@ -14,6 +14,9 @@ interface SwipeCardProps {
 const SWIPE_THRESHOLD = 110;
 const TAP_THRESHOLD = 8;
 const EXIT_MS = 280;
+
+// Скрываем обратную сторону грани при 3D-перевороте.
+const hiddenBackface: CSSProperties = { backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
 
 export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
   const [flipped, setFlipped] = useState(false);
@@ -84,16 +87,16 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
   };
 
   const exiting = exitDir !== 0;
-  const transform = exiting
+  const cardTransform = exiting
     ? `translateX(${exitDir * 100}vw) rotate(${exitDir * 18}deg)`
     : `translateX(${dragX}px) rotate(${dragX / 25}deg)`;
-  const transition = dragging ? "none" : "transform 0.28s ease, opacity 0.28s ease";
+  const cardTransition = dragging ? "none" : "transform 0.28s ease, opacity 0.28s ease";
   const goodOpacity = dragX > 0 ? Math.min(dragX / SWIPE_THRESHOLD, 1) : 0;
   const againOpacity = dragX < 0 ? Math.min(-dragX / SWIPE_THRESHOLD, 1) : 0;
 
   return (
     <VStack gap="md" className="w-full max-w-md select-none">
-      <div className="w-full" style={{ perspective: "1000px" }}>
+      <div className="w-full" style={{ perspective: "1200px" }}>
         <div
           role="button"
           tabIndex={0}
@@ -103,35 +106,68 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
           onPointerUp={finishDrag}
           onPointerCancel={finishDrag}
           onKeyDown={handleKeyDown}
-          className="cursor-grab touch-none outline-none"
-          style={{ transform, transition, opacity: exiting ? 0 : 1 }}
+          className="relative cursor-grab touch-none outline-none"
+          style={{ transform: cardTransform, transition: cardTransition, opacity: exiting ? 0 : 1, transformStyle: "preserve-3d" }}
         >
-          <VStack gap="md" justify="center" className="bg-card relative min-h-72 rounded-3xl p-6 shadow-md">
-            <Text variant="mini" color="supplementary" align="center">
-              {flipped ? typo("Ответ") : typo("Вопрос")}
-            </Text>
-            <div className="flex flex-1 items-center justify-center">
-              <Text variant="large" align="center">
-                {typo(flipped ? answer : question)}
+          <div
+            className="relative"
+            style={{
+              transformStyle: "preserve-3d",
+              transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+              transition: "transform 0.45s ease",
+            }}
+          >
+            {/* Лицо: вопрос */}
+            <VStack
+              align="between"
+              justify="center"
+              gap="md"
+              className="bg-card min-h-72 rounded-3xl p-6 shadow-md"
+              style={hiddenBackface}
+            >
+              <Text variant="mini" color="supplementary" align="center">
+                {typo("Вопрос")}
               </Text>
-            </div>
-            <Text variant="mini" color="supplementary" align="center">
-              {flipped ? typo("Свайп вправо — вспомнил, влево — было сложно") : typo("Нажмите, чтобы перевернуть")}
-            </Text>
+              <Text variant="large" align="center">
+                {typo(question)}
+              </Text>
+              <Text variant="mini" color="supplementary" align="center">
+                {typo("Нажмите, чтобы перевернуть")}
+              </Text>
+            </VStack>
 
-            <span
-              className="border-primary text-primary pointer-events-none absolute top-4 left-4 rounded-md border-2 px-2 py-1 text-sm font-bold"
-              style={{ opacity: goodOpacity }}
+            {/* Оборот: ответ */}
+            <VStack
+              align="between"
+              justify="center"
+              gap="md"
+              className="bg-card absolute inset-0 rounded-3xl p-6 shadow-md"
+              style={{ ...hiddenBackface, transform: "rotateY(180deg)" }}
             >
-              {typo("Вспомнил")}
-            </span>
-            <span
-              className="border-destructive text-destructive pointer-events-none absolute top-4 right-4 rounded-md border-2 px-2 py-1 text-sm font-bold"
-              style={{ opacity: againOpacity }}
-            >
-              {typo("Сложно")}
-            </span>
-          </VStack>
+              <Text variant="mini" color="supplementary" align="center">
+                {typo("Ответ")}
+              </Text>
+              <Text variant="large" align="center">
+                {typo(answer)}
+              </Text>
+              <Text variant="mini" color="supplementary" align="center">
+                {typo("Свайп вправо — вспомнил, влево — было сложно")}
+              </Text>
+            </VStack>
+          </div>
+
+          <span
+            className="border-success text-success pointer-events-none absolute top-4 left-4 rounded-md border-2 px-2 py-1 text-sm font-bold"
+            style={{ opacity: goodOpacity, transform: "translateZ(60px)" }}
+          >
+            {typo("Вспомнил")}
+          </span>
+          <span
+            className="border-destructive text-destructive pointer-events-none absolute top-4 right-4 rounded-md border-2 px-2 py-1 text-sm font-bold"
+            style={{ opacity: againOpacity, transform: "translateZ(60px)" }}
+          >
+            {typo("Сложно")}
+          </span>
         </div>
       </div>
 

@@ -29,7 +29,7 @@ function SignInPage() {
   };
 
   return (
-    <Container className="flex min-h-screen items-center justify-center">
+    <Container className="page-enter flex min-h-screen items-center justify-center">
       <form onSubmit={handleSubmit} className="w-full max-w-sm">
         <VStack gap="md">
           <Heading variant="h2">{typo("Вход")}</Heading>

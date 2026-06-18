@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 
 import { Container } from "~/components";
 import { typo } from "~/lib";
@@ -17,11 +17,16 @@ export const Route = createFileRoute("/app")({
 });
 
 function AppLayout() {
+  // Меняется при навигации → обёртка перемонтируется и проигрывает анимацию появления.
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+
   return (
     <>
       <AppHeader />
       <Container className="py-8">
-        <Outlet />
+        <div key={pathname} className="page-enter">
+          <Outlet />
+        </div>
       </Container>
     </>
   );

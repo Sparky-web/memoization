@@ -18,6 +18,8 @@
   --accent-foreground: oklch(0.4 0.12 277);
   --destructive: oklch(0.585 0.22 27.2);
   --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.62 0.17 150);
+  --success-foreground: oklch(0.985 0 0);
   --border: oklch(0.9 0.008 286);
   --input: oklch(0.9 0.008 286);
   --ring: oklch(0.55 0.215 277);
@@ -72,6 +74,8 @@
   --accent-foreground: oklch(0.96 0.01 286);
   --destructive: oklch(0.7 0.19 22);
   --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.7 0.16 150);
+  --success-foreground: oklch(0.18 0.02 285);
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.68 0.17 277);
@@ -92,6 +96,8 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -105,4 +111,47 @@
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+/* Появление содержимого страницы при переходе между экранами. */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: page-enter 0.28s ease-out both;
+}
+
+/* Зелёная пульсация на весь экран при свайпе «вспомнил». */
+@keyframes good-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.65);
+  }
+  30% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+.good-pulse {
+  animation: good-pulse 0.6s ease-out forwards;
+}
+
+/* Уважаем настройку «уменьшить движение». */
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .good-pulse {
+    animation: none;
+  }
 }

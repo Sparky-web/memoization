@@ -41,6 +41,8 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, initialCards,
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [reviewed, setReviewed] = useState(0);
   const [learned, setLearned] = useState(0);
+  // Счётчик «вспомнил» — каждое увеличение перезапускает зелёную пульсацию.
+  const [goodPulse, setGoodPulse] = useState(0);
 
   const goToDeck = () => {
     void navigate({ to: "/app/decks/$deckId", params: { deckId } });
@@ -89,6 +91,7 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, initialCards,
 
     // Оптимистично продвигаем сессию...
     setReviewed((value) => value + 1);
+    if (grade === "good") setGoodPulse((value) => value + 1);
     setProgress((map) => ({ ...map, [card.id]: goodCount }));
     if (graduated) setLearned((value) => value + 1);
     setQueue(
@@ -108,6 +111,14 @@ export function StudySession({ deckId, deckTitle, requiredCorrect, initialCards,
 
   return (
     <VStack gap="lg" className="items-center">
+      {goodPulse > 0 && (
+        <div
+          key={goodPulse}
+          aria-hidden
+          className="good-pulse pointer-events-none fixed inset-0 z-50"
+          style={{ background: "radial-gradient(circle at 50% 45%, var(--success), transparent 60%)" }}
+        />
+      )}
       <HStack justify="between" align="center" gap="md" className="w-full max-w-md">
         <Text variant="small" color="supplementary">
           {typo(deckTitle)}
