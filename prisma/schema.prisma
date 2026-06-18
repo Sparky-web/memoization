@@ -74,6 +74,8 @@ model Deck {
   id          String   @id @default(cuid())
   title       String
   description String?
+  /// Сколько раз свайпнуть карточку вправо, чтобы считать её выученной в сессии.
+  requiredCorrect Int    @default(2)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

@@ -10,41 +10,49 @@ interface SwipeCardProps {
   onSwipe: (grade: ReviewGrade) => void;
 }
 
-// Сдвиг для засчитывания свайпа и порог, ниже которого жест считается тапом (переворот).
+// Сдвиг для засчитывания свайпа, порог тапа (переворот) и длительность анимации вылета.
 const SWIPE_THRESHOLD = 110;
 const TAP_THRESHOLD = 8;
+const EXIT_MS = 280;
 
 export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
   const [flipped, setFlipped] = useState(false);
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
+  // Направление вылета карточки: -1 влево («сложно»), +1 вправо («вспомнил»), 0 — на месте.
+  const [exitDir, setExitDir] = useState(0);
   const startXRef = useRef(0);
   const submittedRef = useRef(false);
-
-  // Каждая карточка отправляется не более одного раза: защита от двойного свайпа/нажатия (дубль reviewCard).
-  const commit = (grade: ReviewGrade) => {
-    if (submittedRef.current) return;
-    submittedRef.current = true;
-    onSwipe(grade);
-  };
 
   const toggleFlip = () => {
     setFlipped((value) => !value);
   };
 
+  // Запускаем анимацию вылета, а сам ответ отправляем, когда карточка «улетела».
+  const commit = (grade: ReviewGrade) => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    setDragging(false);
+    setExitDir(grade === "good" ? 1 : -1);
+    setTimeout(() => {
+      onSwipe(grade);
+    }, EXIT_MS);
+  };
+
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (submittedRef.current) return;
     setDragging(true);
     startXRef.current = event.clientX;
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!dragging) return;
+    if (!dragging || submittedRef.current) return;
     setDragX(event.clientX - startXRef.current);
   };
 
   const finishDrag = () => {
-    if (!dragging) return;
+    if (!dragging || submittedRef.current) return;
     setDragging(false);
     const delta = dragX;
     if (delta > SWIPE_THRESHOLD) {
@@ -60,6 +68,7 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (submittedRef.current) return;
     if (event.key === "ArrowRight") {
       commit("good");
       return;
@@ -74,6 +83,11 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
     }
   };
 
+  const exiting = exitDir !== 0;
+  const transform = exiting
+    ? `translateX(${exitDir * 100}vw) rotate(${exitDir * 18}deg)`
+    : `translateX(${dragX}px) rotate(${dragX / 25}deg)`;
+  const transition = dragging ? "none" : "transform 0.28s ease, opacity 0.28s ease";
   const goodOpacity = dragX > 0 ? Math.min(dragX / SWIPE_THRESHOLD, 1) : 0;
   const againOpacity = dragX < 0 ? Math.min(-dragX / SWIPE_THRESHOLD, 1) : 0;
 
@@ -90,12 +104,9 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
           onPointerCancel={finishDrag}
           onKeyDown={handleKeyDown}
           className="cursor-grab touch-none outline-none"
-          style={{
-            transform: `translateX(${dragX}px) rotate(${dragX / 25}deg)`,
-            transition: dragging ? "none" : "transform 0.25s ease",
-          }}
+          style={{ transform, transition, opacity: exiting ? 0 : 1 }}
         >
-          <VStack gap="md" justify="center" className="bg-card relative min-h-72 rounded-3xl p-6 shadow-sm">
+          <VStack gap="md" justify="center" className="bg-card relative min-h-72 rounded-3xl p-6 shadow-md">
             <Text variant="mini" color="supplementary" align="center">
               {flipped ? typo("Ответ") : typo("Вопрос")}
             </Text>

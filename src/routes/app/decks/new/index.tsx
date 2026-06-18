@@ -11,6 +11,11 @@ import { ClaudePromptCard } from "./_lib/components/ClaudePromptCard";
 
 type ParseState = { status: "ok"; deck: ImportedDeck } | { status: "error" } | null;
 
+function clampRequired(value: number): number {
+  if (Number.isNaN(value)) return 1;
+  return Math.min(Math.max(Math.round(value), 1), 10);
+}
+
 export const Route = createFileRoute("/app/decks/new/")({
   head: () => ({ meta: [{ title: typo("Новая колода") }] }),
   component: NewDeckPage,
@@ -21,6 +26,7 @@ function NewDeckPage() {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [requiredCorrect, setRequiredCorrect] = useState(2);
   const [jsonText, setJsonText] = useState("");
 
   const parseResult = useMemo<ParseState>(() => {
@@ -38,8 +44,12 @@ function NewDeckPage() {
   const cardCount = parseResult?.status === "ok" ? parseResult.deck.cards.length : 0;
 
   const createMutation = useMutation({
-    mutationFn: (payload: { title: string; description: string | null; cards: ImportedDeck["cards"] }) =>
-      createDeck({ data: payload }),
+    mutationFn: (payload: {
+      title: string;
+      description: string | null;
+      requiredCorrect: number;
+      cards: ImportedDeck["cards"];
+    }) => createDeck({ data: payload }),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["decks"] });
       toast.success(typo("Колода создана"));
@@ -64,6 +74,7 @@ function NewDeckPage() {
     createMutation.mutate({
       title: effectiveTitle,
       description: description.trim() || null,
+      requiredCorrect: clampRequired(requiredCorrect),
       cards: parseResult?.status === "ok" ? parseResult.deck.cards : [],
     });
   };
@@ -100,6 +111,20 @@ function NewDeckPage() {
               value={description}
               onChange={(event) => {
                 setDescription(event.target.value);
+              }}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="required">{typo("Сколько раз свайпнуть вправо для запоминания")}</Label>
+            <Input
+              id="required"
+              type="number"
+              min={1}
+              max={10}
+              value={requiredCorrect}
+              onChange={(event) => {
+                setRequiredCorrect(Number(event.target.value));
               }}
             />
           </div>

@@ -12,11 +12,13 @@ const MASTERED_INTERVAL_DAYS = 21;
 const deckFieldsInput = zodRussian.object({
   title: zodRussian.string().min(1).max(200),
   description: zodRussian.string().max(2000).nullable(),
+  requiredCorrect: zodRussian.number().int().min(1).max(10),
 });
 
 const createDeckInput = zodRussian.object({
   title: zodRussian.string().min(1).max(200),
   description: zodRussian.string().max(2000).nullable(),
+  requiredCorrect: zodRussian.number().int().min(1).max(10),
   cards: zodRussian.array(importedCardSchema).max(2000),
 });
 
@@ -74,6 +76,7 @@ export const getDeckById = createServerFn({ method: "GET" })
         id: true,
         title: true,
         description: true,
+        requiredCorrect: true,
         createdAt: true,
         cards: {
           orderBy: { position: "asc" },
@@ -108,6 +111,7 @@ export const createDeck = createServerFn({ method: "POST" })
         userId: context.session.user.id,
         title: data.title,
         description: data.description,
+        requiredCorrect: data.requiredCorrect,
         cards: {
           create: data.cards.map((card, index) => ({ question: card.question, answer: card.answer, position: index })),
         },

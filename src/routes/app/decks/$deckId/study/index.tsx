@@ -34,6 +34,12 @@ function StudyPage() {
   const handleReview = (cardId: string, grade: ReviewGrade) => reviewMutation.mutateAsync({ cardId, grade });
 
   return (
-    <StudySession deckId={data.deckId} deckTitle={data.deckTitle} initialCards={data.cards} onReview={handleReview} />
+    <StudySession
+      deckId={data.deckId}
+      deckTitle={data.deckTitle}
+      requiredCorrect={data.requiredCorrect}
+      initialCards={data.cards}
+      onReview={handleReview}
+    />
   );
 }

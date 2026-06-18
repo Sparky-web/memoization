@@ -61,7 +61,8 @@ export function useDeckActions(deckId: string) {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: DECKS_KEY });
 
   const rename = useMutation({
-    mutationFn: (data: { title: string; description: string | null }) => updateDeck({ data: { id: deckId, data } }),
+    mutationFn: (data: { title: string; description: string | null; requiredCorrect: number }) =>
+      updateDeck({ data: { id: deckId, data } }),
     onSuccess: () => {
       toast.success(typo("Колода обновлена"));
       void invalidate();

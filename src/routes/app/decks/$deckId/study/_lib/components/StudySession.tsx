@@ -15,29 +15,32 @@ interface StudyCardView {
 interface StudySessionProps {
   deckId: string;
   deckTitle: string;
+  /** Сколько раз свайпнуть вправо, чтобы карточка считалась выученной в этой сессии. */
+  requiredCorrect: number;
   initialCards: StudyCardView[];
   onReview: (cardId: string, grade: ReviewGrade) => Promise<unknown>;
 }
 
-// На сколько позиций назад возвращается карточка, отвеченная «сложно» — чтобы повторить её в этой же сессии.
-const REQUEUE_GAP = 3;
+// Куда вернуть карточку: «сложно» — близко (повторить скорее), «вспомнил, но ещё не выучена» — дальше.
+const REQUEUE_AGAIN_GAP = 2;
+const REQUEUE_GOOD_GAP = 6;
 
-// «Вспомнил» — карточка покидает сессию; «сложно» — возвращается на REQUEUE_GAP позиций назад.
-function advanceQueue(queue: StudyCardView[], grade: ReviewGrade): StudyCardView[] {
+function requeue(queue: StudyCardView[], gap: number): StudyCardView[] {
   const [head, ...rest] = queue;
   if (!head) return queue;
-  if (grade === "good") return rest;
-  const insertAt = Math.min(REQUEUE_GAP, rest.length);
+  const insertAt = Math.min(gap, rest.length);
   const next = [...rest];
   next.splice(insertAt, 0, head);
   return next;
 }
 
-export function StudySession({ deckId, deckTitle, initialCards, onReview }: StudySessionProps) {
+export function StudySession({ deckId, deckTitle, requiredCorrect, initialCards, onReview }: StudySessionProps) {
   const navigate = useNavigate();
   const [queue, setQueue] = useState(initialCards);
+  // Сколько раз карточку уже свайпнули вправо в этой сессии.
+  const [progress, setProgress] = useState<Record<string, number>>({});
   const [reviewed, setReviewed] = useState(0);
-  const [good, setGood] = useState(0);
+  const [learned, setLearned] = useState(0);
 
   const goToDeck = () => {
     void navigate({ to: "/app/decks/$deckId", params: { deckId } });
@@ -60,7 +63,6 @@ export function StudySession({ deckId, deckTitle, initialCards, onReview }: Stud
   const current = queue[0];
 
   if (!current) {
-    const accuracy = reviewed > 0 ? Math.round((good / reviewed) * 100) : 0;
     return (
       <VStack gap="lg" justify="center" className="items-center py-16">
         <Heading variant="h2" align="center">
@@ -68,8 +70,7 @@ export function StudySession({ deckId, deckTitle, initialCards, onReview }: Stud
         </Heading>
         <HStack gap="md" wrap justify="center">
           <Stat label={typo("Повторено")} value={reviewed} />
-          <Stat label={typo("Вспомнили")} value={good} />
-          <Stat label={typo("Точность")} value={`${accuracy}%`} />
+          <Stat label={typo("Выучено")} value={`${learned} / ${initialCards.length}`} />
         </HStack>
         <Button onClick={goToDeck}>{typo("К колоде")}</Button>
       </VStack>
@@ -79,17 +80,31 @@ export function StudySession({ deckId, deckTitle, initialCards, onReview }: Stud
   const handleSwipe = (grade: ReviewGrade) => {
     const card = current;
     const previousQueue = queue;
+    const previousProgress = progress;
+    const previousReviewed = reviewed;
+    const previousLearned = learned;
+
+    const goodCount = grade === "good" ? (progress[card.id] ?? 0) + 1 : 0;
+    const graduated = grade === "good" && goodCount >= requiredCorrect;
+
     // Оптимистично продвигаем сессию...
     setReviewed((value) => value + 1);
-    if (grade === "good") setGood((value) => value + 1);
-    setQueue(advanceQueue(previousQueue, grade));
+    setProgress((map) => ({ ...map, [card.id]: goodCount }));
+    if (graduated) setLearned((value) => value + 1);
+    setQueue(
+      graduated ? previousQueue.slice(1) : requeue(previousQueue, grade === "good" ? REQUEUE_GOOD_GAP : REQUEUE_AGAIN_GAP),
+    );
+
     // ...и откатываем всё, если ответ не удалось сохранить на сервере (тост покажет мутация).
     void onReview(card.id, grade).catch(() => {
       setQueue(previousQueue);
-      setReviewed((value) => Math.max(value - 1, 0));
-      if (grade === "good") setGood((value) => Math.max(value - 1, 0));
+      setProgress(previousProgress);
+      setReviewed(previousReviewed);
+      setLearned(previousLearned);
     });
   };
+
+  const currentProgress = progress[current.id] ?? 0;
 
   return (
     <VStack gap="lg" className="items-center">
@@ -102,6 +117,11 @@ export function StudySession({ deckId, deckTitle, initialCards, onReview }: Stud
         </Text>
       </HStack>
       <SwipeCard key={current.id} question={current.question} answer={current.answer} onSwipe={handleSwipe} />
+      {requiredCorrect > 1 && (
+        <Text variant="small" color="supplementary">
+          {typo(`Вправо для запоминания: ${currentProgress} из ${requiredCorrect}`)}
+        </Text>
+      )}
       <Button variant="link" onClick={goToDeck}>
         {typo("Завершить")}
       </Button>

@@ -9,13 +9,21 @@ import { authMiddleware } from "~/server/middleware";
 const MS_PER_MINUTE = 60_000;
 const STUDY_BATCH = 60;
 
+// Случайный порядок карточек в сессии (decorate-sort-undecorate со случайным ключом).
+function shuffle<T>(items: T[]): T[] {
+  return items
+    .map((item) => ({ item, sortKey: Math.random() }))
+    .sort((left, right) => left.sortKey - right.sortKey)
+    .map((entry) => entry.item);
+}
+
 export const getStudyQueue = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator(zodRussian.object({ deckId: zodRussian.string() }))
   .handler(async ({ data, context }) => {
     const deck = await context.db.deck.findFirst({
       where: { id: data.deckId, userId: context.session.user.id },
-      select: { id: true, title: true },
+      select: { id: true, title: true, requiredCorrect: true },
     });
     if (!deck) {
       setResponseStatus(404);
@@ -30,7 +38,8 @@ export const getStudyQueue = createServerFn({ method: "GET" })
       select: { id: true, question: true, answer: true },
     });
 
-    return { deckId: deck.id, deckTitle: deck.title, cards };
+    // Карточки к показу берём по сроку (самые «просроченные» вперёд), а внутри сессии тасуем.
+    return { deckId: deck.id, deckTitle: deck.title, requiredCorrect: deck.requiredCorrect, cards: shuffle(cards) };
   });
 
 export const reviewCard = createServerFn({ method: "POST" })
