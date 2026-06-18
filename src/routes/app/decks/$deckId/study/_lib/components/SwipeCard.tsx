@@ -10,13 +10,16 @@ interface SwipeCardProps {
   onSwipe: (grade: ReviewGrade) => void;
 }
 
-// Сдвиг для засчитывания свайпа, порог тапа (переворот) и длительность анимации вылета.
+// Сдвиг для засчитывания свайпа, порог тапа (переворот), порог определения оси и время вылета.
 const SWIPE_THRESHOLD = 110;
 const TAP_THRESHOLD = 8;
+const INTENT_THRESHOLD = 8;
 const EXIT_MS = 280;
 
 // Скрываем обратную сторону грани при 3D-перевороте.
 const hiddenBackface: CSSProperties = { backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
+// Карточка занимает почти весь экран; контент внутри скроллится, если не помещается.
+const cardSize: CSSProperties = { height: "calc(100dvh - 16rem)", minHeight: "20rem" };
 
 export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
   const [flipped, setFlipped] = useState(false);
@@ -25,6 +28,9 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
   // Направление вылета карточки: -1 влево («сложно»), +1 вправо («вспомнил»), 0 — на месте.
   const [exitDir, setExitDir] = useState(0);
   const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  // Ось жеста: пока не определена — none; горизонталь — свайп, вертикаль — отдаём прокрутке контента.
+  const axisRef = useRef<"none" | "x" | "y">("none");
   const submittedRef = useRef(false);
 
   const toggleFlip = () => {
@@ -46,27 +52,37 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
     if (submittedRef.current) return;
     setDragging(true);
     startXRef.current = event.clientX;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    startYRef.current = event.clientY;
+    axisRef.current = "none";
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (!dragging || submittedRef.current) return;
-    setDragX(event.clientX - startXRef.current);
+    const deltaX = event.clientX - startXRef.current;
+    const deltaY = event.clientY - startYRef.current;
+    if (axisRef.current === "none") {
+      if (Math.abs(deltaX) < INTENT_THRESHOLD && Math.abs(deltaY) < INTENT_THRESHOLD) return;
+      axisRef.current = Math.abs(deltaX) > Math.abs(deltaY) ? "x" : "y";
+    }
+    if (axisRef.current === "y") return; // вертикаль — пусть скроллится контент
+    setDragX(deltaX);
   };
 
   const finishDrag = () => {
     if (!dragging || submittedRef.current) return;
     setDragging(false);
     const delta = dragX;
-    if (delta > SWIPE_THRESHOLD) {
+    const axis = axisRef.current;
+    axisRef.current = "none";
+    if (axis === "x" && delta > SWIPE_THRESHOLD) {
       commit("good");
       return;
     }
-    if (delta < -SWIPE_THRESHOLD) {
+    if (axis === "x" && delta < -SWIPE_THRESHOLD) {
       commit("again");
       return;
     }
-    if (Math.abs(delta) < TAP_THRESHOLD) toggleFlip();
+    if (axis === "none" && Math.abs(delta) < TAP_THRESHOLD) toggleFlip();
     setDragX(0);
   };
 
@@ -95,7 +111,7 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
   const againOpacity = dragX < 0 ? Math.min(-dragX / SWIPE_THRESHOLD, 1) : 0;
 
   return (
-    <VStack gap="md" className="w-full max-w-md select-none">
+    <VStack gap="md" className="w-full max-w-xl select-none">
       <div className="w-full" style={{ perspective: "1200px" }}>
         <div
           role="button"
@@ -105,55 +121,59 @@ export function SwipeCard({ question, answer, onSwipe }: SwipeCardProps) {
           onPointerMove={handlePointerMove}
           onPointerUp={finishDrag}
           onPointerCancel={finishDrag}
+          onPointerLeave={finishDrag}
           onKeyDown={handleKeyDown}
-          className="relative cursor-grab touch-none outline-none"
+          className="relative cursor-grab touch-pan-y outline-none"
           style={{ transform: cardTransform, transition: cardTransition, opacity: exiting ? 0 : 1, transformStyle: "preserve-3d" }}
         >
           <div
             className="relative"
             style={{
+              ...cardSize,
               transformStyle: "preserve-3d",
               transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
               transition: "transform 0.45s ease",
             }}
           >
             {/* Лицо: вопрос */}
-            <VStack
-              align="between"
-              justify="center"
-              gap="md"
-              className="bg-card min-h-72 rounded-3xl p-6 shadow-md"
+            <div
+              className="bg-card absolute inset-0 flex flex-col gap-4 rounded-3xl p-6 shadow-md"
               style={hiddenBackface}
             >
               <Text variant="mini" color="supplementary" align="center">
                 {typo("Вопрос")}
               </Text>
-              <Text variant="large" align="center">
-                {typo(question)}
-              </Text>
+              <div className="flex-1 overflow-y-auto">
+                <div className="flex min-h-full items-center justify-center">
+                  <Text variant="large" align="center" breakWords>
+                    {typo(question)}
+                  </Text>
+                </div>
+              </div>
               <Text variant="mini" color="supplementary" align="center">
                 {typo("Нажмите, чтобы перевернуть")}
               </Text>
-            </VStack>
+            </div>
 
             {/* Оборот: ответ */}
-            <VStack
-              align="between"
-              justify="center"
-              gap="md"
-              className="bg-card absolute inset-0 rounded-3xl p-6 shadow-md"
+            <div
+              className="bg-card absolute inset-0 flex flex-col gap-4 rounded-3xl p-6 shadow-md"
               style={{ ...hiddenBackface, transform: "rotateY(180deg)" }}
             >
               <Text variant="mini" color="supplementary" align="center">
                 {typo("Ответ")}
               </Text>
-              <Text variant="large" align="center">
-                {typo(answer)}
-              </Text>
+              <div className="flex-1 overflow-y-auto">
+                <div className="flex min-h-full items-center justify-center">
+                  <Text variant="large" align="center" breakWords>
+                    {typo(answer)}
+                  </Text>
+                </div>
+              </div>
               <Text variant="mini" color="supplementary" align="center">
                 {typo("Свайп вправо — вспомнил, влево — было сложно")}
               </Text>
-            </VStack>
+            </div>
           </div>
 
           <span
