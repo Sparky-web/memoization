@@ -7,7 +7,6 @@ import { authMiddleware } from "~/server/middleware";
 // Сессия повторения: очередь карточек к показу и применение оценки свайпа.
 
 const MS_PER_MINUTE = 60_000;
-const STUDY_BATCH = 60;
 
 // Случайный порядок карточек в сессии (decorate-sort-undecorate со случайным ключом).
 function shuffle<T>(items: T[]): T[] {
@@ -31,10 +30,10 @@ export const getStudyQueue = createServerFn({ method: "GET" })
     }
 
     // Карточки, у которых подошёл срок (dueAt ≤ сейчас). Новые карточки due сразу.
+    // Без лимита: в сессию попадают все наступившие карточки (а не первые 60).
     const cards = await context.db.card.findMany({
       where: { deckId: deck.id, dueAt: { lte: new Date() } },
       orderBy: { dueAt: "asc" },
-      take: STUDY_BATCH,
       select: { id: true, question: true, answer: true, answerDeep: true },
     });
 
