@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { FileText, Repeat, Sparkles } from "lucide-react";
+import { BookOpen, Repeat, Sparkles } from "lucide-react";
 
 import { AdaptiveGrid, Button, Container, Heading, HStack, SimpleCard, Text, VStack } from "~/components";
 import { typo } from "~/lib";
@@ -16,7 +16,7 @@ export const Route = createFileRoute("/")({
       { title: typo("Мемокарты — подготовка к экзаменам") },
       {
         name: "description",
-        content: typo("Превратите список вопросов в карточки и запоминайте ответы интервальными повторениями."),
+        content: typo("Соберите колоду из конспектов или вопросов — ИИ составит ответы — и учите их свайпами с интервальным повторением."),
       },
     ],
   }),
@@ -33,7 +33,7 @@ function HomePage() {
           <Heading variant="h1">{typo("Готовьтесь к экзаменам с умными карточками")}</Heading>
           <Text variant="large" color="supplementary">
             {typo(
-              "Превратите список вопросов в колоду карточек и запоминайте ответы интервальными повторениями: трудные вопросы возвращаются чаще, выученные — реже.",
+              "Загрузите конспекты или список вопросов — ИИ соберёт колоду с краткими и развёрнутыми ответами. Учите свайпами: трудные карточки возвращаются чаще, выученные — реже.",
             )}
           </Text>
           <HStack gap="sm" wrap>
@@ -56,27 +56,27 @@ function HomePage() {
         </VStack>
 
         <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="md">
-          <SimpleCard title={typo("1. Подготовьте вопросы")}>
-            <HStack gap="sm" align="start">
-              <FileText className="text-primary mt-0.5 size-5 shrink-0" />
-              <Text color="supplementary">
-                {typo("Скопируйте готовый промпт и попросите Клода превратить ваш файл с вопросами в пары «вопрос — ответ».")}
-              </Text>
-            </HStack>
-          </SimpleCard>
-          <SimpleCard title={typo("2. Загрузите колоду")}>
+          <SimpleCard title={typo("1. Соберите колоду")}>
             <HStack gap="sm" align="start">
               <Sparkles className="text-primary mt-0.5 size-5 shrink-0" />
               <Text color="supplementary">
-                {typo("Вставьте ответ Клода в формате JSON — обе стороны карточек сохранятся в вашей базе.")}
+                {typo("Сгенерируйте карточки из конспектов, вопросов или файлов (doc, pdf, txt) — или добавьте их вручную.")}
               </Text>
             </HStack>
           </SimpleCard>
-          <SimpleCard title={typo("3. Запоминайте свайпами")}>
+          <SimpleCard title={typo("2. Учите свайпами")}>
             <HStack gap="sm" align="start">
               <Repeat className="text-primary mt-0.5 size-5 shrink-0" />
               <Text color="supplementary">
-                {typo("Вспоминайте ответ, переворачивайте карточку и свайпайте: вправо — вспомнил, влево — было трудно.")}
+                {typo("Переворачивайте карточку и свайпайте: вправо — вспомнил, влево — трудно. Сложное возвращается чаще.")}
+              </Text>
+            </HStack>
+          </SimpleCard>
+          <SimpleCard title={typo("3. Разбирайтесь глубже")}>
+            <HStack gap="sm" align="start">
+              <BookOpen className="text-primary mt-0.5 size-5 shrink-0" />
+              <Text color="supplementary">
+                {typo("Открывайте развёрнутые ответы с формулами и примерами и следите за прогрессом по каждой колоде.")}
               </Text>
             </HStack>
           </SimpleCard>
