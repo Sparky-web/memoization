@@ -124,7 +124,8 @@ model Card {
   deckId String
   deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
 
-  reviews Review[]
+  reviews      Review[]
+  chatMessages ChatMessage[]
 
   @@index([deckId, dueAt])
 }
@@ -145,4 +146,19 @@ model Review {
 
   @@index([deckId, reviewedAt])
   @@index([userId, reviewedAt])
+}
+
+/// История чата по теме карточки (вопросы пользователя и ответы Claude).
+model ChatMessage {
+  id String @id @default(cuid())
+  /// "user" — вопрос пользователя | "assistant" — ответ Claude.
+  role    String
+  content String
+
+  createdAt DateTime @default(now())
+
+  cardId String
+  card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId, createdAt])
 }

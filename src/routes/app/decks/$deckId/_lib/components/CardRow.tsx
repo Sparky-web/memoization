@@ -1,10 +1,11 @@
 import { useState } from "react";
 
-import { Badge, Button, HStack, MarkdownView, ResponsiveModal, Text, VStack } from "~/components";
+import { Badge, Button, HStack, MarkdownView, Text, VStack } from "~/components";
 import { type CardStage, cardStage, typo } from "~/lib";
 
 import { useCardEditor } from "../model/deckMutations";
 import type { DeckCard } from "../model/deckQueries";
+import { CardDeepDialog } from "./CardDeepDialog";
 import { CardFormModal } from "./CardFormModal";
 
 const STAGE_META: Record<CardStage, { label: string; variant: "muted" | "default" | "primary" }> = {
@@ -63,9 +64,13 @@ export function CardRow({ card }: CardRowProps) {
       </HStack>
 
       {card.answerDeep && (
-        <ResponsiveModal open={detailOpen} onOpenChange={setDetailOpen} title={typo(card.question)}>
-          <MarkdownView>{card.answerDeep}</MarkdownView>
-        </ResponsiveModal>
+        <CardDeepDialog
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+          cardId={card.id}
+          title={typo(card.question)}
+          answerDeep={card.answerDeep}
+        />
       )}
 
       <CardFormModal

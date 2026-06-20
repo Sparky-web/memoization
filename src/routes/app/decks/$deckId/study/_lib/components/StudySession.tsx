@@ -160,6 +160,7 @@ export function StudySession({
 
       <SwipeCard
         key={current.id}
+        cardId={current.id}
         question={current.question}
         answer={current.answer}
         answerDeep={current.answerDeep}

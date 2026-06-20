@@ -1,10 +1,13 @@
 import { BookOpen, Check, RotateCcw, X } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
 
-import { Button, HStack, MarkdownView, ResponsiveModal, Text, VStack } from "~/components";
+import { Button, HStack, MarkdownView, Text, VStack } from "~/components";
 import { type ReviewGrade, typo } from "~/lib";
 
+import { CardDeepDialog } from "../../../_lib";
+
 interface SwipeCardProps {
+  cardId: string;
   question: string;
   answer: string;
   /** Развёрнутый ответ (markdown) — показывается по кнопке «Изучить подробнее»; null — кнопки нет. */
@@ -25,7 +28,7 @@ const hiddenBackface: CSSProperties = { backfaceVisibility: "hidden", WebkitBack
 
 type Axis = "none" | "x" | "y";
 
-export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardProps) {
+export function SwipeCard({ cardId, question, answer, answerDeep, onSwipe }: SwipeCardProps) {
   const [flipped, setFlipped] = useState(false);
   const [exitDir, setExitDir] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -314,9 +317,13 @@ export function SwipeCard({ question, answer, answerDeep, onSwipe }: SwipeCardPr
       </HStack>
 
       {answerDeep && (
-        <ResponsiveModal open={detailOpen} onOpenChange={setDetailOpen} title={typo(question)}>
-          <MarkdownView>{answerDeep}</MarkdownView>
-        </ResponsiveModal>
+        <CardDeepDialog
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+          cardId={cardId}
+          title={typo(question)}
+          answerDeep={answerDeep}
+        />
       )}
     </VStack>
   );

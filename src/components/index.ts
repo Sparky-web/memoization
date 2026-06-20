@@ -1,6 +1,7 @@
 export { authClient } from "./base/authClient";
 export { AdaptiveGrid } from "./blaze/AdaptiveGrid";
 export { Badge } from "./blaze/Badge";
+export { ChatPanel } from "./blaze/ChatPanel";
 export { Container } from "./blaze/Container";
 export { Heading } from "./blaze/Heading";
 export { HStack } from "./blaze/HStack";
