@@ -8,6 +8,7 @@ import { AddCardButton } from "./_lib/components/AddCardButton";
 import { CardRow } from "./_lib/components/CardRow";
 import { DeckHeader } from "./_lib/components/DeckHeader";
 import { DeckStatsPanel } from "./_lib/components/DeckStatsPanel";
+import { ExercisesPanel } from "./_lib/components/ExercisesPanel";
 import { useResetDeck } from "./_lib/model/deckMutations";
 import { deckQueries } from "./_lib/model/deckQueries";
 
@@ -76,6 +77,14 @@ function DeckDetailPage() {
               </Button>
             )}
           </HStack>
+
+          <ExercisesPanel
+            deckId={deckId}
+            fillCount={stats.fillCount}
+            quizCount={stats.quizCount}
+            exercisesStatus={deck.exercisesStatus}
+            exercisesError={deck.exercisesError}
+          />
 
           <VStack gap="md">
             <Heading variant="h3">{typo(`Карточки · ${stats.totalCards}`)}</Heading>

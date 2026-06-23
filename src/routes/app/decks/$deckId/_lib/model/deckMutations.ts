@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { typo } from "~/lib";
 import { addCard, deleteCard, updateCard } from "~/server/fn/cards";
 import { deleteDeck, updateDeck } from "~/server/fn/decks";
+import { generateDeckExercises } from "~/server/fn/exercises";
 import { resetDeckProgress } from "~/server/fn/study";
 
 // Все мутации инвалидируют корневой ключ ["decks"] — он покрывает список, деталь и статистику.
@@ -94,6 +95,21 @@ export function useDeckActions(deckId: string) {
   });
 
   return { rename, removeDeck };
+}
+
+export function useGenerateExercises(deckId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => generateDeckExercises({ data: { deckId } }),
+    onSuccess: () => {
+      toast.success(typo("Запустили генерацию заданий и тестов"));
+      void queryClient.invalidateQueries({ queryKey: DECKS_KEY });
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось запустить генерацию заданий"));
+    },
+  });
 }
 
 export function useResetDeck(deckId: string) {

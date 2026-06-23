@@ -160,9 +160,13 @@ body {
 
 /* Уважаем настройку «уменьшить движение». */
 @media (prefers-reduced-motion: reduce) {
-  .page-enter,
+  .page-enter {
+    animation: none;
+  }
+  /* Вспышку без анимации полностью прячем: иначе статичный overlay залил бы экран зелёным. */
   .good-pulse {
     animation: none;
+    opacity: 0;
   }
 }
 

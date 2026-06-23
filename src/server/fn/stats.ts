@@ -96,14 +96,17 @@ export const getDeckStats = createServerFn({ method: "GET" })
     const now = new Date();
     const since = new Date(now.getTime() - ACTIVITY_DAYS * DAY_MS);
 
-    const [totalCards, newCards, masteredCards, dueCards, gradeGroups, recentReviews] = await Promise.all([
-      context.db.card.count({ where: { deckId: deck.id } }),
-      context.db.card.count({ where: { deckId: deck.id, reps: 0 } }),
-      context.db.card.count({ where: { deckId: deck.id, streak: { gte: deck.requiredCorrect } } }),
-      context.db.card.count({ where: { deckId: deck.id, dueAt: { lte: now } } }),
-      context.db.review.groupBy({ by: ["grade"], where: { deckId: deck.id }, _count: { _all: true } }),
-      context.db.review.findMany({ where: { deckId: deck.id, reviewedAt: { gte: since } }, select: { reviewedAt: true } }),
-    ]);
+    const [totalCards, newCards, masteredCards, dueCards, gradeGroups, recentReviews, fillCount, quizCount] =
+      await Promise.all([
+        context.db.card.count({ where: { deckId: deck.id } }),
+        context.db.card.count({ where: { deckId: deck.id, reps: 0 } }),
+        context.db.card.count({ where: { deckId: deck.id, streak: { gte: deck.requiredCorrect } } }),
+        context.db.card.count({ where: { deckId: deck.id, dueAt: { lte: now } } }),
+        context.db.review.groupBy({ by: ["grade"], where: { deckId: deck.id }, _count: { _all: true } }),
+        context.db.review.findMany({ where: { deckId: deck.id, reviewedAt: { gte: since } }, select: { reviewedAt: true } }),
+        context.db.fillTask.count({ where: { deckId: deck.id, hidden: false } }),
+        context.db.quizTask.count({ where: { deckId: deck.id, hidden: false } }),
+      ]);
 
     const learningCards = Math.max(totalCards - newCards - masteredCards, 0);
     const goodCount = gradeGroups.find((group) => group.grade === "good")?._count._all ?? 0;
@@ -118,6 +121,8 @@ export const getDeckStats = createServerFn({ method: "GET" })
       dueCards,
       totalReviews,
       accuracy,
+      fillCount,
+      quizCount,
       activity: buildActivitySeries(recentReviews),
     };
   });

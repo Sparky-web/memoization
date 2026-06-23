@@ -1,8 +1,10 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 
 import { AdaptiveGrid, Button, Heading, HStack, SimpleCard, Stat, Text, VStack } from "~/components";
 import { typo } from "~/lib";
+import { generateMissingExercises } from "~/server/fn/exercises";
 
 import { DeckCard } from "./_lib/components/DeckCard";
 import { dashboardQueries } from "./_lib/model/dashboardQueries";
@@ -15,11 +17,34 @@ export const Route = createFileRoute("/app/")({
 
 function DashboardPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: decks } = useSuspenseQuery(dashboardQueries.decks());
 
   const totalCards = decks.reduce((sum, deck) => sum + deck.totalCards, 0);
   const dueTotal = decks.reduce((sum, deck) => sum + deck.dueCount, 0);
   const masteredTotal = decks.reduce((sum, deck) => sum + deck.masteredCount, 0);
+
+  // Колоды без заданий тренажёра — кандидаты на догенерацию.
+  const needBackfill = decks.filter(
+    (deck) => deck.totalCards > 0 && (deck.exercisesStatus === "none" || deck.exercisesStatus === "failed"),
+  ).length;
+  const anyExercisesProcessing = decks.some((deck) => deck.exercisesStatus === "processing");
+
+  const backfill = useMutation({
+    mutationFn: () => generateMissingExercises(),
+    onSuccess: (result) => {
+      if (result.queued) {
+        toast.success(typo(`Запустили генерацию заданий: ${result.queued}`));
+      } else {
+        toast.success(typo("Задания уже сгенерированы для всех колод"));
+      }
+      void queryClient.invalidateQueries({ queryKey: ["decks"] });
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось запустить генерацию заданий"));
+    },
+  });
 
   const goToNewDeck = () => {
     void navigate({ to: "/app/decks/new" });
@@ -29,8 +54,27 @@ function DashboardPage() {
     <VStack gap="xl">
       <HStack justify="between" align="center" gap="md" wrap>
         <Heading variant="h1">{typo("Мои колоды")}</Heading>
-        <Button onClick={goToNewDeck}>{typo("Новая колода")}</Button>
+        <HStack gap="sm" wrap>
+          {needBackfill > 0 && (
+            <Button
+              variant="outline"
+              disabled={backfill.isPending}
+              onClick={() => {
+                backfill.mutate();
+              }}
+            >
+              {typo(`Сгенерировать задания · ${needBackfill}`)}
+            </Button>
+          )}
+          <Button onClick={goToNewDeck}>{typo("Новая колода")}</Button>
+        </HStack>
       </HStack>
+
+      {anyExercisesProcessing && (
+        <Text variant="small" color="supplementary">
+          {typo("Задания «вставь слово» и тесты генерируются в фоне — это займёт несколько минут.")}
+        </Text>
+      )}
 
       {decks.length ? (
         <>

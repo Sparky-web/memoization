@@ -4,7 +4,8 @@ import path from "node:path";
 
 import WordExtractor from "word-extractor";
 
-import { parseGeneratedDeck, typo } from "~/lib";
+import type { GeneratedFillTask, GeneratedQuizTask } from "~/lib";
+import { parseGeneratedDeck, parseGeneratedExercises, typo } from "~/lib";
 
 import { db } from "./db";
 
@@ -70,13 +71,128 @@ function buildPrompt(instructions: string): string {
   return `${GENERATION_PROMPT}\n\n${typo("Дополнительные пожелания пользователя к стилю и форме ответов — следуй им, но сохрани требуемую JSON-схему вывода и язык карточек:")}\n${trimmed}`;
 }
 
+// Промпт прохода «вставь слово»: claude читает ./inputs, пишет ./fill.json.
+const FILL_PROMPT = typo(`Ты делаешь тренажёр «вставь пропущенное слово» для подготовки к экзамену. В папке ./inputs/ лежат материалы (конспекты, вопросы или карточки колоды).
+
+Сначала изучи всё в ./inputs/: выполни «ls -la inputs», затем полностью прочитай каждый файл (инструмент Read; большие файлы читай частями).
+
+Составь от 100 до 150 заданий «вставь слово» строго по этим материалам:
+1. Каждое задание — короткое предложение или определение из материала, в котором ПРОПУЩЕНО одно ключевое слово или термин. Место пропуска обозначь РОВНО тремя подчёркиваниями: ___ (ровно один пропуск на задание).
+2. «answer» — пропущенное слово или короткая фраза (1–3 слова).
+3. «distractors» — ровно 3 правдоподобных, но НЕВЕРНЫХ варианта того же рода и формы (чтобы выбор был неочевиден). Правильный ответ среди них не повторяй.
+4. По контексту предложения должно быть однозначно понятно, какое слово вставлять.
+5. В поле «prompt» не используй markdown — обычный текст. Математику, если нужна, оформляй формулами LaTeX между одиночными $...$.
+6. Язык — русский (или язык исходных материалов). Не повторяй одинаковые задания.
+
+Результат запиши строго как валидный JSON в файл ./fill.json (инструмент Write), без каких-либо пояснений вокруг, по схеме:
+
+{
+  "fillTasks": [
+    { "prompt": "Второй закон Ньютона: сила равна произведению массы на ___.", "answer": "ускорение", "distractors": ["скорость", "импульс", "энергию"] }
+  ]
+}
+
+Не выводи ничего в ответ — просто создай файл ./fill.json. Не выходи за пределы текущей папки.`);
+
+// Промпт прохода «тесты»: claude читает ./inputs, пишет ./quiz.json.
+const QUIZ_PROMPT = typo(`Ты делаешь тест с вариантами ответа для подготовки к экзамену. В папке ./inputs/ лежат материалы (конспекты, вопросы или карточки колоды).
+
+Сначала изучи всё в ./inputs/: выполни «ls -la inputs», затем полностью прочитай каждый файл (инструмент Read; большие файлы читай частями).
+
+Составь от 100 до 150 тестовых вопросов строго по этим материалам:
+1. Каждый вопрос — «question» с ровно 4 вариантами в «options».
+2. Ровно ОДИН вариант правильный; его индекс (0, 1, 2 или 3; 0 — первый вариант) укажи в «correctIndex».
+3. Неверные варианты — правдоподобные, по той же теме, без явных подсказок длиной или формулировкой. Не используй «все перечисленные» / «ни один из вариантов».
+4. «explanation» — короткое пояснение, почему верен правильный вариант (1–2 предложения).
+5. Математику оформляй формулами LaTeX (между одиночными $...$). Язык — русский (или язык исходных материалов). Не повторяй одинаковые вопросы.
+
+Результат запиши строго как валидный JSON в файл ./quiz.json (инструмент Write), без каких-либо пояснений вокруг, по схеме:
+
+{
+  "quizTasks": [
+    { "question": "В каких единицах измеряется сила?", "options": ["Ньютон", "Джоуль", "Ватт", "Паскаль"], "correctIndex": 0, "explanation": "Ньютон — единица силы в СИ." }
+  ]
+}
+
+Не выводи ничего в ответ — просто создай файл ./quiz.json. Не выходи за пределы текущей папки.`);
+
 function safeName(name: string): string {
   const cleaned = name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
   return cleaned || "file";
 }
 
-// Запуск claude -p в папке задания: читает ./inputs, пишет ./output.json. Возвращает содержимое output.json.
-function runClaude(jobDir: string, prompt: string): Promise<string> {
+// Записывает сгенерированные задания/тесты, заменяя прошлые (перегенерация — идемпотентна).
+// Тесты с битым correctIndex отбрасываем, остальное сохраняем (частичный успех важнее «всё или ничего»).
+async function writeExercisesToDb(
+  deckId: string,
+  fillTasks: GeneratedFillTask[],
+  quizTasks: GeneratedQuizTask[],
+): Promise<void> {
+  const validQuiz = quizTasks.filter((task) => task.correctIndex < task.options.length);
+  await db.$transaction([
+    db.fillTask.deleteMany({ where: { deckId } }),
+    db.quizTask.deleteMany({ where: { deckId } }),
+    db.fillTask.createMany({
+      data: fillTasks.map((task, index) => ({
+        deckId,
+        prompt: task.prompt,
+        answer: task.answer,
+        // Не более 3 дистракторов (на режим выбора нужно 4 варианта = ответ + 3).
+        distractors: task.distractors.slice(0, 3),
+        position: index,
+      })),
+    }),
+    db.quizTask.createMany({
+      data: validQuiz.map((task, index) => ({
+        deckId,
+        question: task.question,
+        options: task.options,
+        correctIndex: task.correctIndex,
+        explanation: task.explanation ?? null,
+        position: index,
+      })),
+    }),
+  ]);
+}
+
+// Два независимых прохода claude (fill.json, quiz.json) поверх готового ./inputs.
+// Каждый проход изолирован: падение одного не теряет результат другого.
+async function runExercisesPasses(deckId: string, jobDir: string): Promise<void> {
+  try {
+    let fillTasks: GeneratedFillTask[] = [];
+    let quizTasks: GeneratedQuizTask[] = [];
+
+    try {
+      fillTasks = parseGeneratedExercises(await runClaude(jobDir, FILL_PROMPT, "fill.json")).fillTasks;
+    } catch (error) {
+      console.error("fill pass:", error);
+    }
+    try {
+      quizTasks = parseGeneratedExercises(await runClaude(jobDir, QUIZ_PROMPT, "quiz.json")).quizTasks;
+    } catch (error) {
+      console.error("quiz pass:", error);
+    }
+
+    await writeExercisesToDb(deckId, fillTasks, quizTasks);
+
+    const hasAny = fillTasks.length || quizTasks.length;
+    await db.deck.update({
+      where: { id: deckId },
+      data: hasAny
+        ? { exercisesStatus: "ready", exercisesError: null }
+        : { exercisesStatus: "failed", exercisesError: typo("Не удалось сгенерировать задания и тесты") },
+    });
+  } catch (error) {
+    console.error(error);
+    const message = error instanceof Error ? error.message : typo("Ошибка генерации заданий");
+    await db.deck
+      .update({ where: { id: deckId }, data: { exercisesStatus: "failed", exercisesError: message.slice(0, 500) } })
+      .catch(() => undefined);
+  }
+}
+
+// Запуск claude -p в папке задания: читает ./inputs, пишет файл outFile. Возвращает его содержимое.
+function runClaude(jobDir: string, prompt: string, outFile: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const child = spawn(
       "claude",
@@ -102,7 +218,7 @@ function runClaude(jobDir: string, prompt: string): Promise<string> {
     child.on("close", () => {
       clearTimeout(timer);
       if (stderr.trim()) console.error("claude stderr:", stderr.slice(0, 1000));
-      readFile(path.join(jobDir, "output.json"), "utf8").then(
+      readFile(path.join(jobDir, outFile), "utf8").then(
         (content) => {
           resolve(content);
         },
@@ -136,13 +252,20 @@ async function runGenerationJob(deckId: string, input: GenerationInput): Promise
       await writeFile(path.join(inputsDir, base), file.bytes);
     }
 
-    const output = await runClaude(jobDir, buildPrompt(input.instructions));
+    const output = await runClaude(jobDir, buildPrompt(input.instructions), "output.json");
     const result = parseGeneratedDeck(output);
 
     await db.$transaction([
       db.deck.update({
         where: { id: deckId },
-        data: { title: result.title, description: result.description ?? null, status: "ready", generationError: null },
+        data: {
+          title: result.title,
+          description: result.description ?? null,
+          status: "ready",
+          generationError: null,
+          // Карточки готовы — сразу запускаем генерацию заданий/тестов следующим шагом.
+          exercisesStatus: "processing",
+        },
       }),
       db.card.createMany({
         data: result.cards.map((card, index) => ({
@@ -154,6 +277,10 @@ async function runGenerationJob(deckId: string, input: GenerationInput): Promise
         })),
       }),
     ]);
+
+    // Карточки уже сохранены (колода готова) — задания/тесты генерируем поверх тех же ./inputs.
+    // Свои ошибки этот шаг не пробрасывает: неудача заданий не делает колоду failed.
+    await runExercisesPasses(deckId, jobDir);
   } catch (error) {
     console.error(error);
     const message = error instanceof Error ? error.message : typo("Неизвестная ошибка генерации");
@@ -165,9 +292,48 @@ async function runGenerationJob(deckId: string, input: GenerationInput): Promise
   }
 }
 
+// Догенерация заданий/тестов для уже готовой колоды (ручной запуск или старый/импортированный
+// набор). Источник — сами карточки колоды (исходных материалов уже нет).
+async function runDeckExercisesJob(deckId: string): Promise<void> {
+  const jobDir = path.join(JOBS_ROOT, `${deckId}-exercises`);
+  const inputsDir = path.join(jobDir, "inputs");
+  try {
+    const cards = await db.card.findMany({
+      where: { deckId },
+      orderBy: { position: "asc" },
+      select: { question: true, answer: true },
+    });
+    if (!cards.length) {
+      await db.deck.update({
+        where: { id: deckId },
+        data: { exercisesStatus: "failed", exercisesError: typo("В колоде нет карточек для генерации заданий") },
+      });
+      return;
+    }
+
+    await mkdir(inputsDir, { recursive: true });
+    const source = cards.map((card, index) => `${index + 1}. ${card.question}\n${card.answer}`).join("\n\n");
+    await writeFile(path.join(inputsDir, "materials.md"), source, "utf8");
+
+    await runExercisesPasses(deckId, jobDir);
+  } catch (error) {
+    console.error(error);
+    const message = error instanceof Error ? error.message : typo("Ошибка генерации заданий");
+    await db.deck
+      .update({ where: { id: deckId }, data: { exercisesStatus: "failed", exercisesError: message.slice(0, 500) } })
+      .catch(() => undefined);
+  } finally {
+    await rm(jobDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 // Очередь: один claude за раз (Opus ресурсоёмкий). runGenerationJob сам не бросает — цепочка живёт.
 let queueTail: Promise<void> = Promise.resolve();
 
 export function enqueueGeneration(deckId: string, input: GenerationInput): void {
   queueTail = queueTail.then(() => runGenerationJob(deckId, input));
+}
+
+export function enqueueDeckExercises(deckId: string): void {
+  queueTail = queueTail.then(() => runDeckExercisesJob(deckId));
 }

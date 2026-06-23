@@ -51,3 +51,35 @@ export function parseGeneratedDeck(rawText: string): GeneratedDeck {
   const parsed: unknown = JSON.parse(stripCodeFences(rawText).trim());
   return generatedDeckSchema.parse(parsed);
 }
+
+// --- Тренажёр: задания «вставь слово» и тесты (отдельные проходы claude) ---
+
+const generatedFillTaskSchema = zodRussian.object({
+  prompt: zodRussian.string().min(1).max(2000),
+  answer: zodRussian.string().min(1).max(200),
+  distractors: zodRussian.array(zodRussian.string().min(1).max(200)).max(8).default([]),
+});
+
+const generatedQuizTaskSchema = zodRussian.object({
+  question: zodRussian.string().min(1).max(2000),
+  options: zodRussian.array(zodRussian.string().min(1).max(600)).min(2).max(8),
+  correctIndex: zodRussian.number().int().min(0).max(7),
+  explanation: zodRussian.string().max(2000).optional(),
+});
+
+// Оба прохода (fill.json / quiz.json) валидируются одной схемой: отсутствующий
+// массив подставляется пустым, чтобы файл с одним типом заданий не падал.
+const generatedExercisesSchema = zodRussian.object({
+  fillTasks: zodRussian.array(generatedFillTaskSchema).max(400).default([]),
+  quizTasks: zodRussian.array(generatedQuizTaskSchema).max(400).default([]),
+});
+
+export type GeneratedFillTask = z.infer<typeof generatedFillTaskSchema>;
+export type GeneratedQuizTask = z.infer<typeof generatedQuizTaskSchema>;
+type GeneratedExercises = z.infer<typeof generatedExercisesSchema>;
+
+/** Разбор файла с заданиями/тестами, который пишет claude -p. */
+export function parseGeneratedExercises(rawText: string): GeneratedExercises {
+  const parsed: unknown = JSON.parse(stripCodeFences(rawText).trim());
+  return generatedExercisesSchema.parse(parsed);
+}

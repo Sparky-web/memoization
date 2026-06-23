@@ -15,6 +15,14 @@ void db.deck
   })
   .catch(() => undefined);
 
+// Аналогично — прерванная генерация заданий/тестов.
+void db.deck
+  .updateMany({
+    where: { exercisesStatus: "processing" },
+    data: { exercisesStatus: "failed", exercisesError: typo("Генерация заданий прервана перезапуском сервера") },
+  })
+  .catch(() => undefined);
+
 const fetch = createStartHandler(defaultStreamHandler);
 
 export default createServerEntry(

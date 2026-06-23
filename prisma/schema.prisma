@@ -80,14 +80,20 @@ model Deck {
   status          String  @default("ready")
   /// Текст ошибки генерации (если status = "failed").
   generationError String?
+  /// Статус генерации заданий и тестов: "none" | "processing" | "ready" | "failed".
+  exercisesStatus String  @default("none")
+  /// Текст ошибки генерации заданий (если exercisesStatus = "failed").
+  exercisesError  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  cards   Card[]
-  reviews Review[]
+  cards     Card[]
+  reviews   Review[]
+  fillTasks FillTask[]
+  quizTasks QuizTask[]
 
   @@index([userId])
 }
@@ -161,4 +167,66 @@ model ChatMessage {
   card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@index([cardId, createdAt])
+}
+
+// --- Тренажёр: задания «вставь слово» и тесты (генерируются Claude по материалам) ---
+
+/// Задание «вставь слово»: предложение/определение с пропуском (обозначен «___»).
+/// Отвечать можно выбором из вариантов (answer + distractors) или вводом вручную.
+model FillTask {
+  id          String   @id @default(cuid())
+  /// Текст с пропуском; место пропуска — ровно три подчёркивания «___».
+  prompt      String
+  /// Правильное слово/короткая фраза для пропуска.
+  answer      String
+  /// Неверные варианты для режима выбора (обычно 3).
+  distractors String[]
+  /// Порядок добавления (стабильный показ/диагностика).
+  position    Int      @default(0)
+
+  /// Накопленная статистика для весов выборки.
+  attempts     Int   @default(0)
+  correctCount Int   @default(0)
+  wrongCount   Int   @default(0)
+  /// Вес подмешивания: растёт при ошибке, падает при успехе — спотыкания показываем чаще.
+  weight       Float @default(1)
+  lastSeenAt   DateTime?
+  /// Дизлайк: задание отсеяно пользователем и больше не показывается.
+  hidden       Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deckId String
+  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@index([deckId, hidden])
+}
+
+/// Тест: вопрос с несколькими вариантами, ровно один правильный (по индексу correctIndex).
+model QuizTask {
+  id           String   @id @default(cuid())
+  question     String
+  /// Варианты ответа (обычно 4).
+  options      String[]
+  /// Индекс правильного варианта в options (0-based).
+  correctIndex Int
+  /// Короткое пояснение к правильному ответу (необязательно).
+  explanation  String?
+  position     Int      @default(0)
+
+  attempts     Int   @default(0)
+  correctCount Int   @default(0)
+  wrongCount   Int   @default(0)
+  weight       Float @default(1)
+  lastSeenAt   DateTime?
+  hidden       Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deckId String
+  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@index([deckId, hidden])
 }
