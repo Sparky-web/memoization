@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Button, Heading, HStack, Input, Label, Text, Textarea, VStack } from "~/components";
+import { Badge, Button, Heading, HStack, Input, Label, Text, Textarea, VStack } from "~/components";
 import { typo } from "~/lib";
 
-import { useDeckActions } from "../model/deckMutations";
+import { useDeckActions, useRemoveFavorite } from "../model/deckMutations";
 import type { DeckDetail } from "../model/deckQueries";
+import { ShareDeckControl } from "./ShareDeckControl";
 
 function clampRequired(value: number): number {
   if (Number.isNaN(value)) return 1;
@@ -16,7 +17,42 @@ interface DeckHeaderProps {
   deck: DeckDetail;
 }
 
+// Шапка колоды: для владельца — редактирование/удаление/публикация, для избранной чужой — автор и кнопка убрать.
 export function DeckHeader({ deck }: DeckHeaderProps) {
+  if (deck.isOwner) return <OwnerDeckHeader deck={deck} />;
+  return <FavoriteDeckHeader deck={deck} />;
+}
+
+function FavoriteDeckHeader({ deck }: DeckHeaderProps) {
+  const remove = useRemoveFavorite(deck.id);
+
+  return (
+    <VStack gap="sm">
+      <HStack justify="between" align="start" gap="md" wrap>
+        <VStack gap="2xs">
+          <Heading variant="h1">{typo(deck.title)}</Heading>
+          <Badge variant="muted">{typo("В избранном")}</Badge>
+        </VStack>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={remove.isPending}
+          onClick={() => {
+            remove.mutate();
+          }}
+        >
+          {typo("Убрать из избранного")}
+        </Button>
+      </HStack>
+      {deck.description && <Text color="supplementary">{typo(deck.description)}</Text>}
+      <Text variant="mini" color="supplementary">
+        {deck.authorName ? typo(`Автор: ${deck.authorName}`) : typo("Чужая колода — вы учите её со своим прогрессом")}
+      </Text>
+    </VStack>
+  );
+}
+
+function OwnerDeckHeader({ deck }: DeckHeaderProps) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(deck.title);
   const [description, setDescription] = useState(deck.description ?? "");
@@ -120,6 +156,7 @@ export function DeckHeader({ deck }: DeckHeaderProps) {
       <Text variant="mini" color="supplementary">
         {typo(`Для запоминания: ${deck.requiredCorrect} свайпов вправо`)}
       </Text>
+      <ShareDeckControl deckId={deck.id} isPublic={deck.isPublic} />
     </VStack>
   );
 }

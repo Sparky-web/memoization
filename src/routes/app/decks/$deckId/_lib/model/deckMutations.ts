@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { typo } from "~/lib";
 import { addCard, deleteCard, updateCard } from "~/server/fn/cards";
-import { deleteDeck, updateDeck } from "~/server/fn/decks";
+import { deleteDeck, removeFavorite, setDeckPublic, updateDeck } from "~/server/fn/decks";
 import { generateDeckExercises } from "~/server/fn/exercises";
 import { resetDeckProgress } from "~/server/fn/study";
 
@@ -108,6 +108,40 @@ export function useGenerateExercises(deckId: string) {
     onError: (error) => {
       console.error(error);
       toast.error(typo("Не удалось запустить генерацию заданий"));
+    },
+  });
+}
+
+// Публикация колоды (владелец): включает/выключает доступ по ссылке.
+export function useShareDeck(deckId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (isPublic: boolean) => setDeckPublic({ data: { id: deckId, isPublic } }),
+    onSuccess: (result) => {
+      toast.success(result.isPublic ? typo("Доступ по ссылке открыт") : typo("Доступ по ссылке закрыт"));
+      void queryClient.invalidateQueries({ queryKey: DECKS_KEY });
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось изменить доступ к колоде"));
+    },
+  });
+}
+
+// Убрать чужую колоду из избранного (на её странице) — после этого доступ к ней теряется, уходим на дашборд.
+export function useRemoveFavorite(deckId: string) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  return useMutation({
+    mutationFn: () => removeFavorite({ data: { deckId } }),
+    onSuccess: () => {
+      toast.success(typo("Убрали из избранного"));
+      void queryClient.invalidateQueries({ queryKey: DECKS_KEY });
+      void navigate({ to: "/app" });
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось убрать из избранного"));
     },
   });
 }

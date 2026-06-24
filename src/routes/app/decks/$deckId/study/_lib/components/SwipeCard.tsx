@@ -12,6 +12,8 @@ interface SwipeCardProps {
   answer: string;
   /** Развёрнутый ответ (markdown) — показывается по кнопке «Изучить подробнее»; null — кнопки нет. */
   answerDeep: string | null;
+  /** Владелец колоды — для него в окне «подробнее» доступен чат по карточке. */
+  isOwner: boolean;
   onSwipe: (grade: ReviewGrade) => void;
 }
 
@@ -28,7 +30,7 @@ const hiddenBackface: CSSProperties = { backfaceVisibility: "hidden", WebkitBack
 
 type Axis = "none" | "x" | "y";
 
-export function SwipeCard({ cardId, question, answer, answerDeep, onSwipe }: SwipeCardProps) {
+export function SwipeCard({ cardId, question, answer, answerDeep, isOwner, onSwipe }: SwipeCardProps) {
   const [flipped, setFlipped] = useState(false);
   const [exitDir, setExitDir] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -323,6 +325,7 @@ export function SwipeCard({ cardId, question, answer, answerDeep, onSwipe }: Swi
           cardId={cardId}
           title={typo(question)}
           answerDeep={answerDeep}
+          canChat={isOwner}
         />
       )}
     </VStack>

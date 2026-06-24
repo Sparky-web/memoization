@@ -7,10 +7,15 @@ import { typo } from "~/lib";
 import { generateMissingExercises } from "~/server/fn/exercises";
 
 import { DeckCard } from "./_lib/components/DeckCard";
+import { FavoriteDeckCard } from "./_lib/components/FavoriteDeckCard";
 import { dashboardQueries } from "./_lib/model/dashboardQueries";
 
 export const Route = createFileRoute("/app/")({
-  loader: ({ context }) => context.queryClient.ensureQueryData(dashboardQueries.decks()),
+  loader: ({ context }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(dashboardQueries.decks()),
+      context.queryClient.ensureQueryData(dashboardQueries.favorites()),
+    ]),
   head: () => ({ meta: [{ title: typo("Колоды") }] }),
   component: DashboardPage,
 });
@@ -19,6 +24,7 @@ function DashboardPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: decks } = useSuspenseQuery(dashboardQueries.decks());
+  const { data: favorites } = useSuspenseQuery(dashboardQueries.favorites());
 
   const totalCards = decks.reduce((sum, deck) => sum + deck.totalCards, 0);
   const dueTotal = decks.reduce((sum, deck) => sum + deck.dueCount, 0);
@@ -103,6 +109,20 @@ function DashboardPage() {
           </HStack>
         </SimpleCard>
       )}
+
+      {favorites.length ? (
+        <VStack gap="md">
+          <Heading variant="h2">{typo("Избранное")}</Heading>
+          <Text variant="small" color="supplementary">
+            {typo("Чужие колоды, которыми с вами поделились. Вы учите их со своим прогрессом.")}
+          </Text>
+          <AdaptiveGrid cols={{ base: 1, md: 2, lg: 3 }} gap="md">
+            {favorites.map((deck) => (
+              <FavoriteDeckCard key={deck.id} deck={deck} />
+            ))}
+          </AdaptiveGrid>
+        </VStack>
+      ) : null}
     </VStack>
   );
 }

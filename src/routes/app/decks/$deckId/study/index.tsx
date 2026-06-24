@@ -51,6 +51,7 @@ function StudyPage() {
       deckId={data.deckId}
       deckTitle={data.deckTitle}
       requiredCorrect={data.requiredCorrect}
+      isOwner={data.isOwner}
       initialCards={data.cards}
       onReview={handleReview}
       onRestart={handleRestart}

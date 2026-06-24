@@ -18,10 +18,12 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @default(now()) @updatedAt
 
-  accounts Account[]
-  sessions Session[]
-  decks    Deck[]
-  reviews  Review[]
+  accounts     Account[]
+  sessions     Session[]
+  decks        Deck[]
+  reviews      Review[]
+  cardProgress CardProgress[]
+  favorites    DeckFavorite[]
 }
 
 model Session {
@@ -84,6 +86,8 @@ model Deck {
   exercisesStatus String  @default("none")
   /// Текст ошибки генерации заданий (если exercisesStatus = "failed").
   exercisesError  String?
+  /// Колода опубликована — доступна по ссылке /d/:id и её можно добавить в избранное.
+  isPublic        Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -94,11 +98,15 @@ model Deck {
   reviews   Review[]
   fillTasks FillTask[]
   quizTasks QuizTask[]
+  favorites DeckFavorite[]
 
   @@index([userId])
 }
 
-/// Карточка: вопрос + ответ и состояние интервального повторения (SM-2 + Leitner-бокс).
+/// Карточка: вопрос + ответ. Прогресс повторения теперь у каждого пользователя свой — в CardProgress
+/// (чтобы чужую колоду можно было учить по своей ссылке со своим прогрессом).
+/// Поля box…lastReviewedAt ниже — историческое состояние владельца (снимок до перехода на CardProgress),
+/// код их больше не читает; источник истины — CardProgress.
 model Card {
   id       String @id @default(cuid())
   question String
@@ -132,8 +140,58 @@ model Card {
 
   reviews      Review[]
   chatMessages ChatMessage[]
+  progress     CardProgress[]
 
   @@index([deckId, dueAt])
+}
+
+/// Прогресс интервального повторения по карточке у конкретного пользователя (SM-2 + Leitner-бокс).
+/// Отсутствие строки = карточка для этого пользователя новая и подлежит показу сразу.
+model CardProgress {
+  id String @id @default(cuid())
+
+  /// Leitner-уровень: 0 — новая, выше — лучше усвоена.
+  box Int @default(0)
+  /// Коэффициент лёгкости SM-2 (как быстро растёт интервал).
+  ease Float @default(2.5)
+  /// Текущий интервал до следующего показа, в днях.
+  intervalDays Float @default(0)
+  /// Когда карточка снова станет к показу.
+  dueAt DateTime @default(now())
+  /// Всего повторений.
+  reps         Int @default(0)
+  correctCount Int @default(0)
+  wrongCount   Int @default(0)
+  /// Подряд верных ответов (сбрасывается при «сложно»).
+  streak         Int       @default(0)
+  lastReviewedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId String
+  card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cardId])
+  @@index([userId, dueAt])
+  @@index([cardId])
+}
+
+/// Избранная (чужая) колода: ссылка пользователя на публичную колоду другого автора.
+model DeckFavorite {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deckId String
+  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deckId])
+  @@index([userId])
+  @@index([deckId])
 }
 
 /// Журнал каждого свайпа — основа статистики (точность, активность по дням, серия).

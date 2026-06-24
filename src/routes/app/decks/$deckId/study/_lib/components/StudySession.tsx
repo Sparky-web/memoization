@@ -18,6 +18,8 @@ interface StudySessionProps {
   deckTitle: string;
   /** Сколько раз свайпнуть вправо, чтобы карточка считалась выученной в этой сессии. */
   requiredCorrect: number;
+  /** Владелец колоды — для него в окне «подробнее» доступен чат по карточке. */
+  isOwner: boolean;
   initialCards: StudyCardView[];
   onReview: (cardId: string, grade: ReviewGrade) => Promise<unknown>;
   onRestart: () => void;
@@ -40,6 +42,7 @@ export function StudySession({
   deckId,
   deckTitle,
   requiredCorrect,
+  isOwner,
   initialCards,
   onReview,
   onRestart,
@@ -164,6 +167,7 @@ export function StudySession({
         question={current.question}
         answer={current.answer}
         answerDeep={current.answerDeep}
+        isOwner={isOwner}
         onSwipe={handleSwipe}
       />
 

@@ -16,9 +16,11 @@ const STAGE_META: Record<CardStage, { label: string; variant: "muted" | "default
 
 interface CardRowProps {
   card: DeckCard;
+  // У избранной чужой колоды карточки только для чтения (редактировать может лишь владелец).
+  canEdit: boolean;
 }
 
-export function CardRow({ card }: CardRowProps) {
+export function CardRow({ card, canEdit }: CardRowProps) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   // editSession растёт при открытии — форма заново подхватывает актуальные значения карточки.
@@ -55,12 +57,16 @@ export function CardRow({ card }: CardRowProps) {
             {typo("Развернуть")}
           </Button>
         )}
-        <Button variant="ghost" size="sm" onClick={openEdit}>
-          {typo("Изменить")}
-        </Button>
-        <Button variant="ghost" size="sm" onClick={handleDelete} disabled={remove.isPending}>
-          {typo("Удалить")}
-        </Button>
+        {canEdit && (
+          <>
+            <Button variant="ghost" size="sm" onClick={openEdit}>
+              {typo("Изменить")}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleDelete} disabled={remove.isPending}>
+              {typo("Удалить")}
+            </Button>
+          </>
+        )}
       </HStack>
 
       {card.answerDeep && (
@@ -70,21 +76,24 @@ export function CardRow({ card }: CardRowProps) {
           cardId={card.id}
           title={typo(card.question)}
           answerDeep={card.answerDeep}
+          canChat={canEdit}
         />
       )}
 
-      <CardFormModal
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        formKey={editSession}
-        title={typo("Редактирование карточки")}
-        submitLabel={typo("Сохранить")}
-        initialValues={{ question: card.question, answer: card.answer, answerDeep: card.answerDeep ?? "" }}
-        pending={update.isPending}
-        onSubmit={(result, options) => {
-          update.mutate({ id: card.id, data: result }, options);
-        }}
-      />
+      {canEdit && (
+        <CardFormModal
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          formKey={editSession}
+          title={typo("Редактирование карточки")}
+          submitLabel={typo("Сохранить")}
+          initialValues={{ question: card.question, answer: card.answer, answerDeep: card.answerDeep ?? "" }}
+          pending={update.isPending}
+          onSubmit={(result, options) => {
+            update.mutate({ id: card.id, data: result }, options);
+          }}
+        />
+      )}
     </VStack>
   );
 }

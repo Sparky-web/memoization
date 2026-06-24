@@ -78,21 +78,23 @@ function DeckDetailPage() {
             )}
           </HStack>
 
-          <ExercisesPanel
-            deckId={deckId}
-            fillCount={stats.fillCount}
-            quizCount={stats.quizCount}
-            exercisesStatus={deck.exercisesStatus}
-            exercisesError={deck.exercisesError}
-          />
+          {deck.isOwner && (
+            <ExercisesPanel
+              deckId={deckId}
+              fillCount={stats.fillCount}
+              quizCount={stats.quizCount}
+              exercisesStatus={deck.exercisesStatus}
+              exercisesError={deck.exercisesError}
+            />
+          )}
 
           <VStack gap="md">
             <Heading variant="h3">{typo(`Карточки · ${stats.totalCards}`)}</Heading>
-            <AddCardButton deckId={deckId} />
+            {deck.isOwner && <AddCardButton deckId={deckId} />}
             {deck.cards.length ? (
               <VStack gap="sm">
                 {deck.cards.map((card) => (
-                  <CardRow key={card.id} card={card} />
+                  <CardRow key={card.id} card={card} canEdit={deck.isOwner} />
                 ))}
               </VStack>
             ) : (

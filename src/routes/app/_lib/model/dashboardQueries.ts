@@ -1,8 +1,8 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { getDecks } from "~/server/fn/decks";
+import { getDecks, getFavorites } from "~/server/fn/decks";
 
-export type { DeckListItem } from "~/server/fn/decks";
+export type { DeckListItem, FavoriteDeckItem } from "~/server/fn/decks";
 
 export const dashboardQueries = {
   decks: () =>
@@ -14,5 +14,10 @@ export const dashboardQueries = {
         query.state.data?.some((deck) => deck.status === "processing" || deck.exercisesStatus === "processing")
           ? 4000
           : false,
+    }),
+  favorites: () =>
+    queryOptions({
+      queryKey: ["decks", "favorites"],
+      queryFn: () => getFavorites(),
     }),
 };
