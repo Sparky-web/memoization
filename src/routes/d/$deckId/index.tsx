@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
 
 import { Badge, Button, Container, Heading, HStack, MarkdownView, Text, VStack } from "~/components";
 import { typo } from "~/lib";
@@ -7,10 +7,43 @@ import { typo } from "~/lib";
 import { publicDeckQueries, useAddFavorite } from "../_lib";
 
 export const Route = createFileRoute("/d/$deckId/")({
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(publicDeckQueries.detail(params.deckId)),
+  // Колода приватная/удалена/ссылка неверна → server fn кидает 404; показываем дружелюбную заглушку, а не 500.
+  loader: async ({ context, params }) => {
+    try {
+      return await context.queryClient.ensureQueryData(publicDeckQueries.detail(params.deckId));
+    } catch {
+      throw notFound();
+    }
+  },
   head: () => ({ meta: [{ title: typo("Колода") }, { name: "robots", content: "noindex, nofollow" }] }),
+  notFoundComponent: PublicDeckNotFound,
   component: PublicDeckPage,
 });
+
+function PublicDeckNotFound() {
+  const navigate = useNavigate();
+  return (
+    <main className="min-h-dvh overflow-y-auto">
+      <Container className="py-8">
+        <VStack gap="md">
+          <Heading variant="h1">{typo("Колода недоступна")}</Heading>
+          <Text color="supplementary">
+            {typo("Ссылка неверна или владелец закрыл доступ к колоде по ссылке.")}
+          </Text>
+          <HStack>
+            <Button
+              onClick={() => {
+                void navigate({ to: "/" });
+              }}
+            >
+              {typo("На главную")}
+            </Button>
+          </HStack>
+        </VStack>
+      </Container>
+    </main>
+  );
+}
 
 function PublicDeckPage() {
   const { deckId } = Route.useParams();
