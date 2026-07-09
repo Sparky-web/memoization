@@ -3,20 +3,25 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders, setResponseStatus } from "@tanstack/react-start/server";
 
 import {
+  FREE_DECK_GENERATIONS,
   FREE_EXAMS,
   mskCalendarDaysBetween,
   PAYWALL_ERRORS,
+  PRO_DECK_GENERATIONS_PER_DAY,
   PRO_EXAMS,
   readiness,
   retrievability,
+  startOfDayMsk,
   typo,
   zodRussian,
 } from "~/lib";
 import { auth } from "~/server/auth";
 import { hasActivePro } from "~/server/entitlement";
-import { cleanupGenerationJob, getGenerationQueuePosition } from "~/server/generation";
+import { cleanupGenerationJob, enqueueGeneration, getGenerationQueuePosition } from "~/server/generation";
+import { cleanupExamMaterials } from "~/server/materialStorage";
 import { authMiddleware, baseMiddleware } from "~/server/middleware";
 import { examReadinessMap } from "~/server/readiness";
+import { tryChargeUsage } from "~/server/usage";
 
 // Экзамен — центральная сущность. Всё скоупится по владельцу; публичное — только isPublic
 // (превью /d/$examId и форк «Забрать себе» — перенос механики публичных колод).
@@ -139,6 +144,10 @@ export const getExamById = createServerFn({ method: "GET" })
             _count: { select: { cards: true } },
           },
         },
+        materials: {
+          orderBy: { createdAt: "asc" },
+          select: { id: true, fileName: true, mimeType: true, sizeBytes: true, createdAt: true },
+        },
       },
     });
     if (!exam) {
@@ -226,6 +235,7 @@ export const getExamById = createServerFn({ method: "GET" })
         hasAnswer: Boolean(question.answerMd),
         cardCount: question._count.cards,
       })),
+      materials: exam.materials,
       topics,
       readiness: readiness(activeCards.map((card) => ({ retrievability: retrievabilityOf(card) }))),
       counters: {
@@ -340,7 +350,77 @@ export const deleteExam = createServerFn({ method: "POST" })
     }
     // Материалы генерации хранились для ретрая — вместе с экзаменом они больше не нужны.
     cleanupGenerationJob(data.id);
+    // Файлы загруженных материалов: записи Material удалил каскад, каталог чистим сами.
+    cleanupExamMaterials(data.id);
     return true;
+  });
+
+const GENERATION_FAIR_USE_ERROR = typo("Дневной fair-use лимит генераций исчерпан — попробуйте завтра");
+
+// Запуск двухпроходной генерации (ответы → карточки). Перегенерация — полная: джоба заменит
+// ответы вопросов и удалит прежние ИИ-карточки (ручные останутся) — предупреждение в confirm UI.
+export const generateExam = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ examId: zodRussian.string() }))
+  .handler(async ({ data, context }) => {
+    const userId = context.session.user.id;
+    const exam = await context.db.exam.findFirst({
+      where: { id: data.examId, userId },
+      select: { id: true, status: true, _count: { select: { questions: true } } },
+    });
+    if (!exam) {
+      setResponseStatus(404);
+      throw new Error(typo("Экзамен не найден"));
+    }
+    if (!exam._count.questions) {
+      setResponseStatus(400);
+      throw new Error(typo("Сначала добавьте вопросы к экзамену"));
+    }
+
+    // Гонкоустойчивый переход в processing: второй параллельный клик не запустит вторую джобу.
+    const flipped = await context.db.exam.updateMany({
+      where: { id: exam.id, status: { in: ["draft", "failed", "ready"] } },
+      data: { status: "processing", generationError: null },
+    });
+    if (!flipped.count) {
+      setResponseStatus(409);
+      throw new Error(typo("Генерация уже идёт"));
+    }
+
+    // Попытка списывается до постановки в очередь атомарно (advisory lock в tryChargeUsage);
+    // при провале генерации джоба вернёт её (refundUsage по refId = examId).
+    let pro: boolean;
+    let charged: boolean;
+    try {
+      pro = await hasActivePro(context.db, userId);
+      charged = pro
+        ? await tryChargeUsage(context.db, {
+            userId,
+            kind: "deck_generation",
+            refId: exam.id,
+            limit: PRO_DECK_GENERATIONS_PER_DAY,
+            since: startOfDayMsk(new Date()),
+          })
+        : await tryChargeUsage(context.db, {
+            userId,
+            kind: "deck_generation",
+            refId: exam.id,
+            limit: FREE_DECK_GENERATIONS,
+          });
+    } catch (error) {
+      // Неожиданная ошибка списания не должна оставить экзамен висеть в processing.
+      await context.db.exam.update({ where: { id: exam.id }, data: { status: exam.status } }).catch(() => undefined);
+      throw error;
+    }
+    if (!charged) {
+      // Лимит исчерпан — возвращаем экзамену прежний статус, генерация не стартует.
+      await context.db.exam.update({ where: { id: exam.id }, data: { status: exam.status } });
+      setResponseStatus(402);
+      throw new Error(pro ? GENERATION_FAIR_USE_ERROR : PAYWALL_ERRORS.GENERATION);
+    }
+
+    enqueueGeneration(exam.id);
+    return { queuePosition: getGenerationQueuePosition(exam.id) };
   });
 
 // Публикация: экзамен доступен по ссылке /d/:id. Снятие публикации отзывает избранное.

@@ -12,6 +12,7 @@ import {
   Heading,
   HStack,
   Input,
+  MarkdownView,
   PaywallCard,
   ResponsiveModal,
   SimpleCard,
@@ -20,7 +21,7 @@ import {
   Textarea,
   VStack,
 } from "~/components";
-import { formatDateRuMsk, isPaywallError, typo } from "~/lib";
+import { formatDateRuMsk, isPaywallError, PAYWALL_ERRORS, typo, zodRussian } from "~/lib";
 import {
   addCard,
   deleteCard,
@@ -31,16 +32,22 @@ import {
   updateCard,
 } from "~/server/fn/cards";
 import { askCardChat, getCardChat } from "~/server/fn/chat";
-import { archiveExam, deleteExam, getExamById, setExamPublic, updateExam } from "~/server/fn/exams";
+import { archiveExam, deleteExam, generateExam, getExamById, setExamPublic, updateExam } from "~/server/fn/exams";
+import { deleteMaterial } from "~/server/fn/materials";
+import { getQuestionById, regenerateQuestionCards, setExamQuestions } from "~/server/fn/questions";
 
-// Временный хаб экзамена волны 1: параметры, вопросы, библиотека карточек и запуск сессий.
-// Полноценный хаб (готовность по темам кольцами, материалы, страницы вопросов) — волна 3.
+// Временный хаб экзамена волн 1–2: параметры, вопросы, материалы, запуск генерации,
+// библиотека карточек и сессии. Полноценный хаб (кольца готовности, мастер) — волна 3.
 
 const examQuery = (examId: string) =>
   queryOptions({
     queryKey: ["exams", "detail", examId],
     queryFn: () => getExamById({ data: { id: examId } }),
+    // Пока идёт генерация — поллим статус (позицию в очереди и появление результата).
+    refetchInterval: (query) => (query.state.data?.status === "processing" ? 4000 : false),
   });
+
+type ExamDetail = Awaited<ReturnType<typeof getExamById>>;
 
 const examCardsQuery = (examId: string) =>
   queryOptions({
@@ -300,6 +307,345 @@ function CardRow({
   );
 }
 
+// Запуск двухпроходной генерации: первая — сразу, повторная — через confirm о полной замене.
+function GenerationCard({ exam }: { exam: ExamDetail }) {
+  const queryClient = useQueryClient();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
+
+  const generate = useMutation({
+    mutationFn: () => generateExam({ data: { examId: exam.id } }),
+    onSuccess: () => {
+      setConfirmOpen(false);
+      void queryClient.invalidateQueries({ queryKey: ["exams"] });
+    },
+    onError: (error) => {
+      setConfirmOpen(false);
+      if (isPaywallError(error, "GENERATION")) {
+        setShowPaywall(true);
+        return;
+      }
+      console.error(error);
+      const humanMessage = /[а-яё]/i.test(error.message) ? error.message : typo("Не удалось запустить генерацию");
+      toast.error(humanMessage);
+    },
+  });
+
+  const processing = exam.status === "processing";
+  const hasGenerated = exam.questions.some((question) => question.hasAnswer);
+  const processingLine = exam.queuePosition
+    ? typo(`В очереди на генерацию: ${exam.queuePosition}`)
+    : typo("Генерируется прямо сейчас — страница обновится сама.");
+
+  return (
+    <SimpleCard title={typo("Генерация")}>
+      {processing ? (
+        <Text variant="small" color="supplementary">
+          {processingLine}
+        </Text>
+      ) : (
+        <Text variant="small" color="supplementary">
+          {typo(
+            "ИИ ответит на каждый вопрос (по материалам — с цитатой источника) и соберёт атомарные карточки четырёх форматов.",
+          )}
+        </Text>
+      )}
+      <HStack gap="sm" align="center" wrap>
+        <Button
+          disabled={processing || generate.isPending || !exam.questions.length}
+          onClick={() => {
+            if (hasGenerated) {
+              setConfirmOpen(true);
+              return;
+            }
+            generate.mutate();
+          }}
+        >
+          {hasGenerated ? typo("Перегенерировать") : typo("Сгенерировать ответы и карточки")}
+        </Button>
+        {!exam.questions.length && (
+          <Text variant="small" color="supplementary">
+            {typo("Сначала добавьте вопросы")}
+          </Text>
+        )}
+      </HStack>
+      {showPaywall && <PaywallCard reason="GENERATION" compact />}
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={typo("Перегенерировать экзамен?")}
+        description={typo(
+          "Полная перегенерация заново ответит на все вопросы: прежние ответы и все ИИ-карточки вместе с их прогрессом будут заменены. Карточки, добавленные вручную, останутся.",
+        )}
+        confirmLabel={typo("Перегенерировать")}
+        confirmPending={generate.isPending}
+        onConfirm={() => {
+          generate.mutate();
+        }}
+      />
+    </SimpleCard>
+  );
+}
+
+// Правка списка вопросов текстом: строка = вопрос; нумерация в начале строки отбрасывается.
+function QuestionsEditorCard({ exam }: { exam: ExamDetail }) {
+  const queryClient = useQueryClient();
+  const [text, setText] = useState(exam.questions.map((question) => question.text).join("\n"));
+
+  const save = useMutation({
+    mutationFn: () => {
+      const lines = text
+        .split("\n")
+        .map((line) => line.replace(/^\s*\d+[.)]\s*/, "").trim())
+        .filter(Boolean);
+      return setExamQuestions({ data: { examId: exam.id, questions: lines } });
+    },
+    onSuccess: (result) => {
+      toast.success(typo(`Сохранили вопросы: ${result.count}`));
+      void queryClient.invalidateQueries({ queryKey: ["exams"] });
+    },
+    onError: (error) => {
+      console.error(error);
+      const humanMessage = /[а-яё]/i.test(error.message) ? error.message : typo("Не удалось сохранить вопросы");
+      toast.error(humanMessage);
+    },
+  });
+
+  return (
+    <SimpleCard title={typo("Вопросы — по одному в строке")}>
+      <Textarea
+        value={text}
+        rows={8}
+        placeholder={typo("1. Первый вопрос\n2. Второй вопрос")}
+        onChange={(event) => {
+          setText(event.target.value);
+        }}
+      />
+      <HStack gap="sm" align="center" wrap>
+        <Button
+          variant="outline"
+          disabled={save.isPending || exam.status === "processing" || !text.trim()}
+          onClick={() => {
+            save.mutate();
+          }}
+        >
+          {typo("Сохранить вопросы")}
+        </Button>
+        <Text variant="mini" color="supplementary">
+          {typo("Сохранение заменяет весь список: ответы и привязка карточек сбросятся — потом перегенерируйте.")}
+        </Text>
+      </HStack>
+    </SimpleCard>
+  );
+}
+
+const uploadErrorText: Record<string, string> = {
+  FILE_TOO_LARGE: typo("Файл больше 10 МБ"),
+  FILE_TYPE: typo("Поддерживаются файлы pdf, docx, doc, txt и md"),
+  TOO_MANY_FILES: typo("Не больше 5 файлов на экзамен"),
+  EMPTY: typo("Выберите файлы"),
+};
+
+const uploadErrorSchema = zodRussian.object({ error: zodRussian.string() });
+
+function formatFileSize(sizeBytes: number): string {
+  const megabytes = sizeBytes / (1024 * 1024);
+  if (megabytes >= 1) return typo(`${megabytes.toFixed(1)} МБ`);
+  return typo(`${Math.max(1, Math.round(sizeBytes / 1024))} КБ`);
+}
+
+// Материалы: multipart-загрузка в /api/materials/$examId (Pro-гейт на сервере), список, удаление.
+function MaterialsCard({ exam }: { exam: ExamDetail }) {
+  const queryClient = useQueryClient();
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  // Смена ключа пересоздаёт input после успешной загрузки — сбрасывает выбранные файлы.
+  const [inputKey, setInputKey] = useState(0);
+
+  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["exams"] });
+
+  const upload = useMutation({
+    mutationFn: async () => {
+      const form = new FormData();
+      for (const file of files) form.append("files", file);
+      const response = await fetch(`/api/materials/${exam.id}`, { method: "POST", body: form });
+      if (!response.ok) {
+        const payload: unknown = await response.json().catch(() => null);
+        const parsed = uploadErrorSchema.safeParse(payload);
+        throw new Error(parsed.success ? parsed.data.error : "UPLOAD_FAILED");
+      }
+      return true;
+    },
+    onSuccess: () => {
+      setFiles([]);
+      setInputKey((key) => key + 1);
+      invalidate();
+    },
+    onError: (error) => {
+      if (error.message === PAYWALL_ERRORS.MATERIALS) {
+        setShowPaywall(true);
+        return;
+      }
+      console.error(error);
+      toast.error(uploadErrorText[error.message] ?? typo("Не удалось загрузить материалы"));
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (materialId: string) => deleteMaterial({ data: { id: materialId } }),
+    onSuccess: invalidate,
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось удалить материал"));
+    },
+  });
+
+  return (
+    <SimpleCard title={typo("Материалы (Pro) — до 5 файлов по 10 МБ")}>
+      {exam.materials.length > 0 && (
+        <VStack gap="2xs">
+          {exam.materials.map((material) => (
+            <HStack key={material.id} justify="between" align="center" gap="sm" wrap>
+              <Text variant="small" breakWords>
+                {typo(material.fileName)}
+              </Text>
+              <HStack gap="sm" align="center">
+                <Text variant="mini" color="supplementary">
+                  {formatFileSize(material.sizeBytes)}
+                </Text>
+                <Button
+                  variant="link"
+                  size="inline"
+                  disabled={remove.isPending}
+                  onClick={() => {
+                    remove.mutate(material.id);
+                  }}
+                >
+                  {typo("Удалить")}
+                </Button>
+              </HStack>
+            </HStack>
+          ))}
+        </VStack>
+      )}
+      <HStack gap="sm" align="center" wrap>
+        <Input
+          key={inputKey}
+          type="file"
+          multiple
+          accept=".pdf,.docx,.doc,.txt,.md"
+          className="max-w-xs"
+          aria-label={typo("Файлы материалов")}
+          onChange={(event) => {
+            setFiles(Array.from(event.target.files ?? []));
+          }}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={upload.isPending || !files.length}
+          onClick={() => {
+            upload.mutate();
+          }}
+        >
+          {typo("Загрузить")}
+        </Button>
+      </HStack>
+      {showPaywall && <PaywallCard reason="MATERIALS" compact />}
+    </SimpleCard>
+  );
+}
+
+// Страница вопроса в миниатюре: полный ответ, карточки, точечная перегенерация
+// (квоту генераций не тратит, но ограничена мягким дневным лимитом).
+function QuestionModal({ questionId, onClose }: { questionId: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const queryKey = ["questions", "detail", questionId];
+  const detail = useQuery({ queryKey, queryFn: () => getQuestionById({ data: { id: questionId } }) });
+
+  const regenerate = useMutation({
+    mutationFn: () => regenerateQuestionCards({ data: { questionId } }),
+    onSuccess: (result) => {
+      toast.success(typo(`Пересобрали карточки: ${result.count}`));
+      void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({ queryKey: ["exams"] });
+    },
+    onError: (error) => {
+      console.error(error);
+      const humanMessage = /[а-яё]/i.test(error.message)
+        ? error.message
+        : typo("Не удалось перегенерировать карточки");
+      toast.error(humanMessage);
+    },
+  });
+
+  const question = detail.data;
+  return (
+    <ResponsiveModal open onOpenChange={onClose} title={typo("Вопрос")}>
+      {!question ? (
+        <Text color="supplementary">{typo("Загружаем…")}</Text>
+      ) : (
+        <VStack gap="md">
+          <Text bold breakWords>
+            {typo(question.text)}
+          </Text>
+          <HStack gap="xs" wrap>
+            {question.topic && <Badge variant="outline">{typo(question.topic)}</Badge>}
+            {!question.covered && <Badge variant="muted">{typo("не покрыт материалами")}</Badge>}
+            {question.aiGenerated && <Badge variant="muted">{typo("ответ из общих знаний ИИ")}</Badge>}
+          </HStack>
+          {question.sourceRef && (
+            <Text variant="mini" color="supplementary" breakWords>
+              {typo(`Источник: ${question.sourceRef}`)}
+            </Text>
+          )}
+          {question.answerMd ? (
+            <MarkdownView>{question.answerMd}</MarkdownView>
+          ) : (
+            <Text color="supplementary">{typo("Ответ ещё не сгенерирован.")}</Text>
+          )}
+          <HStack justify="between" align="center" gap="sm" wrap>
+            <Heading variant="h3" asParagraph>
+              {typo(`Карточки · ${question.cards.length}`)}
+            </Heading>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={regenerate.isPending || !question.answerMd}
+              onClick={() => {
+                regenerate.mutate();
+              }}
+            >
+              {regenerate.isPending ? typo("Пересобираем…") : typo("Перегенерировать карточки")}
+            </Button>
+          </HStack>
+          <VStack gap="sm">
+            {question.cards.map((card) => (
+              <VStack key={card.id} gap="3xs" className="rounded-2xl bg-card p-3">
+                <HStack gap="xs" wrap>
+                  <Badge variant="muted">{formatBadgeLabel(card.format)}</Badge>
+                  {card.suspended && <Badge variant="outline">{typo("выключена")}</Badge>}
+                </HStack>
+                <Text variant="small" bold breakWords>
+                  {typo(card.prompt)}
+                </Text>
+                <Text variant="small" color="supplementary" breakWords>
+                  {typo(card.answer)}
+                </Text>
+                {card.explanation && (
+                  <Text variant="mini" color="supplementary" breakWords>
+                    {typo(card.explanation)}
+                  </Text>
+                )}
+              </VStack>
+            ))}
+          </VStack>
+        </VStack>
+      )}
+    </ResponsiveModal>
+  );
+}
+
 function ExamHubPage() {
   const { examId } = Route.useParams();
   const navigate = useNavigate();
@@ -313,6 +659,7 @@ function ExamHubPage() {
   const [addingCard, setAddingCard] = useState(false);
   const [chatCard, setChatCard] = useState<ExamCardItem | null>(null);
   const [showCramPaywall, setShowCramPaywall] = useState(false);
+  const [openQuestionId, setOpenQuestionId] = useState<string | null>(null);
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["exams"] });
 
@@ -513,6 +860,10 @@ function ExamHubPage() {
         </HStack>
       </SimpleCard>
 
+      <QuestionsEditorCard key={exam.questions.map((question) => question.id).join(",")} exam={exam} />
+      <MaterialsCard exam={exam} />
+      <GenerationCard exam={exam} />
+
       {exam.topics.length > 0 && (
         <SimpleCard title={typo("Темы")}>
           <VStack gap="2xs">
@@ -541,6 +892,15 @@ function ExamHubPage() {
                 </Text>
                 {question.topic && <Badge variant="outline">{typo(question.topic)}</Badge>}
                 {!question.covered && <Badge variant="muted">{typo("не покрыт материалами")}</Badge>}
+                <Button
+                  variant="link"
+                  size="inline"
+                  onClick={() => {
+                    setOpenQuestionId(question.id);
+                  }}
+                >
+                  {question.hasAnswer ? typo("Ответ и карточки") : typo("Открыть")}
+                </Button>
               </HStack>
             ))}
           </VStack>
@@ -606,6 +966,14 @@ function ExamHubPage() {
           card={chatCard}
           onClose={() => {
             setChatCard(null);
+          }}
+        />
+      )}
+      {openQuestionId && (
+        <QuestionModal
+          questionId={openQuestionId}
+          onClose={() => {
+            setOpenQuestionId(null);
           }}
         />
       )}

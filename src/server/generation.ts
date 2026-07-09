@@ -1,84 +1,112 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import WordExtractor from "word-extractor";
 
-import { parseGeneratedDeck, typo } from "~/lib";
+import {
+  type GeneratedAnswer,
+  type GeneratedCard,
+  parseGeneratedAnswers,
+  parseGeneratedCardList,
+  parseGeneratedCards,
+  typo,
+} from "~/lib";
 
 import { db } from "./db";
+import { materialAbsolutePath } from "./materialStorage";
 import { refundUsage } from "./usage";
 
 // Очередь ИИ-генерации экзаменов: один claude за раз, статусы на Exam.status.
-// Волна 2 заменит содержимое джобы на двухпроходный пайплайн (ответы → карточки, темы, цитаты);
-// инфраструктура очереди/таймаутов/компенсаций сохраняется.
-
-export interface GenerationFile {
-  field: "materials" | "questions";
-  name: string;
-  bytes: Buffer;
-}
-
-export interface GenerationInput {
-  materialsText: string;
-  questionsText: string;
-  /** Произвольные пожелания пользователя к стилю/форме ответов (может быть пустым). */
-  instructions: string;
-  files: GenerationFile[];
-}
+// Двухпроходный пайплайн (docs/domashnik.md, раздел 4): проход A «Ответы и темы» →
+// answers.json, проход B «Карточки» → cards.json, затем транзакционная запись в БД.
 
 const JOBS_ROOT = path.join(process.cwd(), "data", "jobs");
-const CLAUDE_MODEL = "opus";
+const GENERATION_MODEL = "opus";
+// Точечная перегенерация карточек одного вопроса — задача маленькая, sonnet дешевле и быстрее.
+const REGENERATION_MODEL = "sonnet";
 const JOB_TIMEOUT_MS = 30 * 60 * 1000;
+const REGENERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
 // Word (.doc/.docx) claude напрямую не читает — извлекаем текст на сервере.
 const wordExtractor = new WordExtractor();
 
-// Промпт для claude -p: он сам читает ./inputs и пишет ./output.json. Обёрнут в typo() по правилу проекта.
-const GENERATION_PROMPT =
-  typo(`Ты готовишь карточки для подготовки к экзамену. В папке ./inputs/ лежат входные данные пользователя:
-- материалы и конспекты (имена файлов начинаются с «materials»);
-- вопросы к экзамену (имена файлов начинаются с «questions») — их может и не быть.
+const MATH_RULES = typo(
+  `Математику оформляй формулами LaTeX: формула внутри строки — между одиночными «$» ($E=mc^2$), отдельная блочная формула — между «$$», причём «$$» на ОТДЕЛЬНЫХ строках. Не дублируй формулу обычным текстом.`,
+);
 
-Сначала изучи всё в ./inputs/: выполни «ls -la inputs», затем полностью прочитай каждый файл (инструмент Read; файлы могут быть большими — при необходимости читай частями).
+const CARD_FORMAT_RULES = typo(`Форматы карточек:
+- "open" — базовый: вопрос → краткий верный ответ (answer), options — пустой массив;
+- "cloze" — утверждение с пропуском КЛЮЧЕВОГО слова: в prompt вместо него стоит «___», answer — пропущенное слово или короткая фраза, options — пустой массив;
+- "mcq" — тест: ровно 4 варианта в options, answer ДОСЛОВНО совпадает с одним из них; дистракторы делай ПРАВДОПОДОБНЫМИ — предпочтительно бери правильные ответы на СОСЕДНИЕ вопросы этого же экзамена (хитрые отвлечения);
+- "truefalse" — немного, только для разминки: prompt — утверждение, answer — строго "true" или "false", options — пустой массив.
+У каждой карточки обязательно explanation — однострочное «почему это так».`);
 
-Затем составь карточки по правилам:
-1. Если есть вопросы — используй именно их. Если у вопросов уже есть ответы, выверь и при необходимости улучши их; если ответов нет — составь сам.
-2. Если вопросов нет — придумай 50 потенциальных экзаменационных вопросов строго по материалам.
-3. Если есть материалы — отвечай строго по ним (это первоисточник). Если материалов нет — отвечай по своим знаниям предмета.
-4. Для каждой карточки сделай ДВА ответа:
-   - «answerShort»: краткий ответ для самопроверки, 1–2 абзаца обычного текста; разделяй абзацы пустой строкой (двойным переводом строки); markdown-разметка не нужна;
-   - «answerDeep»: глубокое изучение темы, 4–5 абзацев с примерами, оформленный в markdown (заголовки, списки, выделения, при необходимости блоки кода).
-5. Математику в ЛЮБОМ из ответов (и кратком, и развёрнутом) оформляй формулами LaTeX. Формула внутри строки — между одиночными «$»: например, $E=mc^2$. Отдельная (блочная) формула — между «$$», причём «$$» обязательно на ОТДЕЛЬНЫХ строках:
-$$
-a^2 + b^2 = c^2
-$$
-Дроби, интегралы, суммы, индексы и прочее пиши стандартным синтаксисом LaTeX; не дублируй формулу обычным текстом.
-6. Язык карточек — русский (или язык исходных материалов).
+// Смещение пропорций форматов карточек по формату экзамена (спека, раздел 4).
+const FORMAT_MIX_BY_EXAM: Record<string, string> = {
+  oral: typo("Экзамен устный — большинство карточек делай open (объяснение своими словами), mcq — немного."),
+  written: typo("Экзамен письменный — упор на open и cloze (точные формулировки), mcq — немного."),
+  test: typo("Экзамен в формате теста — большинство карточек делай mcq, остальное open и cloze."),
+};
 
-Результат запиши строго как валидный JSON в файл ./output.json (инструмент Write), без каких-либо пояснений вокруг, по схеме:
+const DEFAULT_FORMAT_MIX = typo(
+  "Формат экзамена не указан — сбалансированный микс: примерно половина open, остальное cloze и mcq, немного truefalse.",
+);
 
-{
-  "title": "Короткое название экзамена по теме",
-  "description": "Однострочное описание (необязательно)",
-  "cards": [
-    { "question": "...", "answerShort": "...", "answerDeep": "..." }
-  ]
+// Проход A: ответы на каждый вопрос (из материалов с цитатой, иначе из общих знаний) + темы.
+function buildAnswersPrompt(hasMaterials: boolean, questionCount: number): string {
+  const materialsRules = hasMaterials
+    ? typo(`В папке ./inputs/materials/ — конспекты и материалы пользователя (txt/md/pdf; Read умеет читать PDF).
+Для КАЖДОГО вопроса сначала ищи ответ в материалах: Grep по ключевым словам, Read нужных файлов (большие файлы читай частями). Нашёл ответ в материалах — пиши answerMd СТРОГО по ним и ставь covered=true, aiGenerated=false, sourceRef в формате «имя-файла: короткая точная цитата из этого файла не длиннее 120 символов». Не нашёл — ставь covered=false, aiGenerated=true, sourceRef=null и отвечай из общих знаний предмета.`)
+    : typo(
+        "Материалов пользователя нет: отвечай из общих знаний предмета, у всех вопросов ставь covered=true, aiGenerated=true, sourceRef=null.",
+      );
+
+  return `${typo(`Ты готовишь развёрнутые ответы на вопросы к экзамену.
+В файле ./inputs/questions.txt — нумерованный список из ${questionCount} вопросов (формат «номер. текст»). Прочитай его целиком (Read).`)}
+
+${materialsRules}
+
+${typo(
+  "answerMd — полный ответ на вопрос в markdown (заголовки, списки, выделения по необходимости), достаточный, чтобы подготовиться по нему к экзамену. Язык — русский (или язык вопросов).",
+)} ${MATH_RULES}
+
+${typo(
+  "Дополнительно сгруппируй вопросы в 4–8 тем: topic — короткое название темы (1–3 слова); у вопросов одного кластера строка topic должна совпадать буква в букву.",
+)}
+
+${typo("Результат запиши строго как валидный JSON-массив в файл ./answers.json (Write), без пояснений вокруг:")}
+[
+  { "position": 1, "topic": "…", "answerMd": "…", "covered": true, "aiGenerated": false, "sourceRef": "konspekt.pdf: «…»" }
+]
+${typo(
+  `Каждый вопрос — ровно один раз; position — его номер из questions.txt (от 1 до ${questionCount}). Не выводи ничего в ответ и не выходи за пределы текущей папки.`,
+)}`;
 }
 
-Не выводи ничего в ответ — просто создай файл ./output.json. Не выходи за пределы текущей папки.`);
+// Проход B: дробление ответов на атомарные карточки с миксом форматов.
+function buildCardsPrompt(examFormat: string | null, questionCount: number): string {
+  const formatMix = (examFormat ? FORMAT_MIX_BY_EXAM[examFormat] : null) ?? DEFAULT_FORMAT_MIX;
 
-// Добавляем пожелания пользователя к стилю/форме ответов. Они приоритетнее стиля по умолчанию,
-// но НЕ отменяют JSON-схему вывода и язык. Текст пользователя — динамический, typo() не нужен.
-function buildPrompt(instructions: string): string {
-  const trimmed = instructions.trim();
-  if (!trimmed) return GENERATION_PROMPT;
-  return `${GENERATION_PROMPT}\n\n${typo("Дополнительные пожелания пользователя к стилю и форме ответов — следуй им, но сохрани требуемую JSON-схему вывода и язык карточек:")}\n${trimmed}`;
-}
+  return `${typo(`Ты дробишь ответы на экзаменационные вопросы на атомарные карточки для интервального повторения.
+В ./inputs/questions.txt — нумерованный список из ${questionCount} вопросов, в ./answers.json — готовые ответы на них (поля position, topic, answerMd, covered, aiGenerated, sourceRef). Прочитай оба файла целиком (Read).`)}
 
-function safeName(name: string): string {
-  const cleaned = name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
-  return cleaned || "file";
+${typo("На КАЖДЫЙ вопрос составь 2–5 атомарных карточек: один факт — одна карточка.")}
+
+${CARD_FORMAT_RULES}
+
+${formatMix}
+
+${typo("Язык карточек — как у ответов.")} ${MATH_RULES}
+
+${typo("Результат запиши строго как валидный JSON-массив в файл ./cards.json (Write), без пояснений вокруг:")}
+[
+  { "position": 1, "cards": [ { "format": "open", "prompt": "…", "answer": "…", "options": [], "explanation": "…" } ] }
+]
+${typo(
+  `Каждый вопрос — ровно один раз (position от 1 до ${questionCount}), у каждого 2–5 карточек. Не выводи ничего в ответ и не выходи за пределы текущей папки.`,
+)}`;
 }
 
 // Запуск claude -p в папке задания: читает ./inputs, пишет файл outFile. Возвращает его содержимое.
@@ -90,11 +118,11 @@ function runClaude(jobDir: string, prompt: string, outFile: string): Promise<str
         "-p",
         prompt,
         "--model",
-        CLAUDE_MODEL,
+        GENERATION_MODEL,
         "--permission-mode",
         "acceptEdits",
         "--allowedTools",
-        "Read,Write,Edit,Bash",
+        "Read,Write,Edit,Bash,Grep,Glob",
       ],
       { cwd: jobDir, env: process.env, stdio: ["ignore", "ignore", "pipe"] },
     );
@@ -131,62 +159,144 @@ function runClaude(jobDir: string, prompt: string, outFile: string): Promise<str
   });
 }
 
-// Раскладывает материалы пользователя в ./inputs задания (тексты + файлы; Word — извлечённым текстом).
-async function writeJobInputs(inputsDir: string, input: GenerationInput): Promise<void> {
+interface JobQuestion {
+  id: string;
+  text: string;
+}
+
+interface JobMaterial {
+  fileName: string;
+  storagePath: string;
+}
+
+// Раскладывает вход задания: questions.txt + копии материалов (Word — извлечённым текстом).
+async function writeJobInputs(inputsDir: string, questions: JobQuestion[], materials: JobMaterial[]): Promise<void> {
   await mkdir(inputsDir, { recursive: true });
-  if (input.materialsText.trim()) await writeFile(path.join(inputsDir, "materials.md"), input.materialsText, "utf8");
-  if (input.questionsText.trim()) await writeFile(path.join(inputsDir, "questions.md"), input.questionsText, "utf8");
-  for (const [index, file] of input.files.entries()) {
-    const base = `${file.field}_${index}_${safeName(file.name)}`;
-    const lower = file.name.toLowerCase();
-    if (lower.endsWith(".doc") || lower.endsWith(".docx")) {
-      try {
-        const document = await wordExtractor.extract(file.bytes);
-        await writeFile(path.join(inputsDir, `${base}.txt`), document.getBody(), "utf8");
+  const questionsText = questions.map((question, index) => `${index + 1}. ${question.text}`).join("\n");
+  await writeFile(path.join(inputsDir, "questions.txt"), questionsText, "utf8");
+
+  if (!materials.length) return;
+  const materialsDir = path.join(inputsDir, "materials");
+  await mkdir(materialsDir, { recursive: true });
+  for (const material of materials) {
+    const sourcePath = materialAbsolutePath(material.storagePath);
+    const baseName = path.basename(material.storagePath);
+    const lower = material.fileName.toLowerCase();
+    try {
+      if (lower.endsWith(".doc") || lower.endsWith(".docx")) {
+        const document = await wordExtractor.extract(sourcePath);
+        await writeFile(path.join(materialsDir, `${baseName}.txt`), document.getBody(), "utf8");
         continue;
-      } catch (error) {
-        console.error("word extract failed:", error);
       }
+      await copyFile(sourcePath, path.join(materialsDir, baseName));
+    } catch (error) {
+      // Потерянный/битый файл материала не должен валить всю генерацию — остальные материалы важнее.
+      console.error("material input failed:", material.storagePath, error);
     }
-    await writeFile(path.join(inputsDir, base), file.bytes);
   }
 }
 
-async function runGenerationJob(examId: string, input: GenerationInput): Promise<void> {
+// Транзакционная запись результата: ответы в Question по позиции, старые ИИ-карточки — под замену.
+async function persistGenerationResult(
+  examId: string,
+  questions: JobQuestion[],
+  answers: GeneratedAnswer[],
+  questionCards: { position: number; cards: GeneratedCard[] }[],
+): Promise<void> {
+  const answerByPosition = new Map(answers.map((answer) => [answer.position, answer]));
+  await db.$transaction(
+    async (tx) => {
+      for (const [index, question] of questions.entries()) {
+        const answer = answerByPosition.get(index + 1);
+        if (!answer) continue;
+        await tx.question.update({
+          where: { id: question.id },
+          data: {
+            topic: answer.topic,
+            answerMd: answer.answerMd,
+            covered: answer.covered,
+            aiGenerated: answer.aiGenerated,
+            sourceRef: answer.sourceRef,
+          },
+        });
+      }
+
+      // Полная перегенерация: удаляем карточки прошлых генераций (помечены aiGenerated
+      // или привязаны к вопросу); ручные (addCard: без вопроса и без пометки) остаются.
+      await tx.card.deleteMany({
+        where: { examId, OR: [{ aiGenerated: true }, { questionId: { not: null } }] },
+      });
+
+      const lastManualCard = await tx.card.findFirst({
+        where: { examId },
+        orderBy: { position: "desc" },
+        select: { position: true },
+      });
+      let cardPosition = (lastManualCard?.position ?? -1) + 1;
+
+      const cardRows = [];
+      for (const entry of questionCards) {
+        const question = questions[entry.position - 1];
+        const answer = answerByPosition.get(entry.position);
+        if (!question || !answer) continue;
+        for (const card of entry.cards) {
+          cardRows.push({
+            examId,
+            questionId: question.id,
+            format: card.format,
+            prompt: card.prompt,
+            answer: card.answer,
+            options: card.options,
+            explanation: card.explanation,
+            // Привязка к источнику наследуется от ответа на вопрос (проход A).
+            sourceRef: answer.sourceRef,
+            aiGenerated: answer.aiGenerated,
+            position: cardPosition,
+          });
+          cardPosition += 1;
+        }
+      }
+      await tx.card.createMany({ data: cardRows });
+
+      await tx.exam.update({ where: { id: examId }, data: { status: "ready", generationError: null } });
+    },
+    // Экзамен на 300 вопросов — до ~1500 карточек: дефолтных 5 секунд транзакции может не хватить.
+    { timeout: 60_000, maxWait: 10_000 },
+  );
+}
+
+async function runGenerationJob(examId: string): Promise<void> {
   const jobDir = path.join(JOBS_ROOT, examId);
   const inputsDir = path.join(jobDir, "inputs");
   try {
+    const exam = await db.exam.findUnique({ where: { id: examId }, select: { examFormat: true } });
+    const questions = await db.question.findMany({
+      where: { examId },
+      orderBy: { position: "asc" },
+      select: { id: true, text: true },
+    });
+    if (!exam || !questions.length) {
+      throw new Error(typo("У экзамена нет вопросов — добавьте их и запустите генерацию заново."));
+    }
+    const materials = await db.material.findMany({
+      where: { examId },
+      orderBy: { createdAt: "asc" },
+      select: { fileName: true, storagePath: true },
+    });
+
     // Чистый каталог, чтобы не подмешать остатки прошлых заданий.
     await rm(jobDir, { recursive: true, force: true });
-    await writeJobInputs(inputsDir, input);
+    await writeJobInputs(inputsDir, questions, materials);
 
-    const output = await runClaude(jobDir, buildPrompt(input.instructions), "output.json");
-    const result = parseGeneratedDeck(output);
+    const answersRaw = await runClaude(jobDir, buildAnswersPrompt(materials.length > 0, questions.length), "answers.json");
+    const answers = parseGeneratedAnswers(answersRaw, questions.length);
 
-    await db.$transaction([
-      db.exam.update({
-        where: { id: examId },
-        data: {
-          title: result.title,
-          description: result.description ?? null,
-          status: "ready",
-          generationError: null,
-        },
-      }),
-      db.card.createMany({
-        data: result.cards.map((card, index) => ({
-          examId,
-          format: "open",
-          prompt: card.question,
-          answer: card.answerShort,
-          deepMd: card.answerDeep,
-          aiGenerated: true,
-          position: index,
-        })),
-      }),
-    ]);
+    const cardsRaw = await runClaude(jobDir, buildCardsPrompt(exam.examFormat, questions.length), "cards.json");
+    const questionCards = parseGeneratedCards(cardsRaw, questions.length);
 
-    // Каталог задания удаляем только при успехе.
+    await persistGenerationResult(examId, questions, answers, questionCards);
+
+    // Каталог задания удаляем только при успехе — при ошибке он полезен для разбора.
     await rm(jobDir, { recursive: true, force: true }).catch(() => undefined);
   } catch (error) {
     console.error(error);
@@ -194,7 +304,7 @@ async function runGenerationJob(examId: string, input: GenerationInput): Promise
     await db.exam
       .update({ where: { id: examId }, data: { status: "failed", generationError: message.slice(0, 500) } })
       .catch(() => undefined);
-    // Неудачная генерация не списывает лимит: возвращаем попытку.
+    // Неудачная генерация не списывает лимит: возвращаем попытку (refId события = examId).
     await refundUsage(db, "deck_generation", [examId]).catch(() => undefined);
   }
 }
@@ -217,8 +327,9 @@ function enqueueJob(jobKey: string, run: () => Promise<void>): void {
   });
 }
 
-export function enqueueGeneration(examId: string, input: GenerationInput): void {
-  enqueueJob(examId, () => runGenerationJob(examId, input));
+/** Ставит экзамен в очередь генерации; вход (вопросы, материалы) джоба читает из БД сама. */
+export function enqueueGeneration(examId: string): void {
+  enqueueJob(examId, () => runGenerationJob(examId));
 }
 
 /** Позиция генерации экзамена в очереди: 0 — выполняется сейчас, null — в очереди нет. */
@@ -230,4 +341,91 @@ export function getGenerationQueuePosition(examId: string): number | null {
 /** Удаляет каталог задания с диска — материалы генерации больше не нужны (экзамен удалён). */
 export function cleanupGenerationJob(examId: string): void {
   void rm(path.join(JOBS_ROOT, examId), { recursive: true, force: true }).catch(() => undefined);
+}
+
+// --- Точечная перегенерация карточек одного вопроса (без очереди и без списания квоты) ---
+
+export interface RegenerationQuestion {
+  text: string;
+  topic: string | null;
+  answerMd: string;
+  examFormat: string | null;
+  /** Соседние вопросы с их ответами — источник правдоподобных дистракторов mcq. */
+  neighbors: { text: string; answerMd: string | null }[];
+}
+
+function buildQuestionCardsPrompt(question: RegenerationQuestion): string {
+  const formatMix = (question.examFormat ? FORMAT_MIX_BY_EXAM[question.examFormat] : null) ?? DEFAULT_FORMAT_MIX;
+  const neighborsBlock = question.neighbors.length
+    ? `${typo("Соседние вопросы этого экзамена (их ответы — материал для правдоподобных дистракторов mcq):")}\n${question.neighbors
+        .map((neighbor) => `- ${neighbor.text}${neighbor.answerMd ? ` — ${neighbor.answerMd.slice(0, 200)}` : ""}`)
+        .join("\n")}`
+    : "";
+
+  const parts = [
+    typo(
+      "Ты пересобираешь карточки интервального повторения для ОДНОГО экзаменационного вопроса. Составь 2–5 атомарных карточек: один факт — одна карточка.",
+    ),
+    "",
+    `${typo("Вопрос")}: ${question.text}`,
+    question.topic ? `${typo("Тема")}: ${question.topic}` : "",
+    `${typo("Ответ (markdown)")}:\n${question.answerMd}`,
+    "",
+    neighborsBlock,
+    "",
+    CARD_FORMAT_RULES,
+    formatMix,
+    `${typo("Язык карточек — как у ответа.")} ${MATH_RULES}`,
+    "",
+    typo("Выведи в ответ ТОЛЬКО валидный JSON-массив карточек, без пояснений и без markdown-ограждений:"),
+    `[ { "format": "open", "prompt": "…", "answer": "…", "options": [], "explanation": "…" } ]`,
+  ];
+  return parts.filter(Boolean).join("\n");
+}
+
+// Запуск claude -p без инструментов (ответ в stdout): маленькая задача, ФС ей не нужна.
+function runClaudeText(prompt: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn("claude", ["-p", prompt, "--model", REGENERATION_MODEL, "--tools", ""], {
+      cwd: tmpdir(),
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (data: Buffer) => {
+      stdout += data.toString();
+    });
+    child.stderr?.on("data", (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(typo("Превышено время перегенерации карточек.")));
+    }, REGENERATION_TIMEOUT_MS);
+
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+
+    child.on("close", () => {
+      clearTimeout(timer);
+      if (stderr.trim()) console.error("claude regenerate stderr:", stderr.slice(0, 500));
+      const text = stdout.trim();
+      if (!text) {
+        reject(new Error(typo("Пустой ответ от Claude.")));
+        return;
+      }
+      resolve(text);
+    });
+  });
+}
+
+/** Генерирует новый набор карточек для одного вопроса (sonnet); валидация — та же схема, что в проходе B. */
+export async function generateQuestionCards(question: RegenerationQuestion): Promise<GeneratedCard[]> {
+  const raw = await runClaudeText(buildQuestionCardsPrompt(question));
+  return parseGeneratedCardList(raw);
 }

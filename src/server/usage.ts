@@ -5,13 +5,8 @@ import { startOfDayMsk } from "~/lib";
 // Учёт использования платных ИИ-функций: лимиты Free (за всё время) и fair-use Pro (за день МСК)
 // считаются по строкам UsageEvent. Запись — только после успешной постановки/ответа.
 
-/** Вид события использования: генерация экзамена (имя историческое) или сообщение чата. */
-export type UsageKind = "deck_generation" | "chat_message";
-
-/** Сколько событий вида kind у пользователя за всё время (лимиты Free «всего, не в день»). */
-export function countUsageTotal(db: PrismaClient, userId: string, kind: UsageKind): Promise<number> {
-  return db.usageEvent.count({ where: { userId, kind } });
-}
+/** Вид события использования: генерация экзамена (имя историческое), перегенерация карточек вопроса, сообщение чата. */
+export type UsageKind = "deck_generation" | "card_regeneration" | "chat_message";
 
 /** Сколько событий вида kind за текущий календарный день МСК (дневные лимиты). */
 export function countUsageToday(db: PrismaClient, userId: string, kind: UsageKind): Promise<number> {
@@ -34,7 +29,8 @@ export function tryChargeUsage(
   input: { userId: string; kind: UsageKind; refId: string; limit: number; since?: Date },
 ): Promise<boolean> {
   return db.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${input.userId}:${input.kind}`}, 0))`;
+    // ::text — pg_advisory_xact_lock возвращает void, который Prisma не умеет десериализовать.
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${input.userId}:${input.kind}`}, 0))::text`;
     const used = await tx.usageEvent.count({
       where: {
         userId: input.userId,
