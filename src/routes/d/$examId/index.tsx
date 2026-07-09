@@ -3,11 +3,24 @@ import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Badge, Button, Container, Heading, HStack, PaywallCard, SimpleCard, Text, VStack } from "~/components";
+import {
+  Badge,
+  Button,
+  Container,
+  Heading,
+  HStack,
+  Input,
+  PaywallCard,
+  ResponsiveModal,
+  SimpleCard,
+  Text,
+  VStack,
+} from "~/components";
 import { isPaywallError, typo } from "~/lib";
 import { forkExam, getPublicExam } from "~/server/fn/exams";
 
-// Временное публичное превью экзамена: вопросы + «Забрать себе» (форк со своей датой и прогрессом).
+// Публичное превью экзамена: вопросы без ответов + «Забрать себе» — форк со своей датой
+// и прогрессом с нуля. Гостю предлагаем войти.
 
 const publicExamQuery = (examId: string) =>
   queryOptions({
@@ -70,16 +83,17 @@ function PublicExamNotFound() {
   );
 }
 
-function PublicExamPage() {
-  const { examId } = Route.useParams();
+// Форк-модал: своя дата экзамена (или без даты) — план построится от неё.
+function ForkModal({ examId, onClose }: { examId: string; onClose: () => void }) {
   const navigate = useNavigate();
-  const { data: exam } = useSuspenseQuery(publicExamQuery(examId));
+  const [date, setDate] = useState("");
+  const [noDate, setNoDate] = useState(false);
   const [showMultiExamPaywall, setShowMultiExamPaywall] = useState(false);
 
   const fork = useMutation({
-    mutationFn: () => forkExam({ data: { id: examId, examDate: null } }),
+    mutationFn: () => forkExam({ data: { id: examId, examDate: noDate ? null : date || null } }),
     onSuccess: (created) => {
-      toast.success(typo("Экзамен скопирован — назначьте свою дату"));
+      toast.success(typo("Экзамен скопирован — план построен от твоей даты"));
       void navigate({ to: "/app/exams/$examId", params: { examId: created.id } });
     },
     onError: (error) => {
@@ -88,9 +102,69 @@ function PublicExamPage() {
         return;
       }
       console.error(error);
-      toast.error(typo("Не удалось скопировать экзамен"));
+      const humanMessage = /[а-яё]/i.test(error.message) ? error.message : typo("Не удалось скопировать экзамен");
+      toast.error(humanMessage);
     },
   });
+
+  return (
+    <ResponsiveModal open onOpenChange={onClose} title={typo("Забрать экзамен себе")}>
+      <VStack gap="md">
+        <Text variant="small" color="supplementary">
+          {typo("Когда у тебя экзамен? План повторений построится назад от этой даты, прогресс будет свой — с нуля.")}
+        </Text>
+        <HStack gap="sm" align="center" wrap>
+          <Input
+            value={date}
+            type="date"
+            className="w-44"
+            disabled={noDate}
+            aria-label={typo("Дата экзамена")}
+            onChange={(event) => {
+              setDate(event.target.value);
+            }}
+          />
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={noDate}
+              className="accent-primary"
+              onChange={(event) => {
+                setNoDate(event.target.checked);
+              }}
+            />
+            <Text variant="small" color="supplementary">
+              {typo("пока без даты")}
+            </Text>
+          </label>
+        </HStack>
+        {showMultiExamPaywall && <PaywallCard reason="MULTI_EXAM" compact />}
+        <HStack gap="sm">
+          <Button
+            disabled={fork.isPending || (!noDate && !date)}
+            onClick={() => {
+              fork.mutate();
+            }}
+          >
+            {fork.isPending ? typo("Копируем…") : typo("Забрать себе")}
+          </Button>
+          <Button variant="outline" onClick={onClose}>
+            {typo("Отмена")}
+          </Button>
+        </HStack>
+      </VStack>
+    </ResponsiveModal>
+  );
+}
+
+function PublicExamPage() {
+  const { examId } = Route.useParams();
+  const navigate = useNavigate();
+  const { data: exam } = useSuspenseQuery(publicExamQuery(examId));
+  const [forkOpen, setForkOpen] = useState(false);
+
+  const topics = [...new Set(exam.questions.map((question) => question.topic).filter((topic): topic is string => Boolean(topic)))];
+  const restCount = exam.totalQuestions - exam.questions.length;
 
   const renderAction = () => {
     if (exam.isOwner) {
@@ -107,9 +181,9 @@ function PublicExamPage() {
     if (exam.isAuthenticated) {
       return (
         <Button
-          disabled={fork.isPending}
+          size="pill"
           onClick={() => {
-            fork.mutate();
+            setForkOpen(true);
           }}
         >
           {typo("Забрать себе")}
@@ -118,37 +192,46 @@ function PublicExamPage() {
     }
     return (
       <Button
+        size="pill"
         onClick={() => {
           void navigate({ to: "/auth/signin" });
         }}
       >
-        {typo("Войти, чтобы забрать себе")}
+        {typo("Войди и забери себе")}
       </Button>
     );
   };
 
-  const restCount = exam.totalQuestions - exam.questions.length;
-
   return (
     <main className="min-h-dvh overflow-y-auto">
       <Container className="py-8">
-        <VStack gap="xl">
+        <VStack gap="xl" className="mx-auto w-full max-w-2xl">
           <VStack gap="sm">
             <Text variant="mini" color="supplementary">
-              {typo("Мемокарты")}
+              {typo("Мемокарты · экзамен по ссылке")}
             </Text>
-            <Heading variant="h1">{typo(exam.title)}</Heading>
+            <Heading variant="h1" breakWords>
+              {typo(exam.title)}
+            </Heading>
             <Text variant="small" color="supplementary">
               {exam.authorName
                 ? typo(`Автор: ${exam.authorName} · вопросов: ${exam.totalQuestions} · карточек: ${exam.totalCards}`)
                 : typo(`Вопросов: ${exam.totalQuestions} · карточек: ${exam.totalCards}`)}
             </Text>
             {exam.description && <Text color="supplementary">{typo(exam.description)}</Text>}
-            {renderAction()}
-            {showMultiExamPaywall && <PaywallCard reason="MULTI_EXAM" compact />}
+            {topics.length > 0 && (
+              <HStack gap="2xs" wrap>
+                {topics.map((topic) => (
+                  <Badge key={topic} variant="outline">
+                    {typo(topic)}
+                  </Badge>
+                ))}
+              </HStack>
+            )}
+            <HStack>{renderAction()}</HStack>
             {!exam.isAuthenticated && (
               <Text variant="mini" color="supplementary">
-                {typo("Экзамен можно скопировать к себе и готовиться со своим прогрессом — для этого нужен вход.")}
+                {typo("После входа экзамен скопируется к тебе: свой план от своей даты и честная готовность по припоминанию.")}
               </Text>
             )}
           </VStack>
@@ -156,27 +239,34 @@ function PublicExamPage() {
           {exam.questions.length > 0 && (
             <SimpleCard title={typo("Вопросы")}>
               <VStack gap="2xs">
-                {exam.questions.map((question, index) => (
-                  <HStack key={question.id} gap="xs" align="center" wrap>
+                {exam.questions.map((question, indexNumber) => (
+                  <HStack key={question.id} gap="xs" wrap>
                     <Text variant="small" color="supplementary">
-                      {index + 1}.
+                      {indexNumber + 1}.
                     </Text>
                     <Text variant="small" breakWords>
                       {typo(question.text)}
                     </Text>
-                    {question.topic && <Badge variant="outline">{typo(question.topic)}</Badge>}
                   </HStack>
                 ))}
               </VStack>
               {restCount > 0 && (
                 <Text variant="small" color="supplementary">
-                  {typo(`…и ещё ${restCount} вопросов`)}
+                  {typo(`…и ещё ${restCount} вопросов — они откроются после копирования`)}
                 </Text>
               )}
             </SimpleCard>
           )}
         </VStack>
       </Container>
+      {forkOpen && (
+        <ForkModal
+          examId={examId}
+          onClose={() => {
+            setForkOpen(false);
+          }}
+        />
+      )}
     </main>
   );
 }
