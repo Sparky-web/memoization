@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Moon, X, Zap } from "lucide-react";
+import { Coffee, Footprints, Moon, X, Zap } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import {
   Badge,
@@ -19,16 +20,22 @@ import {
   useMountEffect,
   VStack,
 } from "~/components";
-import { isPaywallError, typo, zodRussian } from "~/lib";
+import { isPaywallError, mskDayKey, typo, zodRussian } from "~/lib";
 import { answerCard, type AnswerResult, type SessionCard, submitOpenRating } from "~/server/fn/session";
 
 import {
   cardsCountLabel,
+  createForecast,
   examQueries,
   isSleepTimeMsk,
+  isWalkNudgeDay,
+  markFocusBreakShown,
   pluralRu,
+  recordFocusActivity,
+  resolveForecast,
   SESSION_KIND_TITLES,
   type SessionKind,
+  shouldSuggestFocusBreak,
 } from "../../_lib";
 
 // Плеер сессии припоминания — ядро продукта. Принципы: «одно дело на экране»,
@@ -463,6 +470,82 @@ function SleepGate({ onFinish, onMore }: { onFinish: () => void; onMore: () => v
   );
 }
 
+// «Прогноз против факта»: пропускаемый экран перед первой карточкой daily-сессии.
+// Ошибка сохранения не блокирует занятие — прогноз вторичен относительно самой сессии.
+function ForecastGate({ examId, totalCards, onDone }: { examId: string; totalCards: number; onDone: () => void }) {
+  const [percent, setPercent] = useState(70);
+  const create = useMutation({
+    mutationFn: () => createForecast({ data: { examId, predictedPercent: percent } }),
+    onSuccess: onDone,
+    onError: () => {
+      toast.error(typo("Не удалось сохранить прогноз — продолжаем без него"));
+      onDone();
+    },
+  });
+  const expectedCards = Math.round((totalCards * percent) / 100);
+
+  return (
+    <SimpleCard size="lg">
+      <VStack gap="lg">
+        <VStack gap="2xs">
+          <Heading variant="h3" asParagraph>
+            {typo(`Прогноз: сколько из ${totalCards} карточек ты сегодня вспомнишь?`)}
+          </Heading>
+          <Text variant="small" color="supplementary">
+            {typo("Предскажи результат до сессии — в конце сравним с фактом. Так самооценка учится не верить ощущению «я это знаю».")}
+          </Text>
+        </VStack>
+        <VStack gap="2xs">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={percent}
+            disabled={create.isPending}
+            className="w-full accent-primary"
+            aria-label={typo("Прогноз вспомненных карточек в процентах")}
+            onChange={(event) => {
+              setPercent(Number(event.target.value));
+            }}
+          />
+          <HStack justify="between" align="center">
+            <Text bold>{`${percent}%`}</Text>
+            <Text variant="small" color="supplementary">
+              {typo(`примерно ${expectedCards} из ${totalCards}`)}
+            </Text>
+          </HStack>
+        </VStack>
+        <HStack gap="sm" wrap>
+          <Button
+            size="pill"
+            disabled={create.isPending}
+            onClick={() => {
+              create.mutate();
+            }}
+          >
+            {typo("Записать прогноз")}
+          </Button>
+          <Button variant="ghost" onClick={onDone}>
+            {typo("Не сейчас")}
+          </Button>
+        </HStack>
+      </VStack>
+    </SimpleCard>
+  );
+}
+
+// Честный комментарий к разнице «прогноз − факт» (в процентных пунктах).
+function forecastCommentOf(deltaPp: number): string {
+  if (deltaPp >= 10) {
+    return typo("Переоценка: материал казался знакомее, чем вспомнился. Это иллюзия беглости — продолжай сверять ощущения с фактом.");
+  }
+  if (deltaPp <= -10) {
+    return typo("Недооценка: ты знаешь больше, чем ощущаешь. Можно доверять себе чуть смелее.");
+  }
+  return typo("Точный прогноз — самооценка хорошо откалибрована.");
+}
+
 function emptyQueueText(kind: SessionKind): string {
   const texts: Record<SessionKind, string> = {
     daily: typo("На сейчас всё повторено: план выполнен или карточки ещё не созрели. Загляни позже."),
@@ -491,16 +574,24 @@ function SessionSummary({
   const { data: exam } = useSuspenseQuery(examQueries.detail(examId));
   const plan = useQuery(examQueries.todayPlan());
 
-  // Сессия меняет готовность и план — обновляем их сразу после финиша.
-  useMountEffect(() => {
-    void queryClient.invalidateQueries({ queryKey: ["exams"] });
-    void queryClient.invalidateQueries({ queryKey: ["plan"] });
-  });
-
   const total = outcomes.length;
   const correct = outcomes.filter((outcome) => outcome.correct).length;
   const confidentMisses = outcomes.filter((outcome) => !outcome.correct && (outcome.confidence ?? 0) >= 70).length;
   const accuracy = total ? Math.round((correct / total) * 100) : 0;
+
+  // Прогноз резолвится фактом сессии; нет висящего прогноза — сервер вернёт null, блока не будет.
+  const resolve = useMutation({
+    mutationFn: () => resolveForecast({ data: { examId, actualPercent: accuracy } }),
+  });
+
+  // Сессия меняет готовность и план — обновляем их сразу после финиша.
+  useMountEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: ["exams"] });
+    void queryClient.invalidateQueries({ queryKey: ["plan"] });
+    if (kind === "daily" && total) resolve.mutate();
+  });
+
+  const forecast = resolve.data;
 
   const planData = plan.data;
   const planDone = planData ? !planData.planTotal && planData.cardsDoneToday > 0 : false;
@@ -536,6 +627,24 @@ function SessionSummary({
             </Text>
           )}
         </VStack>
+        {forecast && (
+          <VStack gap="3xs" className="rounded-2xl border border-primary/25 bg-primary/5 p-4">
+            <Text bold>
+              {typo(`Ты ожидал ${forecast.predictedPercent}% — вспомнил ${forecast.actualPercent}%`)}
+            </Text>
+            <Text variant="small" color="supplementary">
+              {forecastCommentOf(forecast.predictedPercent - forecast.actualPercent)}
+            </Text>
+          </VStack>
+        )}
+        {kind !== "bedtime" && isWalkNudgeDay(mskDayKey(new Date())) && (
+          <HStack gap="2xs" align="center">
+            <Footprints className="size-4 text-muted-foreground" />
+            <Text variant="mini" color="supplementary">
+              {typo("Короткая прогулка после занятия помогает закреплению.")}
+            </Text>
+          </HStack>
+        )}
         <HStack gap="sm" wrap>
           {nextBlock && nextTitle && kind !== "bedtime" && (
             <Button
@@ -576,6 +685,8 @@ function SessionPage() {
   const queryClient = useQueryClient();
   const { data: exam } = useSuspenseQuery(examQueries.detail(examId));
   const session = useQuery(examQueries.session(examId, kind));
+  // Прогноз предлагаем только в daily; ответ читается один раз (staleTime — навсегда).
+  const forecastPrompt = useQuery({ ...examQueries.forecastPrompt(examId), enabled: kind === "daily" });
 
   const [index, setIndex] = useState(0);
   const [outcomes, setOutcomes] = useState<CardOutcome[]>([]);
@@ -584,6 +695,10 @@ function SessionPage() {
   // Порог защиты сна: гейт показывается, когда отвечено ≥ порога (0 — сразу при входе ночью).
   const [sleepGateThreshold, setSleepGateThreshold] = useState(0);
   const [readinessBefore] = useState(exam.readiness);
+  // Экран прогноза закрыт (записан или пропущен) — не показываем повторно и после «ещё сессии».
+  const [forecastClosed, setForecastClosed] = useState(false);
+  // Мягкое предложение перерыва после 40 минут занятий подряд.
+  const [breakNudge, setBreakNudge] = useState(false);
 
   const exitToHub = () => {
     void navigate({ to: "/app/exams/$examId", params: { examId } });
@@ -658,6 +773,17 @@ function SessionPage() {
     if (finished) {
       return <SessionSummary examId={examId} kind={kind} outcomes={outcomes} readinessBefore={readinessBefore} onRestart={restart} />;
     }
+    if (kind === "daily" && !outcomes.length && !forecastClosed && forecastPrompt.data?.shouldPrompt) {
+      return (
+        <ForecastGate
+          examId={examId}
+          totalCards={queue.cards.length}
+          onDone={() => {
+            setForecastClosed(true);
+          }}
+        />
+      );
+    }
     if (showSleepGate) {
       return (
         <SleepGate
@@ -679,6 +805,12 @@ function SessionPage() {
           onFinished={(outcome) => {
             setOutcomes((current) => [...current, outcome]);
             setIndex((current) => current + 1);
+            // Привычка «понемногу, но часто»: после 40 минут подряд — мягкое предложение паузы.
+            recordFocusActivity();
+            if (shouldSuggestFocusBreak()) {
+              markFocusBreakShown();
+              setBreakNudge(true);
+            }
           }}
         />
       </div>
@@ -733,6 +865,31 @@ function SessionPage() {
             {typo("Спокойный режим: без новых тем, только закрепление пройденного за день.")}
           </Text>
         </HStack>
+      )}
+
+      {breakNudge && !finished && (
+        <SimpleCard>
+          <HStack justify="between" align="center" gap="md" wrap>
+            <HStack gap="sm" align="center">
+              <Coffee className="size-5 text-muted-foreground" />
+              <VStack gap="3xs">
+                <Text bold>{typo("Уже больше 40 минут подряд — пора сделать паузу")}</Text>
+                <Text variant="mini" color="supplementary">
+                  {typo("25–50 минут фокуса + перерыв — так работает лучше. Пройди карточку и отвлекись на пару минут.")}
+                </Text>
+              </VStack>
+            </HStack>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setBreakNudge(false);
+              }}
+            >
+              {typo("Хорошо")}
+            </Button>
+          </HStack>
+        </SimpleCard>
       )}
 
       {renderBody()}

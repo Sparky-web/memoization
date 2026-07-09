@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Crown, LogOut, Moon, ShieldCheck, Sun } from "lucide-react";
+import { Crown, LogOut, Moon, Settings, ShieldCheck, Sun } from "lucide-react";
 import { useState } from "react";
 
 import { authClient, Button, HStack, Text, useTheme, VStack } from "~/components";
@@ -42,6 +42,11 @@ export function UserMenu({ user }: UserMenuProps) {
   const goAdmin = () => {
     setOpen(false);
     void navigate({ to: "/admin/dashboard" });
+  };
+
+  const goSettings = () => {
+    setOpen(false);
+    void navigate({ to: "/app/settings" });
   };
 
   return (
@@ -130,6 +135,11 @@ export function UserMenu({ user }: UserMenuProps) {
                   </Button>
                 </HStack>
               </VStack>
+
+              <Button variant="outline" size="sm" onClick={goSettings}>
+                <Settings className="size-4" />
+                {typo("Настройки")}
+              </Button>
 
               {adminAccess?.isAdmin && (
                 <Button variant="outline" size="sm" onClick={goAdmin}>

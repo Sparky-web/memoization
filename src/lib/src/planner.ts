@@ -188,3 +188,41 @@ export function computeStreak(input: StreakInput): StreakResult {
 
   return { days, freezesSpent };
 }
+
+// Ключ МСК-дня → момент полуночи этого дня (для итерации по календарю в longestStreak).
+function mskDayKeyToDate(dayKey: string): Date {
+  return new Date(`${dayKey}T00:00:00+03:00`);
+}
+
+/**
+ * Лучшая серия за всю историю: самый длинный отрезок выполненных дней, где пропуски
+ * закрыты только днями отдыха. Заморозки в прошлое не ретроспектируем — их расход
+ * по историческим пропускам не восстановим, поэтому «лучший стрик» считается строже текущего.
+ */
+export function longestStreak(input: { completedDayKeys: ReadonlySet<string>; restWeekdays: readonly number[] }): number {
+  const restWeekdays = new Set(input.restWeekdays);
+  const sortedDays = [...input.completedDayKeys].sort();
+  let best = 0;
+  let run = 0;
+  let previous: Date | null = null;
+
+  for (const dayKey of sortedDays) {
+    const current = mskDayKeyToDate(dayKey);
+    let bridged = false;
+    if (previous) {
+      bridged = true;
+      // Все дни между выполненными должны быть днями отдыха, иначе серия начинается заново.
+      for (let time = previous.getTime() + DAY_MS; time < current.getTime(); time += DAY_MS) {
+        if (!restWeekdays.has(mskWeekday(new Date(time)))) {
+          bridged = false;
+          break;
+        }
+      }
+    }
+    run = bridged ? run + 1 : 1;
+    best = Math.max(best, run);
+    previous = current;
+  }
+
+  return best;
+}

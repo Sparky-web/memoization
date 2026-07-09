@@ -3,6 +3,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { getBillingStatus } from "~/server/fn/billing";
 import { getExamCards } from "~/server/fn/cards";
 import { getExamById, getExams } from "~/server/fn/exams";
+import { maybeGetForecastPrompt } from "~/server/fn/forecast";
 import { getTodayPlan } from "~/server/fn/plan";
 import { getQuestionById } from "~/server/fn/questions";
 import { startSession } from "~/server/fn/session";
@@ -64,6 +65,16 @@ export const examQueries = {
     queryOptions({
       queryKey: ["session", examId, kind],
       queryFn: () => startSession({ data: { examId, kind } }),
+      staleTime: Number.POSITIVE_INFINITY,
+      retry: false,
+      refetchOnWindowFocus: false,
+    }),
+  // Предложение прогноза читается один раз на вход в сессию — рефетч посреди прохождения
+  // показал бы экран прогноза после уже отвеченных карточек.
+  forecastPrompt: (examId: string) =>
+    queryOptions({
+      queryKey: ["forecast", "prompt", examId],
+      queryFn: () => maybeGetForecastPrompt({ data: { examId } }),
       staleTime: Number.POSITIVE_INFINITY,
       retry: false,
       refetchOnWindowFocus: false,

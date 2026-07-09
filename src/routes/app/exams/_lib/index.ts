@@ -1,6 +1,7 @@
 export { Chip } from "./components/Chip";
 export { CoverageBadge } from "./components/CoverageBadge";
 export { MaterialDropzone } from "./components/MaterialDropzone";
+export { isWalkNudgeDay, markFocusBreakShown, recordFocusActivity, shouldSuggestFocusBreak } from "./lib/habits";
 export { parseQuestionList } from "./lib/questionParsing";
 export { isSleepTimeMsk, SESSION_KIND_TITLES, type SessionKind } from "./lib/sessionKinds";
 export {
@@ -16,6 +17,7 @@ export {
   addCard,
   archiveExam,
   askCardChat,
+  createForecast,
   deleteCard,
   deleteExam,
   deleteMaterial,
@@ -24,6 +26,7 @@ export {
   getCardChat,
   logEvent,
   regenerateQuestionCards,
+  resolveForecast,
   setExamPublic,
   setExamQuestions,
   suspendCard,

@@ -6,6 +6,7 @@ export { addCard, deleteCard, flagCard, suspendCard, updateCard } from "~/server
 export { askCardChat, getCardChat } from "~/server/fn/chat";
 export { logEvent } from "~/server/fn/events";
 export { archiveExam, deleteExam, generateExam, setExamPublic, updateExam } from "~/server/fn/exams";
+export { createForecast, resolveForecast } from "~/server/fn/forecast";
 export { deleteMaterial } from "~/server/fn/materials";
 export { regenerateQuestionCards, setExamQuestions } from "~/server/fn/questions";
 

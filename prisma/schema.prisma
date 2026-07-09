@@ -374,8 +374,10 @@ model UserSettings {
   /// Остаток заморозок серии (2 в месяц, автосписание при пропуске).
   streakFreezesLeft Int       @default(2)
   freezesRenewedAt  DateTime?
-  /// Час предсонного напоминания по МСК (null — выключено).
-  bedtimeHour Int?
+  /// Час предсонного напоминания по МСК (null — выключено; без строки настроек действует дефолт 21).
+  bedtimeHour Int? @default(21)
+  /// ИИ-сверка открытых ответов (Pro): сервер сверяет ответ с эталоном по смыслу (волна 5).
+  aiCheckEnabled Boolean @default(false)
 
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)

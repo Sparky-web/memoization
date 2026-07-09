@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Flame, Moon, Plus, Zap } from "lucide-react";
+import { CalendarCheck, Flame, Moon, Plus, Zap } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -28,9 +28,11 @@ export const Route = createFileRoute("/app/")({
 const CARDS_PER_MINUTE = 2;
 
 function StreakLine({ plan }: { plan: TodayPlan }) {
+  // Заморозки, уже виртуально потраченные на пропуски внутри серии, показываем как израсходованные.
+  const freezesAvailable = Math.max(plan.freezesLeft - plan.freezesSpent, 0);
   const restNote = plan.restWeekdays.length
-    ? typo(` · дней отдыха в неделю: ${plan.restWeekdays.length}`)
-    : "";
+    ? typo(`дней отдыха в неделю: ${plan.restWeekdays.length}`)
+    : typo("дни отдыха настраиваются");
   return (
     <HStack gap="sm" align="center" wrap>
       <HStack gap="2xs" align="center" className="rounded-full bg-card px-3 py-1">
@@ -40,7 +42,12 @@ function StreakLine({ plan }: { plan: TodayPlan }) {
         </Text>
       </HStack>
       <Text variant="mini" color="supplementary">
-        {typo(`заморозок: ${plan.freezesLeft}`) + restNote}
+        <span title={typo("Заморозка сама закрывает пропущенный день; 2 штуки в месяц. Дни отдыха серию не рвут.")}>
+          {typo(`заморозки: ${freezesAvailable} · `)}
+          <Link to="/app/settings" variant="underline">
+            {restNote}
+          </Link>
+        </span>
       </Text>
     </HStack>
   );
@@ -214,6 +221,10 @@ function TodayPage() {
   const processingExams = activeExams.filter((exam) => exam.status === "processing");
   const failedExams = activeExams.filter((exam) => exam.status === "failed");
   const passedExams = activeExams.filter((exam) => exam.daysToExam !== null && exam.daysToExam < 0);
+  // Экзамен сегодня или завтра — предлагаем спокойный чек-лист дня экзамена.
+  const examDayExams = activeExams.filter(
+    (exam) => exam.daysToExam !== null && exam.daysToExam >= 0 && exam.daysToExam <= 1 && exam.totalCards > 0,
+  );
   const draftExams = activeExams.filter(
     (exam) => exam.status !== "processing" && exam.status !== "failed" && !exam.totalCards && exam.totalQuestions > 0,
   );
@@ -328,6 +339,33 @@ function TodayPage() {
 
       {passedExams.map((exam) => (
         <ExamPassedCard key={exam.id} exam={exam} />
+      ))}
+
+      {examDayExams.map((exam) => (
+        <SimpleCard key={exam.id}>
+          <HStack justify="between" align="center" gap="md" wrap>
+            <HStack gap="sm" align="center">
+              <CalendarCheck className="size-5 text-primary" />
+              <VStack gap="3xs">
+                <Text bold>
+                  {typo(exam.daysToExam === 0 ? `Сегодня экзамен «${exam.title}»` : `Завтра экзамен «${exam.title}»`)}
+                </Text>
+                <Text variant="mini" color="supplementary">
+                  {typo("Открой план дня экзамена: короткое повторение, выгрузка тревог и советы перед аудиторией.")}
+                </Text>
+              </VStack>
+            </HStack>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void navigate({ to: "/app/exam-day/$examId", params: { examId: exam.id } });
+              }}
+            >
+              {typo("План дня экзамена")}
+            </Button>
+          </HStack>
+        </SimpleCard>
       ))}
 
       {processingExams.length > 0 && (

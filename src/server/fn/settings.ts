@@ -1,11 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
+import { setResponseStatus } from "@tanstack/react-start/server";
 
-import { zodRussian } from "~/lib";
+import { PAYWALL_ERRORS, zodRussian } from "~/lib";
+import { hasActivePro } from "~/server/entitlement";
 import { authMiddleware } from "~/server/middleware";
-import { loadUserSettings } from "~/server/userSettings";
+import { DEFAULT_BEDTIME_HOUR, loadUserSettings } from "~/server/userSettings";
 
-// Настройки пользователя: дневной бюджет минут, дни отдыха, час предсонного напоминания.
-// Строка создаётся при первом изменении; чтение отдаёт дефолты.
+// Настройки пользователя: дневной бюджет минут, дни отдыха, час предсонного напоминания,
+// ИИ-сверка открытых ответов (Pro). Строка создаётся при первом изменении; чтение отдаёт дефолты.
 
 export const getUserSettings = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
@@ -16,6 +18,7 @@ export const getUserSettings = createServerFn({ method: "GET" })
       restWeekdays: settings.restWeekdays,
       streakFreezesLeft: settings.streakFreezesLeft,
       bedtimeHour: settings.bedtimeHour,
+      aiCheckEnabled: settings.aiCheckEnabled,
     };
   });
 
@@ -23,6 +26,7 @@ const settingsFieldsInput = zodRussian.object({
   dailyMinutesTotal: zodRussian.number().int().min(5).max(240).optional(),
   restWeekdays: zodRussian.array(zodRussian.number().int().min(0).max(6)).max(7).optional(),
   bedtimeHour: zodRussian.number().int().min(0).max(23).nullable().optional(),
+  aiCheckEnabled: zodRussian.boolean().optional(),
 });
 
 export const updateUserSettings = createServerFn({ method: "POST" })
@@ -30,6 +34,11 @@ export const updateUserSettings = createServerFn({ method: "POST" })
   .validator(settingsFieldsInput)
   .handler(async ({ data, context }) => {
     const userId = context.session.user.id;
+    // Сама ИИ-сверка — платная функция: включить переключатель без Pro нельзя (выключить — можно).
+    if (data.aiCheckEnabled && !(await hasActivePro(context.db, userId))) {
+      setResponseStatus(402);
+      throw new Error(PAYWALL_ERRORS.AI_CHECK);
+    }
     const restWeekdays = data.restWeekdays ? [...new Set(data.restWeekdays)] : undefined;
     await context.db.userSettings.upsert({
       where: { userId },
@@ -37,12 +46,14 @@ export const updateUserSettings = createServerFn({ method: "POST" })
         userId,
         dailyMinutesTotal: data.dailyMinutesTotal ?? 25,
         restWeekdays: restWeekdays ?? [],
-        bedtimeHour: data.bedtimeHour ?? null,
+        bedtimeHour: data.bedtimeHour !== undefined ? data.bedtimeHour : DEFAULT_BEDTIME_HOUR,
+        aiCheckEnabled: data.aiCheckEnabled ?? false,
       },
       update: {
         ...(data.dailyMinutesTotal !== undefined ? { dailyMinutesTotal: data.dailyMinutesTotal } : {}),
         ...(restWeekdays ? { restWeekdays } : {}),
         ...(data.bedtimeHour !== undefined ? { bedtimeHour: data.bedtimeHour } : {}),
+        ...(data.aiCheckEnabled !== undefined ? { aiCheckEnabled: data.aiCheckEnabled } : {}),
       },
     });
     return true;

@@ -23,6 +23,6 @@ export { makeScheduler, retrievability, reviewProgress } from "./src/fsrs";
 export type { GeneratedAnswer, GeneratedCard, GeneratedQuestionCards } from "./src/generation";
 export { parseGeneratedAnswers, parseGeneratedCardList, parseGeneratedCards } from "./src/generation";
 export type { DailyPlanBlock, PlanExamInput, PlanNewCard } from "./src/planner";
-export { buildDailyPlan, computeStreak, readiness } from "./src/planner";
+export { buildDailyPlan, computeStreak, longestStreak, readiness } from "./src/planner";
 export { typo } from "./src/typo";
 export { zodRussian } from "./src/zodRussian";
