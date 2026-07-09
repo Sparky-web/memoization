@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { type ReviewGrade, typo } from "~/lib";
@@ -16,6 +17,9 @@ export const Route = createFileRoute("/app/decks/$deckId/study/")({
 function StudyPage() {
   const data = Route.useLoaderData();
   const queryClient = useQueryClient();
+  const router = useRouter();
+  // «Начать заново» без перезагрузки страницы: лоадер перечитывает очередь, смена ключа сбрасывает стейт сессии.
+  const [sessionKey, setSessionKey] = useState(0);
 
   const reviewMutation = useMutation({
     mutationFn: (input: { cardId: string; grade: ReviewGrade }) => reviewCard({ data: input }),
@@ -31,9 +35,10 @@ function StudyPage() {
 
   const resetMutation = useMutation({
     mutationFn: () => resetDeckProgress({ data: { deckId: data.deckId } }),
-    onSuccess: () => {
-      // Перезагружаем страницу — лоадер заберёт свежую очередь (все карточки снова due).
-      window.location.reload();
+    onSuccess: async () => {
+      void queryClient.invalidateQueries({ queryKey: ["decks"] });
+      await router.invalidate();
+      setSessionKey((key) => key + 1);
     },
     onError: (error) => {
       console.error(error);
@@ -48,6 +53,7 @@ function StudyPage() {
 
   return (
     <StudySession
+      key={sessionKey}
       deckId={data.deckId}
       deckTitle={data.deckTitle}
       requiredCorrect={data.requiredCorrect}

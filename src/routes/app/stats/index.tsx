@@ -30,13 +30,18 @@ function StatsPage() {
 
       <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="sm">
         <Stat label={typo("Повторений сегодня")} value={stats.reviewsToday} />
-        <Stat
-          label={typo("Точность")}
-          value={`${accuracy}%`}
-          hint={typo(`Всего повторений: ${stats.totalReviews}`)}
-        />
+        <Stat label={typo("Точность")} value={`${accuracy}%`} hint={typo(`Всего повторений: ${stats.totalReviews}`)} />
         <Stat label={typo("Серия дней")} value={stats.streakDays} hint={typo("дней подряд с повторениями")} />
       </AdaptiveGrid>
+
+      <VStack gap="sm">
+        <Heading variant="h3">{typo("Прогноз повторений")}</Heading>
+        <AdaptiveGrid cols={{ base: 3 }} gap="sm">
+          <Stat label={typo("Сегодня")} value={stats.forecast.today} />
+          <Stat label={typo("Завтра")} value={stats.forecast.tomorrow} />
+          <Stat label={typo("За неделю")} value={stats.forecast.week} />
+        </AdaptiveGrid>
+      </VStack>
 
       <ActivityChart points={stats.activity} />
     </VStack>

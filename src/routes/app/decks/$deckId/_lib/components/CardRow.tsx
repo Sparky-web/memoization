@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { Badge, Button, HStack, MarkdownView, Text, VStack } from "~/components";
+import { Badge, Button, ConfirmDialog, HStack, MarkdownView, Text, VStack } from "~/components";
 import { type CardStage, cardStage, typo } from "~/lib";
 
 import { useCardEditor } from "../model/deckMutations";
@@ -23,6 +23,7 @@ interface CardRowProps {
 export function CardRow({ card, canEdit }: CardRowProps) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   // editSession растёт при открытии — форма заново подхватывает актуальные значения карточки.
   const [editSession, setEditSession] = useState(0);
   const { update, remove } = useCardEditor();
@@ -33,13 +34,8 @@ export function CardRow({ card, canEdit }: CardRowProps) {
     setEditOpen(true);
   };
 
-  const handleDelete = () => {
-    if (!window.confirm(typo("Удалить карточку?"))) return;
-    remove.mutate(card.id);
-  };
-
   return (
-    <VStack gap="2xs" className="bg-card rounded-2xl p-4">
+    <VStack gap="2xs" className="rounded-2xl bg-card p-4">
       <HStack justify="between" align="start" gap="sm">
         <Text bold>{typo(card.question)}</Text>
         <Badge variant={stageMeta.variant}>{stageMeta.label}</Badge>
@@ -62,12 +58,34 @@ export function CardRow({ card, canEdit }: CardRowProps) {
             <Button variant="ghost" size="sm" onClick={openEdit}>
               {typo("Изменить")}
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleDelete} disabled={remove.isPending}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={remove.isPending}
+              onClick={() => {
+                setDeleteConfirmOpen(true);
+              }}
+            >
               {typo("Удалить")}
             </Button>
           </>
         )}
       </HStack>
+
+      {canEdit && (
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          onOpenChange={setDeleteConfirmOpen}
+          title={typo("Удалить карточку?")}
+          description={typo("Карточка и её прогресс повторений будут удалены. Это действие необратимо.")}
+          confirmLabel={typo("Удалить")}
+          confirmPending={remove.isPending}
+          onConfirm={() => {
+            setDeleteConfirmOpen(false);
+            remove.mutate(card.id);
+          }}
+        />
+      )}
 
       {card.answerDeep && (
         <CardDeepDialog

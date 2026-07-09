@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Badge, Button, Heading, HStack, Input, Label, Text, Textarea, VStack } from "~/components";
+import { Badge, Button, ConfirmDialog, Heading, HStack, Input, Label, Text, Textarea, VStack } from "~/components";
 import { typo } from "~/lib";
 
 import { useDeckActions, useRemoveFavorite } from "../model/deckMutations";
@@ -54,6 +54,7 @@ function FavoriteDeckHeader({ deck }: DeckHeaderProps) {
 
 function OwnerDeckHeader({ deck }: DeckHeaderProps) {
   const [editing, setEditing] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [title, setTitle] = useState(deck.title);
   const [description, setDescription] = useState(deck.description ?? "");
   const [requiredCorrect, setRequiredCorrect] = useState(deck.requiredCorrect);
@@ -81,14 +82,9 @@ function OwnerDeckHeader({ deck }: DeckHeaderProps) {
     );
   };
 
-  const handleRemove = () => {
-    if (!window.confirm(typo("Удалить колоду со всеми карточками? Это действие необратимо."))) return;
-    removeDeck.mutate();
-  };
-
   if (editing) {
     return (
-      <VStack gap="sm" className="bg-card rounded-2xl p-4">
+      <VStack gap="sm" className="rounded-2xl bg-card p-4">
         <div>
           <Label htmlFor="deck-title">{typo("Название")}</Label>
           <Input
@@ -147,7 +143,14 @@ function OwnerDeckHeader({ deck }: DeckHeaderProps) {
           <Button variant="outline" size="sm" onClick={startEdit}>
             {typo("Редактировать")}
           </Button>
-          <Button variant="destructive" size="sm" onClick={handleRemove} disabled={removeDeck.isPending}>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={removeDeck.isPending}
+            onClick={() => {
+              setDeleteConfirmOpen(true);
+            }}
+          >
             {typo("Удалить")}
           </Button>
         </HStack>
@@ -157,6 +160,18 @@ function OwnerDeckHeader({ deck }: DeckHeaderProps) {
         {typo(`Для запоминания: ${deck.requiredCorrect} свайпов вправо`)}
       </Text>
       <ShareDeckControl deckId={deck.id} isPublic={deck.isPublic} />
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title={typo("Удалить колоду?")}
+        description={typo("Колода будет удалена со всеми карточками, заданиями и прогрессом. Это действие необратимо.")}
+        confirmLabel={typo("Удалить")}
+        confirmPending={removeDeck.isPending}
+        onConfirm={() => {
+          removeDeck.mutate();
+        }}
+      />
     </VStack>
   );
 }

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import WordExtractor from "word-extractor";
@@ -31,7 +31,8 @@ const JOB_TIMEOUT_MS = 30 * 60 * 1000;
 const wordExtractor = new WordExtractor();
 
 // Промпт для claude -p: он сам читает ./inputs и пишет ./output.json. Обёрнут в typo() по правилу проекта.
-const GENERATION_PROMPT = typo(`Ты готовишь карточки для подготовки к экзамену. В папке ./inputs/ лежат входные данные пользователя:
+const GENERATION_PROMPT =
+  typo(`Ты готовишь карточки для подготовки к экзамену. В папке ./inputs/ лежат входные данные пользователя:
 - материалы и конспекты (имена файлов начинаются с «materials»);
 - вопросы к экзамену (имена файлов начинаются с «questions») — их может и не быть.
 
@@ -72,7 +73,8 @@ function buildPrompt(instructions: string): string {
 }
 
 // Промпт прохода «вставь слово»: claude читает ./inputs, пишет ./fill.json.
-const FILL_PROMPT = typo(`Ты делаешь тренажёр «вставь пропущенное слово» для подготовки к экзамену. В папке ./inputs/ лежат материалы (конспекты, вопросы или карточки колоды).
+const FILL_PROMPT =
+  typo(`Ты делаешь тренажёр «вставь пропущенное слово» для подготовки к экзамену. В папке ./inputs/ лежат материалы (конспекты, вопросы или карточки колоды).
 
 Сначала изучи всё в ./inputs/: выполни «ls -la inputs», затем полностью прочитай каждый файл (инструмент Read; большие файлы читай частями).
 
@@ -95,7 +97,8 @@ const FILL_PROMPT = typo(`Ты делаешь тренажёр «вставь п
 Не выводи ничего в ответ — просто создай файл ./fill.json. Не выходи за пределы текущей папки.`);
 
 // Промпт прохода «тесты»: claude читает ./inputs, пишет ./quiz.json.
-const QUIZ_PROMPT = typo(`Ты делаешь тест с вариантами ответа для подготовки к экзамену. В папке ./inputs/ лежат материалы (конспекты, вопросы или карточки колоды).
+const QUIZ_PROMPT =
+  typo(`Ты делаешь тест с вариантами ответа для подготовки к экзамену. В папке ./inputs/ лежат материалы (конспекты, вопросы или карточки колоды).
 
 Сначала изучи всё в ./inputs/: выполни «ls -la inputs», затем полностью прочитай каждый файл (инструмент Read; большие файлы читай частями).
 
@@ -196,7 +199,16 @@ function runClaude(jobDir: string, prompt: string, outFile: string): Promise<str
   return new Promise<string>((resolve, reject) => {
     const child = spawn(
       "claude",
-      ["-p", prompt, "--model", CLAUDE_MODEL, "--permission-mode", "acceptEdits", "--allowedTools", "Read,Write,Edit,Bash"],
+      [
+        "-p",
+        prompt,
+        "--model",
+        CLAUDE_MODEL,
+        "--permission-mode",
+        "acceptEdits",
+        "--allowedTools",
+        "Read,Write,Edit,Bash",
+      ],
       { cwd: jobDir, env: process.env, stdio: ["ignore", "ignore", "pipe"] },
     );
 
@@ -223,36 +235,66 @@ function runClaude(jobDir: string, prompt: string, outFile: string): Promise<str
           resolve(content);
         },
         () => {
-          reject(new Error(typo("Claude не создал результат. Проверьте материалы и вход в аккаунт Claude в контейнере.")));
+          reject(
+            new Error(typo("Claude не создал результат. Проверьте материалы и вход в аккаунт Claude в контейнере.")),
+          );
         },
       );
     });
   });
 }
 
-async function runGenerationJob(deckId: string, input: GenerationInput): Promise<void> {
+// Раскладывает материалы пользователя в ./inputs задания (тексты + файлы; Word — извлечённым текстом).
+async function writeJobInputs(inputsDir: string, input: GenerationInput): Promise<void> {
+  await mkdir(inputsDir, { recursive: true });
+  if (input.materialsText.trim()) await writeFile(path.join(inputsDir, "materials.md"), input.materialsText, "utf8");
+  if (input.questionsText.trim()) await writeFile(path.join(inputsDir, "questions.md"), input.questionsText, "utf8");
+  for (const [index, file] of input.files.entries()) {
+    const base = `${file.field}_${index}_${safeName(file.name)}`;
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith(".doc") || lower.endsWith(".docx")) {
+      try {
+        const document = await wordExtractor.extract(file.bytes);
+        await writeFile(path.join(inputsDir, `${base}.txt`), document.getBody(), "utf8");
+        continue;
+      } catch (error) {
+        console.error("word extract failed:", error);
+      }
+    }
+    await writeFile(path.join(inputsDir, base), file.bytes);
+  }
+}
+
+// Пожелания пользователя сохраняем рядом с inputs — «Повторить генерацию» использует их снова.
+const INSTRUCTIONS_FILE = "instructions.txt";
+
+async function readSavedInstructions(jobDir: string): Promise<string> {
+  try {
+    return await readFile(path.join(jobDir, INSTRUCTIONS_FILE), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+// input === null — ретрай: материалы уже лежат в каталоге задания с прошлой (неудавшейся) попытки.
+async function runGenerationJob(deckId: string, input: GenerationInput | null): Promise<void> {
   const jobDir = path.join(JOBS_ROOT, deckId);
   const inputsDir = path.join(jobDir, "inputs");
   try {
-    await mkdir(inputsDir, { recursive: true });
-    if (input.materialsText.trim()) await writeFile(path.join(inputsDir, "materials.md"), input.materialsText, "utf8");
-    if (input.questionsText.trim()) await writeFile(path.join(inputsDir, "questions.md"), input.questionsText, "utf8");
-    for (const [index, file] of input.files.entries()) {
-      const base = `${file.field}_${index}_${safeName(file.name)}`;
-      const lower = file.name.toLowerCase();
-      if (lower.endsWith(".doc") || lower.endsWith(".docx")) {
-        try {
-          const document = await wordExtractor.extract(file.bytes);
-          await writeFile(path.join(inputsDir, `${base}.txt`), document.getBody(), "utf8");
-          continue;
-        } catch (error) {
-          console.error("word extract failed:", error);
-        }
-      }
-      await writeFile(path.join(inputsDir, base), file.bytes);
+    let instructions: string;
+    if (input) {
+      // Первый запуск — чистый каталог, чтобы не подмешать остатки прошлых заданий.
+      await rm(jobDir, { recursive: true, force: true });
+      await writeJobInputs(inputsDir, input);
+      instructions = input.instructions;
+      if (instructions.trim()) await writeFile(path.join(jobDir, INSTRUCTIONS_FILE), instructions, "utf8");
+    } else {
+      // Ретрай: прошлый output.json (возможно, битый) не должен сойти за свежий результат.
+      await rm(path.join(jobDir, "output.json"), { force: true });
+      instructions = await readSavedInstructions(jobDir);
     }
 
-    const output = await runClaude(jobDir, buildPrompt(input.instructions), "output.json");
+    const output = await runClaude(jobDir, buildPrompt(instructions), "output.json");
     const result = parseGeneratedDeck(output);
 
     await db.$transaction([
@@ -281,14 +323,16 @@ async function runGenerationJob(deckId: string, input: GenerationInput): Promise
     // Карточки уже сохранены (колода готова) — задания/тесты генерируем поверх тех же ./inputs.
     // Свои ошибки этот шаг не пробрасывает: неудача заданий не делает колоду failed.
     await runExercisesPasses(deckId, jobDir);
+
+    // Каталог задания удаляем только при успехе.
+    await rm(jobDir, { recursive: true, force: true }).catch(() => undefined);
   } catch (error) {
     console.error(error);
     const message = error instanceof Error ? error.message : typo("Неизвестная ошибка генерации");
     await db.deck
       .update({ where: { id: deckId }, data: { status: "failed", generationError: message.slice(0, 500) } })
       .catch(() => undefined);
-  } finally {
-    await rm(jobDir, { recursive: true, force: true }).catch(() => undefined);
+    // При ошибке inputs сознательно оставляем на диске — из них работает «Повторить генерацию».
   }
 }
 
@@ -327,13 +371,54 @@ async function runDeckExercisesJob(deckId: string): Promise<void> {
   }
 }
 
-// Очередь: один claude за раз (Opus ресурсоёмкий). runGenerationJob сам не бросает — цепочка живёт.
+// Очередь: один claude за раз (Opus ресурсоёмкий). Задания сами не бросают — цепочка живёт.
+// Ключи заданий держим в массиве в порядке постановки: голова — выполняющееся сейчас,
+// индекс — позиция в очереди (для «В очереди: N-я» в интерфейсе).
 let queueTail: Promise<void> = Promise.resolve();
+const queuedJobKeys: string[] = [];
+
+function enqueueJob(jobKey: string, run: () => Promise<void>): void {
+  queuedJobKeys.push(jobKey);
+  queueTail = queueTail.then(async () => {
+    try {
+      await run();
+    } finally {
+      const index = queuedJobKeys.indexOf(jobKey);
+      if (index >= 0) queuedJobKeys.splice(index, 1);
+    }
+  });
+}
 
 export function enqueueGeneration(deckId: string, input: GenerationInput): void {
-  queueTail = queueTail.then(() => runGenerationJob(deckId, input));
+  enqueueJob(deckId, () => runGenerationJob(deckId, input));
+}
+
+/** Повторный запуск генерации по материалам, оставшимся на диске после неудачной попытки. */
+export function enqueueGenerationRetry(deckId: string): void {
+  enqueueJob(deckId, () => runGenerationJob(deckId, null));
 }
 
 export function enqueueDeckExercises(deckId: string): void {
-  queueTail = queueTail.then(() => runDeckExercisesJob(deckId));
+  enqueueJob(`${deckId}:exercises`, () => runDeckExercisesJob(deckId));
+}
+
+/** Позиция генерации колоды в очереди: 0 — выполняется сейчас, null — в очереди нет. */
+export function getGenerationQueuePosition(deckId: string): number | null {
+  const index = queuedJobKeys.indexOf(deckId);
+  return index >= 0 ? index : null;
+}
+
+/** Удаляет каталог задания с диска — материалы неудачной генерации больше не нужны (колода удалена). */
+export function cleanupGenerationJob(deckId: string): void {
+  void rm(path.join(JOBS_ROOT, deckId), { recursive: true, force: true }).catch(() => undefined);
+}
+
+/** Сохранились ли на диске входные материалы колоды (нужны для «Повторить генерацию»). */
+export async function generationInputsExist(deckId: string): Promise<boolean> {
+  try {
+    const entries = await readdir(path.join(JOBS_ROOT, deckId, "inputs"));
+    return entries.length > 0;
+  } catch {
+    return false;
+  }
 }

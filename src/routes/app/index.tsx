@@ -1,14 +1,39 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { toast } from "sonner";
 
-import { AdaptiveGrid, Button, Heading, HStack, SimpleCard, Stat, Text, VStack } from "~/components";
+import { AdaptiveGrid, Button, Heading, HStack, Input, SimpleCard, Stat, Text, VStack } from "~/components";
 import { typo } from "~/lib";
 import { generateMissingExercises } from "~/server/fn/exercises";
 
 import { DeckCard } from "./_lib/components/DeckCard";
 import { FavoriteDeckCard } from "./_lib/components/FavoriteDeckCard";
-import { dashboardQueries } from "./_lib/model/dashboardQueries";
+import { dashboardQueries, type DeckListItem } from "./_lib/model/dashboardQueries";
+
+type DeckSort = "activity" | "alpha" | "due";
+
+const sortOptions: { value: DeckSort; label: string }[] = [
+  { value: "activity", label: typo("По активности") },
+  { value: "alpha", label: typo("По алфавиту") },
+  { value: "due", label: typo("К повторению") },
+];
+
+// «Активность» колоды — последнее повторение, а до первого повторения — момент создания.
+function activityTime(deck: DeckListItem): number {
+  return new Date(deck.lastStudiedAt ?? deck.createdAt).getTime();
+}
+
+const deckComparators: Record<DeckSort, (left: DeckListItem, right: DeckListItem) => number> = {
+  activity: (left, right) => activityTime(right) - activityTime(left),
+  alpha: (left, right) => left.title.localeCompare(right.title, "ru"),
+  due: (left, right) => right.dueCount - left.dueCount,
+};
+
+function matchesSearch(deck: DeckListItem, query: string): boolean {
+  if (deck.title.toLowerCase().includes(query)) return true;
+  return Boolean(deck.description?.toLowerCase().includes(query));
+}
 
 export const Route = createFileRoute("/app/")({
   loader: ({ context }) =>
@@ -25,6 +50,14 @@ function DashboardPage() {
   const queryClient = useQueryClient();
   const { data: decks } = useSuspenseQuery(dashboardQueries.decks());
   const { data: favorites } = useSuspenseQuery(dashboardQueries.favorites());
+
+  // Поиск и сортировка — клиентские; управление показываем, когда колод становится много.
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<DeckSort>("activity");
+  const showControls = decks.length > 5;
+  const query = search.trim().toLowerCase();
+  const filteredDecks = query ? decks.filter((deck) => matchesSearch(deck, query)) : decks;
+  const visibleDecks = [...filteredDecks].sort(deckComparators[sort]);
 
   const totalCards = decks.reduce((sum, deck) => sum + deck.totalCards, 0);
   const dueTotal = decks.reduce((sum, deck) => sum + deck.dueCount, 0);
@@ -91,21 +124,54 @@ function DashboardPage() {
             <Stat label={typo("Усвоено")} value={masteredTotal} />
           </AdaptiveGrid>
 
-          <AdaptiveGrid cols={{ base: 1, md: 2, lg: 3 }} gap="md">
-            {decks.map((deck) => (
-              <DeckCard key={deck.id} deck={deck} />
-            ))}
-          </AdaptiveGrid>
+          {showControls && (
+            <HStack gap="sm" align="center" wrap>
+              <Input
+                value={search}
+                placeholder={typo("Поиск по колодам")}
+                className="max-w-xs"
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                }}
+              />
+              <HStack gap="2xs" wrap>
+                {sortOptions.map((option) => (
+                  <Button
+                    key={option.value}
+                    variant={sort === option.value ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => {
+                      setSort(option.value);
+                    }}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </HStack>
+            </HStack>
+          )}
+
+          {visibleDecks.length ? (
+            <AdaptiveGrid cols={{ base: 1, md: 2, lg: 3 }} gap="md">
+              {visibleDecks.map((deck) => (
+                <DeckCard key={deck.id} deck={deck} />
+              ))}
+            </AdaptiveGrid>
+          ) : (
+            <Text color="supplementary">{typo("По запросу ничего не нашлось — попробуйте другое слово.")}</Text>
+          )}
         </>
       ) : (
-        <SimpleCard title={typo("Пока нет ни одной колоды")} size="lg">
+        <SimpleCard title={typo("Создайте первую колоду")} size="lg">
           <Text color="supplementary">
             {typo(
-              "Создайте первую колоду: вставьте список вопросов через подготовленный промпт для Клода — и начните запоминать.",
+              "Загрузите конспект или список экзаменационных вопросов — Клод сам сделает карточки с ответами, задания «вставь слово» и тесты. Останется только повторять.",
             )}
           </Text>
           <HStack>
-            <Button onClick={goToNewDeck}>{typo("Создать колоду")}</Button>
+            <Button size="lg" onClick={goToNewDeck}>
+              {typo("Создать первую колоду")}
+            </Button>
           </HStack>
         </SimpleCard>
       )}

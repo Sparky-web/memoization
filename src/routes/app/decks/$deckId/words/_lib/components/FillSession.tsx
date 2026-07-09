@@ -10,6 +10,9 @@ interface FillSessionProps {
   deckId: string;
   deckTitle: string;
   initialTasks: FillSessionTask[];
+  /** «Ещё 20»: перезагрузка порции заданий без перезагрузки страницы (владелец — страница). */
+  onRestart: () => void;
+  restartPending: boolean;
 }
 
 interface FillResult {
@@ -41,7 +44,7 @@ function optionClass(option: string, submitted: string | null, result: FillResul
   return "opacity-50";
 }
 
-export function FillSession({ deckId, deckTitle, initialTasks }: FillSessionProps) {
+export function FillSession({ deckId, deckTitle, initialTasks, onRestart, restartPending }: FillSessionProps) {
   const navigate = useNavigate();
   const answerMutation = useFillAnswer();
   const dislikeMutation = useFillDislike();
@@ -126,9 +129,8 @@ export function FillSession({ deckId, deckTitle, initialTasks }: FillSessionProp
       <PracticeSummary
         answered={answered}
         correct={correct}
-        onRestart={() => {
-          window.location.reload();
-        }}
+        onRestart={onRestart}
+        restartPending={restartPending}
         onExit={goToDeck}
       />
     );
@@ -156,10 +158,12 @@ export function FillSession({ deckId, deckTitle, initialTasks }: FillSessionProp
         />
       )}
 
-      <VStack gap="xl" justify="center" className="bg-card flex min-h-0 flex-1 rounded-3xl p-6 shadow-md">
+      <VStack gap="xl" justify="center" className="flex min-h-0 flex-1 rounded-3xl bg-card p-6 shadow-md">
         <Text variant="large" align="center">
           {before}
-          <span className={`mx-1 inline-block min-w-16 border-b-2 px-1 text-center font-semibold ${slotClass(slotState)}`}>
+          <span
+            className={`mx-1 inline-block min-w-16 border-b-2 px-1 text-center font-semibold ${slotClass(slotState)}`}
+          >
             {submitted ?? "…"}
           </span>
           {after}
@@ -167,10 +171,22 @@ export function FillSession({ deckId, deckTitle, initialTasks }: FillSessionProp
 
         {hasOptions && !result && (
           <HStack gap="2xs" justify="center">
-            <Button variant={effectiveMode === "choice" ? "secondary" : "ghost"} size="sm" onClick={() => { setMode("choice"); }}>
+            <Button
+              variant={effectiveMode === "choice" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => {
+                setMode("choice");
+              }}
+            >
               {typo("Варианты")}
             </Button>
-            <Button variant={effectiveMode === "manual" ? "secondary" : "ghost"} size="sm" onClick={() => { setMode("manual"); }}>
+            <Button
+              variant={effectiveMode === "manual" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => {
+                setMode("manual");
+              }}
+            >
               {typo("Ввести вручную")}
             </Button>
           </HStack>

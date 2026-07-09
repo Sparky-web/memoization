@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { typo } from "~/lib";
 import { addCard, deleteCard, updateCard } from "~/server/fn/cards";
-import { deleteDeck, removeFavorite, setDeckPublic, updateDeck } from "~/server/fn/decks";
+import { deleteDeck, removeFavorite, retryGeneration, setDeckPublic, updateDeck } from "~/server/fn/decks";
 import { generateDeckExercises } from "~/server/fn/exercises";
 import { resetDeckProgress } from "~/server/fn/study";
 
@@ -95,6 +95,22 @@ export function useDeckActions(deckId: string) {
   });
 
   return { rename, removeDeck };
+}
+
+// Повторный запуск неудавшейся генерации колоды — по материалам, сохранённым на сервере.
+export function useRetryGeneration(deckId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => retryGeneration({ data: { id: deckId } }),
+    onSuccess: () => {
+      toast.success(typo("Запустили генерацию заново"));
+      void queryClient.invalidateQueries({ queryKey: DECKS_KEY });
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось перезапустить генерацию"));
+    },
+  });
 }
 
 export function useGenerateExercises(deckId: string) {

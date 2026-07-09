@@ -3,6 +3,12 @@ import { getRequestHeaders, setResponseStatus } from "@tanstack/react-start/serv
 
 import { importedCardSchema, typo, zodRussian } from "~/lib";
 import { auth } from "~/server/auth";
+import {
+  cleanupGenerationJob,
+  enqueueGenerationRetry,
+  generationInputsExist,
+  getGenerationQueuePosition,
+} from "~/server/generation";
 import { authMiddleware, baseMiddleware } from "~/server/middleware";
 
 // Колода — подготовка к экзамену. Прогресс повторения у каждого пользователя свой (CardProgress):
@@ -73,6 +79,14 @@ export const getDecks = createServerFn({ method: "GET" })
     const dueByDeck = new Map(dueGroups.map((group) => [group.deckId, group.n]));
     const masteredByDeck = new Map(masteredRows.map((row) => [row.deckId, row.n]));
 
+    // Последнее повторение по колоде — для сортировки «по активности» на дашборде.
+    const lastReviewGroups = await context.db.review.groupBy({
+      by: ["deckId"],
+      where: { userId, deck: { userId } },
+      _max: { reviewedAt: true },
+    });
+    const lastReviewByDeck = new Map(lastReviewGroups.map((group) => [group.deckId, group._max.reviewedAt]));
+
     return decks.map((deck) => ({
       id: deck.id,
       title: deck.title,
@@ -84,6 +98,9 @@ export const getDecks = createServerFn({ method: "GET" })
       totalCards: deck._count.cards,
       dueCount: dueByDeck.get(deck.id) ?? 0,
       masteredCount: masteredByDeck.get(deck.id) ?? 0,
+      lastStudiedAt: lastReviewByDeck.get(deck.id) ?? null,
+      // Позиция в очереди генерации: 0 — генерируется сейчас, ≥1 — ждёт очереди, null — не в очереди.
+      queuePosition: deck.status === "processing" ? getGenerationQueuePosition(deck.id) : null,
     }));
   });
 
@@ -128,6 +145,9 @@ export const getDeckById = createServerFn({ method: "GET" })
     // Служебные поля генерации/заданий — только владельцу (добавившему в избранное они не нужны и не показываются).
     const isOwner = deck.userId === userId;
 
+    // «Повторить генерацию» доступно владельцу неудавшейся колоды, пока её материалы лежат на диске.
+    const canRetryGeneration = isOwner && deck.status === "failed" ? await generationInputsExist(deck.id) : false;
+
     return {
       id: deck.id,
       title: deck.title,
@@ -135,6 +155,9 @@ export const getDeckById = createServerFn({ method: "GET" })
       requiredCorrect: deck.requiredCorrect,
       status: deck.status,
       generationError: isOwner ? deck.generationError : null,
+      // Позиция в очереди генерации: 0 — генерируется сейчас, ≥1 — ждёт очереди, null — не в очереди.
+      queuePosition: isOwner && deck.status === "processing" ? getGenerationQueuePosition(deck.id) : null,
+      canRetryGeneration,
       exercisesStatus: isOwner ? deck.exercisesStatus : "none",
       exercisesError: isOwner ? deck.exercisesError : null,
       isPublic: deck.isPublic,
@@ -188,6 +211,40 @@ export const updateDeck = createServerFn({ method: "POST" })
     return true;
   });
 
+// Повторный запуск неудавшейся генерации: материалы прошлой попытки сохранены в data/jobs/<deckId>/inputs.
+export const retryGeneration = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ id: zodRussian.string() }))
+  .handler(async ({ data, context }) => {
+    const deck = await context.db.deck.findFirst({
+      where: { id: data.id, userId: context.session.user.id },
+      select: { id: true, status: true },
+    });
+    if (!deck) {
+      setResponseStatus(404);
+      throw new Error(typo("Колода не найдена"));
+    }
+    if (deck.status !== "failed") {
+      setResponseStatus(400);
+      throw new Error(typo("Повторить можно только неудавшуюся генерацию"));
+    }
+    if (!(await generationInputsExist(deck.id))) {
+      setResponseStatus(400);
+      throw new Error(typo("Исходные материалы не сохранились — создайте колоду заново"));
+    }
+    // Атомарный «захват»: двойной клик не поставит в очередь два задания.
+    const claimed = await context.db.deck.updateMany({
+      where: { id: deck.id, userId: context.session.user.id, status: "failed" },
+      data: { status: "processing", generationError: null },
+    });
+    if (!claimed.count) {
+      setResponseStatus(409);
+      throw new Error(typo("Генерация уже запущена"));
+    }
+    enqueueGenerationRetry(deck.id);
+    return true;
+  });
+
 export const deleteDeck = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(zodRussian.object({ id: zodRussian.string() }))
@@ -199,6 +256,8 @@ export const deleteDeck = createServerFn({ method: "POST" })
       setResponseStatus(404);
       throw new Error(typo("Колода не найдена"));
     }
+    // Материалы неудачной генерации хранились для ретрая — вместе с колодой они больше не нужны.
+    cleanupGenerationJob(data.id);
     return true;
   });
 
@@ -242,7 +301,11 @@ export const getPublicDeck = createServerFn({ method: "GET" })
         _count: { select: { cards: true } },
         // Превью: только первые N карточек и без answerDeep (глубинный разбор — самый дорогой контент,
         // он доступен только владельцу/добавившему в избранное через getDeckById, а не анонимам по ссылке).
-        cards: { orderBy: { position: "asc" }, take: PUBLIC_PREVIEW_LIMIT, select: { id: true, question: true, answer: true } },
+        cards: {
+          orderBy: { position: "asc" },
+          take: PUBLIC_PREVIEW_LIMIT,
+          select: { id: true, question: true, answer: true },
+        },
       },
     });
     const isOwner = !!viewerId && deck?.userId === viewerId;

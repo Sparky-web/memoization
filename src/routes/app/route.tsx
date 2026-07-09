@@ -11,12 +11,15 @@ export const Route = createFileRoute("/app")({
   beforeLoad: async () => {
     const session = await getSession();
     if (!session) throw redirect({ to: "/auth/signin" });
+    // Имя и почта — для меню пользователя в шапке (доступны детям через route context).
+    return { user: { name: session.user.name, email: session.user.email } };
   },
   head: () => ({ meta: [{ title: typo("Мемокарты") }, { name: "robots", content: "noindex, nofollow" }] }),
   component: AppLayout,
 });
 
 function AppLayout() {
+  const { user } = Route.useRouteContext();
   // Меняется при навигации → область содержимого перемонтируется и проигрывает анимацию появления.
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   // Экран повторения занимает весь экран без прокрутки страницы (скролл — только внутри карточки).
@@ -24,7 +27,7 @@ function AppLayout() {
 
   return (
     <div className="flex h-dvh flex-col">
-      <AppHeader />
+      <AppHeader user={user} />
       {isStudy ? (
         <main key={pathname} className="min-h-0 flex-1 overflow-hidden">
           <Outlet />

@@ -40,6 +40,14 @@ function buildActivitySeries(reviews: { reviewedAt: Date }[]): { date: string; c
   return series;
 }
 
+// Конец календарного дня в таймзоне приложения. Europe/Moscow — фиксированный UTC+3
+// (перехода на летнее время нет с 2014 года), поэтому смещение можно зашить в строку.
+const MOSCOW_UTC_OFFSET = "+03:00";
+
+function endOfMoscowDay(daysFromNow: number): Date {
+  return new Date(`${dayKey(new Date(Date.now() + daysFromNow * DAY_MS))}T23:59:59.999${MOSCOW_UTC_OFFSET}`);
+}
+
 // Серия подряд идущих дней с повторениями. Жива, если занимались сегодня или (ещё) вчера.
 function computeStreak(dayKeys: Set<string>): number {
   const now = Date.now();
@@ -62,30 +70,42 @@ export const getOverallStats = createServerFn({ method: "GET" })
     const userId = context.session.user.id;
     const now = new Date();
     const since = new Date(now.getTime() - ACTIVITY_DAYS * DAY_MS);
+    const endToday = endOfMoscowDay(0);
+    const endTomorrow = endOfMoscowDay(1);
+    // «Неделя» = сегодня и ещё 6 дней вперёд.
+    const endWeek = endOfMoscowDay(6);
 
-    const [totalDecks, totalCards, masteredRows, dueRows, gradeGroups, recentReviews, reviewDays] = await Promise.all([
-      context.db.deck.count({ where: { userId } }),
-      context.db.card.count({ where: { deck: { userId } } }),
-      // «Усвоено» = карточки владельца, у которых его серия верных ответов ≥ требуемого числа повторений колоды.
-      context.db.$queryRaw<{ n: number }[]>`
+    const [totalDecks, totalCards, masteredRows, dueRows, gradeGroups, recentReviews, reviewDays, upcomingDue] =
+      await Promise.all([
+        context.db.deck.count({ where: { userId } }),
+        context.db.card.count({ where: { deck: { userId } } }),
+        // «Усвоено» = карточки владельца, у которых его серия верных ответов ≥ требуемого числа повторений колоды.
+        context.db.$queryRaw<{ n: number }[]>`
         SELECT count(*)::int AS n
         FROM "CardProgress" cp
         JOIN "Card" c ON c.id = cp."cardId"
         JOIN "Deck" d ON d.id = c."deckId"
         WHERE d."userId" = ${userId} AND cp."userId" = ${userId} AND cp.streak >= d."requiredCorrect"
       `,
-      // «К повторению» = карточки без прогресса (новые) или с наступившим сроком.
-      context.db.$queryRaw<{ n: number }[]>`
+        // «К повторению» = карточки без прогресса (новые) или с наступившим сроком.
+        context.db.$queryRaw<{ n: number }[]>`
         SELECT count(*)::int AS n
         FROM "Card" c
         JOIN "Deck" d ON d.id = c."deckId"
         LEFT JOIN "CardProgress" cp ON cp."cardId" = c.id AND cp."userId" = ${userId}
         WHERE d."userId" = ${userId} AND (cp.id IS NULL OR cp."dueAt" <= ${now})
       `,
-      context.db.review.groupBy({ by: ["grade"], where: { userId }, _count: { _all: true } }),
-      context.db.review.findMany({ where: { userId, reviewedAt: { gte: since } }, select: { reviewedAt: true } }),
-      context.db.review.findMany({ where: { userId }, select: { reviewedAt: true }, orderBy: { reviewedAt: "desc" }, take: 1000 }),
-    ]);
+        context.db.review.groupBy({ by: ["grade"], where: { userId }, _count: { _all: true } }),
+        context.db.review.findMany({ where: { userId, reviewedAt: { gte: since } }, select: { reviewedAt: true } }),
+        context.db.review.findMany({
+          where: { userId },
+          select: { reviewedAt: true },
+          orderBy: { reviewedAt: "desc" },
+          take: 1000,
+        }),
+        // Прогноз нагрузки: все сроки повторения пользователя в ближайшую неделю (включая просроченные).
+        context.db.cardProgress.findMany({ where: { userId, dueAt: { lte: endWeek } }, select: { dueAt: true } }),
+      ]);
 
     const masteredCards = masteredRows[0]?.n ?? 0;
     const dueCards = dueRows[0]?.n ?? 0;
@@ -96,7 +116,25 @@ export const getOverallStats = createServerFn({ method: "GET" })
     const reviewsToday = activity[activity.length - 1]?.count ?? 0;
     const streakDays = computeStreak(new Set(reviewDays.map((review) => dayKey(review.reviewedAt))));
 
-    return { totalDecks, totalCards, masteredCards, dueCards, totalReviews, accuracy, reviewsToday, streakDays, activity };
+    // Прогноз: сколько карточек станет к повторению до конца сегодня / завтра / за неделю (накопительно).
+    const forecast = {
+      today: upcomingDue.filter((progress) => progress.dueAt <= endToday).length,
+      tomorrow: upcomingDue.filter((progress) => progress.dueAt > endToday && progress.dueAt <= endTomorrow).length,
+      week: upcomingDue.length,
+    };
+
+    return {
+      totalDecks,
+      totalCards,
+      masteredCards,
+      dueCards,
+      totalReviews,
+      accuracy,
+      reviewsToday,
+      streakDays,
+      activity,
+      forecast,
+    };
   });
 
 export const getDeckStats = createServerFn({ method: "GET" })

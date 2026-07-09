@@ -1,7 +1,8 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 
-import { Button, Heading, HStack, SimpleCard, Text, VStack } from "~/components";
+import { Button, ConfirmDialog, Heading, HStack, SimpleCard, Text, VStack } from "~/components";
 import { typo } from "~/lib";
 
 import { AddCardButton } from "./_lib/components/AddCardButton";
@@ -9,7 +10,7 @@ import { CardRow } from "./_lib/components/CardRow";
 import { DeckHeader } from "./_lib/components/DeckHeader";
 import { DeckStatsPanel } from "./_lib/components/DeckStatsPanel";
 import { ExercisesPanel } from "./_lib/components/ExercisesPanel";
-import { useResetDeck } from "./_lib/model/deckMutations";
+import { useResetDeck, useRetryGeneration } from "./_lib/model/deckMutations";
 import { deckQueries } from "./_lib/model/deckQueries";
 
 export const Route = createFileRoute("/app/decks/$deckId/")({
@@ -22,12 +23,24 @@ export const Route = createFileRoute("/app/decks/$deckId/")({
   component: DeckDetailPage,
 });
 
+// Текст статуса генерации: позиция в очереди или «генерируется сейчас».
+function processingMessage(queuePosition: number | null): string {
+  if (queuePosition && queuePosition > 0) {
+    return typo(`В очереди: ${queuePosition}-я. Claude обрабатывает колоды по одной — страница обновится сама.`);
+  }
+  return typo(
+    "Claude готовит карточки по вашим материалам. Это может занять несколько минут — страница обновится сама.",
+  );
+}
+
 function DeckDetailPage() {
   const { deckId } = Route.useParams();
   const navigate = useNavigate();
   const { data: deck } = useSuspenseQuery(deckQueries.detail(deckId));
   const { data: stats } = useSuspenseQuery(deckQueries.stats(deckId));
   const reset = useResetDeck(deckId);
+  const retry = useRetryGeneration(deckId);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   const startStudy = () => {
     void navigate({ to: "/app/decks/$deckId/study", params: { deckId } });
@@ -41,9 +54,7 @@ function DeckDetailPage() {
         <SimpleCard title={typo("Колода генерируется")}>
           <HStack gap="sm" align="center">
             <div className="size-5 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            <Text color="supplementary">
-              {typo("Claude готовит карточки по вашим материалам. Это может занять несколько минут — страница обновится сама.")}
-            </Text>
+            <Text color="supplementary">{processingMessage(deck.queuePosition)}</Text>
           </HStack>
         </SimpleCard>
       )}
@@ -51,9 +62,27 @@ function DeckDetailPage() {
       {deck.status === "failed" && (
         <SimpleCard title={typo("Не удалось сгенерировать")}>
           <Text color="destructive">{typo(deck.generationError ?? "Неизвестная ошибка")}</Text>
-          <Text variant="small" color="supplementary">
-            {typo("Удалите колоду и попробуйте снова — с другими материалами или вопросами.")}
-          </Text>
+          {deck.canRetryGeneration ? (
+            <VStack gap="sm">
+              <Text variant="small" color="supplementary">
+                {typo("Материалы сохранились — можно запустить генерацию ещё раз без повторной загрузки.")}
+              </Text>
+              <HStack>
+                <Button
+                  disabled={retry.isPending}
+                  onClick={() => {
+                    retry.mutate();
+                  }}
+                >
+                  {typo("Повторить генерацию")}
+                </Button>
+              </HStack>
+            </VStack>
+          ) : (
+            <Text variant="small" color="supplementary">
+              {typo("Удалите колоду и попробуйте снова — с другими материалами или вопросами.")}
+            </Text>
+          )}
         </SimpleCard>
       )}
 
@@ -70,13 +99,28 @@ function DeckDetailPage() {
                 variant="outline"
                 disabled={reset.isPending}
                 onClick={() => {
-                  reset.mutate();
+                  setResetConfirmOpen(true);
                 }}
               >
                 {typo("Начать заново")}
               </Button>
             )}
           </HStack>
+
+          <ConfirmDialog
+            open={resetConfirmOpen}
+            onOpenChange={setResetConfirmOpen}
+            title={typo("Начать заново?")}
+            description={typo(
+              "Прогресс повторений по всем карточкам колоды будет сброшен — они снова станут новыми. Статистика повторений сохранится.",
+            )}
+            confirmLabel={typo("Сбросить прогресс")}
+            confirmPending={reset.isPending}
+            onConfirm={() => {
+              setResetConfirmOpen(false);
+              reset.mutate();
+            }}
+          />
 
           {deck.isOwner && (
             <ExercisesPanel
@@ -99,7 +143,9 @@ function DeckDetailPage() {
               </VStack>
             ) : (
               <Text color="supplementary">
-                {typo("В колоде пока нет карточек. Добавьте вручную или создайте новую колоду импортом или генерацией.")}
+                {typo(
+                  "В колоде пока нет карточек. Добавьте вручную или создайте новую колоду импортом или генерацией.",
+                )}
               </Text>
             )}
           </VStack>

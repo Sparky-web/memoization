@@ -10,6 +10,9 @@ interface QuizSessionProps {
   deckId: string;
   deckTitle: string;
   initialTasks: QuizSessionTask[];
+  /** «Ещё 20»: перезагрузка порции вопросов без перезагрузки страницы (владелец — страница). */
+  onRestart: () => void;
+  restartPending: boolean;
 }
 
 interface QuizResult {
@@ -26,7 +29,7 @@ function optionClass(option: string, selected: string | null, result: QuizResult
   return "w-full justify-start text-left opacity-50";
 }
 
-export function QuizSession({ deckId, deckTitle, initialTasks }: QuizSessionProps) {
+export function QuizSession({ deckId, deckTitle, initialTasks, onRestart, restartPending }: QuizSessionProps) {
   const navigate = useNavigate();
   const answerMutation = useQuizAnswer();
   const dislikeMutation = useQuizDislike();
@@ -102,9 +105,8 @@ export function QuizSession({ deckId, deckTitle, initialTasks }: QuizSessionProp
       <PracticeSummary
         answered={answered}
         correct={correct}
-        onRestart={() => {
-          window.location.reload();
-        }}
+        onRestart={onRestart}
+        restartPending={restartPending}
         onExit={goToDeck}
       />
     );
@@ -127,7 +129,7 @@ export function QuizSession({ deckId, deckTitle, initialTasks }: QuizSessionProp
         />
       )}
 
-      <VStack gap="lg" className="bg-card min-h-0 flex-1 overflow-y-auto rounded-3xl p-6 shadow-md">
+      <VStack gap="lg" className="min-h-0 flex-1 overflow-y-auto rounded-3xl bg-card p-6 shadow-md">
         <MarkdownView>{current.question}</MarkdownView>
 
         <VStack gap="sm">
@@ -149,7 +151,7 @@ export function QuizSession({ deckId, deckTitle, initialTasks }: QuizSessionProp
         {result && (
           <VStack gap="sm">
             {result.explanation ? (
-              <div className="bg-muted rounded-xl p-3">
+              <div className="rounded-xl bg-muted p-3">
                 <MarkdownView>{result.explanation}</MarkdownView>
               </div>
             ) : null}

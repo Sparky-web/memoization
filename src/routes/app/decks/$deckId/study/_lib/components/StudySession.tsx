@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-import { Button, Heading, HStack, Stat, Text, VStack } from "~/components";
+import { Button, ConfirmDialog, Heading, HStack, Stat, Text, useMountEffect, VStack } from "~/components";
 import { type ReviewGrade, typo } from "~/lib";
 
 import { SwipeCard } from "./SwipeCard";
@@ -28,6 +28,24 @@ interface StudySessionProps {
 
 const REQUEUE_AGAIN_GAP = 2;
 const REQUEUE_GOOD_GAP = 6;
+// Окно «Отменить»: ответ уходит на сервер после паузы, чтобы случайный свайп можно было вернуть.
+const UNDO_DELAY_MS = 3500;
+
+// Снимок состояния сессии до свайпа — для отмены и для отката при ошибке сети.
+interface SessionSnapshot {
+  queue: StudyCardView[];
+  progress: Record<string, number>;
+  reviewed: number;
+  learned: number;
+}
+
+interface PendingReview {
+  /** Снимок для «Отменить» — вернуть карточку на прежнее место. */
+  snapshot: SessionSnapshot;
+  timer: ReturnType<typeof setTimeout>;
+  /** Отправка ответа на сервер (замыкание свайпа — с откатом при ошибке сети). */
+  send: () => void;
+}
 
 function requeue(queue: StudyCardView[], gap: number): StudyCardView[] {
   const [head, ...rest] = queue;
@@ -54,10 +72,81 @@ export function StudySession({
   const [reviewed, setReviewed] = useState(0);
   const [learned, setLearned] = useState(0);
   const [goodPulse, setGoodPulse] = useState(0);
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
+
+  // Отложенная отправка последнего ответа: пока идёт окно отмены, мутация не уходит.
+  const pendingRef = useRef<PendingReview | null>(null);
+  const swipeSeqRef = useRef(0);
+  const [pendingGrade, setPendingGrade] = useState<ReviewGrade | null>(null);
+
+  const restoreSnapshot = (snapshot: SessionSnapshot) => {
+    setQueue(snapshot.queue);
+    setProgress(snapshot.progress);
+    setReviewed(snapshot.reviewed);
+    setLearned(snapshot.learned);
+  };
+
+  // Немедленно отправляет отложенный ответ (следующий свайп, истечение таймера, уход со страницы).
+  // Замыкается только на стабильные значения (ref и сеттер) — безопасно звать из cleanup при размонтировании.
+  const flushPending = () => {
+    const pending = pendingRef.current;
+    if (!pending) return;
+    pendingRef.current = null;
+    clearTimeout(pending.timer);
+    setPendingGrade(null);
+    pending.send();
+  };
+
+  // «Отменить»: возвращаем карточку на прежнее место, мутация не уходит.
+  const undoPending = () => {
+    const pending = pendingRef.current;
+    if (!pending) return;
+    pendingRef.current = null;
+    clearTimeout(pending.timer);
+    setPendingGrade(null);
+    restoreSnapshot(pending.snapshot);
+  };
+
+  // Уход со страницы любым путём (в том числе навигация из шапки): отложенный ответ не должен потеряться.
+  useMountEffect(() => () => {
+    flushPending();
+  });
 
   const goToDeck = () => {
+    flushPending();
     void navigate({ to: "/app/decks/$deckId", params: { deckId } });
   };
+
+  const confirmRestart = () => {
+    setRestartConfirmOpen(false);
+    flushPending();
+    onRestart();
+  };
+
+  const restartConfirmDialog = (
+    <ConfirmDialog
+      open={restartConfirmOpen}
+      onOpenChange={setRestartConfirmOpen}
+      title={typo("Начать заново?")}
+      description={typo(
+        "Прогресс повторений по всем карточкам колоды будет сброшен — они снова станут новыми. Статистика повторений сохранится.",
+      )}
+      confirmLabel={typo("Сбросить прогресс")}
+      confirmPending={restartPending}
+      onConfirm={confirmRestart}
+    />
+  );
+
+  const pendingToast = pendingGrade && (
+    <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
+      <HStack gap="md" align="center" className="rounded-full border border-border bg-card px-5 py-2 shadow-lg">
+        <Text variant="small">{pendingGrade === "good" ? typo("Вспомнил ✓") : typo("Было сложно")}</Text>
+        <Button variant="link" size="inline" onClick={undoPending}>
+          {typo("Отменить")}
+        </Button>
+      </HStack>
+    </div>
+  );
 
   if (!initialCards.length) {
     return (
@@ -69,13 +158,19 @@ export function StudySession({
           {typo("Карточки появятся, когда подойдёт срок повторения. Можно пройти колоду заново.")}
         </Text>
         <HStack gap="sm" wrap justify="center">
-          <Button onClick={onRestart} disabled={restartPending}>
+          <Button
+            disabled={restartPending}
+            onClick={() => {
+              setRestartConfirmOpen(true);
+            }}
+          >
             {typo("Начать заново")}
           </Button>
           <Button variant="outline" onClick={goToDeck}>
             {typo("К колоде")}
           </Button>
         </HStack>
+        {restartConfirmDialog}
       </VStack>
     );
   }
@@ -95,23 +190,30 @@ export function StudySession({
           <Stat label={typo("Готово")} value={`${accuracy}%`} />
         </HStack>
         <HStack gap="sm" wrap justify="center">
-          <Button onClick={onRestart} disabled={restartPending}>
+          <Button
+            disabled={restartPending}
+            onClick={() => {
+              setRestartConfirmOpen(true);
+            }}
+          >
             {typo("Начать заново")}
           </Button>
           <Button variant="outline" onClick={goToDeck}>
             {typo("К колоде")}
           </Button>
         </HStack>
+        {restartConfirmDialog}
+        {pendingToast}
       </VStack>
     );
   }
 
   const handleSwipe = (grade: ReviewGrade) => {
+    // Предыдущий отложенный ответ уходит немедленно — окно отмены действует только для последнего.
+    flushPending();
+
     const card = current;
-    const previousQueue = queue;
-    const previousProgress = progress;
-    const previousReviewed = reviewed;
-    const previousLearned = learned;
+    const snapshot: SessionSnapshot = { queue, progress, reviewed, learned };
 
     const goodCount = grade === "good" ? (progress[card.id] ?? 0) + 1 : 0;
     const graduated = grade === "good" && goodCount >= requiredCorrect;
@@ -120,16 +222,21 @@ export function StudySession({
     if (grade === "good") setGoodPulse((value) => value + 1);
     setProgress((map) => ({ ...map, [card.id]: goodCount }));
     if (graduated) setLearned((value) => value + 1);
-    setQueue(
-      graduated ? previousQueue.slice(1) : requeue(previousQueue, grade === "good" ? REQUEUE_GOOD_GAP : REQUEUE_AGAIN_GAP),
-    );
+    setQueue(graduated ? queue.slice(1) : requeue(queue, grade === "good" ? REQUEUE_GOOD_GAP : REQUEUE_AGAIN_GAP));
 
-    void onReview(card.id, grade).catch(() => {
-      setQueue(previousQueue);
-      setProgress(previousProgress);
-      setReviewed(previousReviewed);
-      setLearned(previousLearned);
-    });
+    swipeSeqRef.current += 1;
+    const swipeSeq = swipeSeqRef.current;
+    const send = () => {
+      void onReview(card.id, grade).catch(() => {
+        // Откатываем, только если это всё ещё последний свайп — иначе затёрли бы более новое состояние.
+        if (swipeSeqRef.current === swipeSeq) restoreSnapshot(snapshot);
+      });
+    };
+    const timer = setTimeout(() => {
+      flushPending();
+    }, UNDO_DELAY_MS);
+    pendingRef.current = { snapshot, timer, send };
+    setPendingGrade(grade);
   };
 
   const currentProgress = progress[current.id] ?? 0;
@@ -176,6 +283,9 @@ export function StudySession({
           {typo(`Вправо для запоминания: ${currentProgress} из ${requiredCorrect}`)}
         </Text>
       )}
+
+      {restartConfirmDialog}
+      {pendingToast}
     </div>
   );
 }

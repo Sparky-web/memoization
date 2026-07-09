@@ -5,6 +5,9 @@ import { Toaster } from "sonner";
 import { typo } from "~/lib";
 import appCss from "~/styles/app.css?url";
 
+// До гидрации: включаем сохранённую тёмную тему (по умолчанию светлая), чтобы не мигало.
+const themeInitScript = `try{var t=localStorage.getItem("theme");if(t==="dark")document.documentElement.classList.add("dark")}catch(e){}`;
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
@@ -23,13 +26,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "icon", href: "/icon-192.png", type: "image/png" },
       { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
     ],
+    scripts: [{ children: themeInitScript }],
   }),
   component: RootComponent,
 });
 
 function RootComponent() {
+  // Класс dark выставляет themeInitScript до гидрации — React о нём не знает, гасим предупреждение.
   return (
-    <html lang="ru">
+    <html lang="ru" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>

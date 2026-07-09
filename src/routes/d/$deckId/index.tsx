@@ -6,6 +6,13 @@ import { typo } from "~/lib";
 
 import { publicDeckQueries, useAddFavorite } from "../_lib";
 
+// Описание для OG-превью ссылки в мессенджерах: описание колоды, а без него — число карточек.
+function ogDescription(deck: { description: string | null; totalCards: number } | undefined): string {
+  if (!deck) return typo("Мемокарты — карточки для подготовки к экзаменам");
+  if (deck.description) return typo(deck.description);
+  return typo(`${deck.totalCards} карточек для подготовки к экзамену`);
+}
+
 export const Route = createFileRoute("/d/$deckId/")({
   // Колода приватная/удалена/ссылка неверна → server fn кидает 404; показываем дружелюбную заглушку, а не 500.
   loader: async ({ context, params }) => {
@@ -15,7 +22,19 @@ export const Route = createFileRoute("/d/$deckId/")({
       throw notFound();
     }
   },
-  head: () => ({ meta: [{ title: typo("Колода") }, { name: "robots", content: "noindex, nofollow" }] }),
+  head: ({ loaderData }) => {
+    const title = loaderData ? typo(loaderData.title) : typo("Колода");
+    return {
+      meta: [
+        { title },
+        { name: "robots", content: "noindex, nofollow" },
+        { property: "og:title", content: title },
+        { property: "og:description", content: ogDescription(loaderData) },
+        { property: "og:site_name", content: typo("Мемокарты") },
+        { property: "og:type", content: "website" },
+      ],
+    };
+  },
   notFoundComponent: PublicDeckNotFound,
   component: PublicDeckPage,
 });
@@ -27,9 +46,7 @@ function PublicDeckNotFound() {
       <Container className="py-8">
         <VStack gap="md">
           <Heading variant="h1">{typo("Колода недоступна")}</Heading>
-          <Text color="supplementary">
-            {typo("Ссылка неверна или владелец закрыл доступ к колоде по ссылке.")}
-          </Text>
+          <Text color="supplementary">{typo("Ссылка неверна или владелец закрыл доступ к колоде по ссылке.")}</Text>
           <HStack>
             <Button
               onClick={() => {
@@ -121,7 +138,7 @@ function PublicDeckPage() {
             <Heading variant="h3">{typo("Карточки")}</Heading>
             <VStack gap="sm">
               {deck.cards.map((card) => (
-                <VStack key={card.id} gap="2xs" className="bg-card rounded-2xl p-4">
+                <VStack key={card.id} gap="2xs" className="rounded-2xl bg-card p-4">
                   <Text bold>{typo(card.question)}</Text>
                   <MarkdownView>{card.answer}</MarkdownView>
                 </VStack>
