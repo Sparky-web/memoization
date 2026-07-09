@@ -15,7 +15,7 @@ import {
 import { hasActivePro } from "~/server/entitlement";
 import { enqueueDeckExercises } from "~/server/generation";
 import { authMiddleware } from "~/server/middleware";
-import { countUsageTotal, recordUsage } from "~/server/usage";
+import { countUsageTotal, recordUsage, tryChargeUsage } from "~/server/usage";
 
 // Тренажёр: режимы «вставь слово» и «тесты». Порция взвешена по «спотыканию»,
 // дизлайкнутые задания исключаются. Всё скоупится по владельцу колоды.
@@ -177,9 +177,10 @@ export const generateDeckExercises = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(zodRussian.object({ deckId: zodRussian.string() }))
   .handler(async ({ data, context }) => {
+    const userId = context.session.user.id;
     const deck = await context.db.deck.findFirst({
-      where: { id: data.deckId, userId: context.session.user.id },
-      select: { id: true, _count: { select: { cards: true } } },
+      where: { id: data.deckId, userId },
+      select: { id: true, exercisesStatus: true, exercisesError: true, _count: { select: { cards: true } } },
     });
     if (!deck) {
       setResponseStatus(404);
@@ -191,9 +192,10 @@ export const generateDeckExercises = createServerFn({ method: "POST" })
     }
 
     // Гейт монетизации: Free — одна генерация тренажёров за всё время, Pro — безлимит.
-    const pro = await hasActivePro(context.db, context.session.user.id);
+    // Здесь — только быстрый отказ; гонкоустойчивое списание — tryChargeUsage ниже.
+    const pro = await hasActivePro(context.db, userId);
     if (!pro) {
-      const usedTotal = await countUsageTotal(context.db, context.session.user.id, "exercise_generation");
+      const usedTotal = await countUsageTotal(context.db, userId, "exercise_generation");
       if (usedTotal >= FREE_EXERCISE_GENERATIONS) {
         setResponseStatus(402);
         throw new Error(PAYWALL_ERRORS.EXERCISES);
@@ -203,14 +205,34 @@ export const generateDeckExercises = createServerFn({ method: "POST" })
     // Атомарный «захват»: переводим в processing только если генерация ещё не идёт.
     // Так двойной клик/ретрай не поставит в очередь два прохода Claude на одну колоду.
     const claimed = await context.db.deck.updateMany({
-      where: { id: deck.id, userId: context.session.user.id, exercisesStatus: { not: "processing" } },
+      where: { id: deck.id, userId, exercisesStatus: { not: "processing" } },
       data: { exercisesStatus: "processing", exercisesError: null },
     });
     if (!claimed.count) {
       setResponseStatus(409);
       throw new Error(typo("Задания уже генерируются"));
     }
-    await recordUsage(context.db, context.session.user.id, "exercise_generation", deck.id);
+    if (pro) {
+      await recordUsage(context.db, userId, "exercise_generation", deck.id);
+    } else {
+      // Списание атомарно (лимит и событие — под одним локом): параллельные запросы
+      // не растянут одну бесплатную попытку на несколько генераций.
+      const charged = await tryChargeUsage(context.db, {
+        userId,
+        kind: "exercise_generation",
+        refId: deck.id,
+        limit: FREE_EXERCISE_GENERATIONS,
+      });
+      if (!charged) {
+        // Гонку проиграли — возвращаем колоде прежний статус и показываем пейвол.
+        await context.db.deck.updateMany({
+          where: { id: deck.id, userId },
+          data: { exercisesStatus: deck.exercisesStatus, exercisesError: deck.exercisesError },
+        });
+        setResponseStatus(402);
+        throw new Error(PAYWALL_ERRORS.EXERCISES);
+      }
+    }
     enqueueDeckExercises(deck.id);
     return true;
   });
@@ -240,7 +262,7 @@ export const generateMissingExercises = createServerFn({ method: "POST" })
         exercisesStatus: { in: ["none", "failed"] },
         cards: { some: {} },
       },
-      select: { id: true },
+      select: { id: true, exercisesStatus: true, exercisesError: true },
     });
     // Каждую колоду захватываем атомарно по отдельности — enqueue только реально захваченные,
     // чтобы параллельные вызовы не поставили дубли проходов Claude.
@@ -251,11 +273,29 @@ export const generateMissingExercises = createServerFn({ method: "POST" })
         where: { id: deck.id, userId, exercisesStatus: { in: ["none", "failed"] } },
         data: { exercisesStatus: "processing", exercisesError: null },
       });
-      if (claimed.count) {
+      if (!claimed.count) continue;
+      if (pro) {
         await recordUsage(context.db, userId, "exercise_generation", deck.id);
-        enqueueDeckExercises(deck.id);
-        queued += 1;
+      } else {
+        // Списание атомарно (лимит и событие — под одним локом): параллельный вызов
+        // не растянет остаток бесплатных попыток на лишние колоды.
+        const charged = await tryChargeUsage(context.db, {
+          userId,
+          kind: "exercise_generation",
+          refId: deck.id,
+          limit: FREE_EXERCISE_GENERATIONS,
+        });
+        if (!charged) {
+          // Остаток попыток выбрала гонка — возвращаем колоде прежний статус и выходим.
+          await context.db.deck.updateMany({
+            where: { id: deck.id, userId },
+            data: { exercisesStatus: deck.exercisesStatus, exercisesError: deck.exercisesError },
+          });
+          break;
+        }
       }
+      enqueueDeckExercises(deck.id);
+      queued += 1;
     }
     return { queued };
   });

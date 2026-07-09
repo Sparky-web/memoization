@@ -10,10 +10,15 @@ import { type AdminUserItem } from "../model/adminQueries";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Календарная дата по Москве (формат YYYY-MM-DD, как dayKey в fn/stats.ts): toISOString дал бы
+// дату по UTC, и с 00:00 до 03:00 МСК дефолт получался бы на день меньше обещанного, хотя
+// сервер трактует дату как конец дня именно по Москве.
+const mskDateFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" });
+
 // Дата по умолчанию: продление на 30 дней от текущего конца Pro (или от сегодня).
 function defaultUntilDate(proUntil: Date | null): string {
   const base = proUntil && proUntil > new Date() ? proUntil.getTime() : Date.now();
-  return new Date(base + 30 * DAY_MS).toISOString().slice(0, 10);
+  return mskDateFormatter.format(new Date(base + 30 * DAY_MS));
 }
 
 interface ManageSubscriptionDialogProps {

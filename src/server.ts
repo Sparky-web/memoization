@@ -23,11 +23,18 @@ void db.deck
   })
   .catch(() => undefined);
 
-// Аналогично — прерванная генерация заданий/тестов.
+// Аналогично — прерванная генерация заданий/тестов (у инлайновых проходов при создании
+// колоды события exercise_generation нет — возврат удалит только реально списанные попытки).
 void db.deck
-  .updateMany({
-    where: { exercisesStatus: "processing" },
-    data: { exercisesStatus: "failed", exercisesError: typo("Генерация заданий прервана перезапуском сервера") },
+  .findMany({ where: { exercisesStatus: "processing" }, select: { id: true } })
+  .then(async (stuckDecks) => {
+    if (!stuckDecks.length) return;
+    const stuckIds = stuckDecks.map((deck) => deck.id);
+    await db.deck.updateMany({
+      where: { id: { in: stuckIds } },
+      data: { exercisesStatus: "failed", exercisesError: typo("Генерация заданий прервана перезапуском сервера") },
+    });
+    await refundUsage(db, "exercise_generation", stuckIds);
   })
   .catch(() => undefined);
 

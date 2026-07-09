@@ -391,7 +391,8 @@ export const getAdminPayments = createServerFn({ method: "GET" })
 
 /**
  * Полный возврат успешного платежа ЮKassa: деньги — через API, затем Payment → REFUNDED,
- * подписка пользователя гаснет сразу. Идемпотентность в три слоя: повторный вызов режется
+ * у подписки отзываются дни именно этого платежа (кламп к «сейчас») — дни, оплаченные другими
+ * платежами, сохраняются. Идемпотентность в три слоя: повторный вызов режется
  * проверкой статуса (уже REFUNDED → 400); запрос в ЮKassa идёт с детерминированным
  * Idempotence-Key `refund-{paymentId}` — ретрай после сбоя между возвратом и записью в БД
  * получит тот же возврат, а не второй; вебхук refund.succeeded тоже идемпотентен
@@ -427,20 +428,28 @@ export const refundPayment = createServerFn({ method: "POST" })
     }
 
     const now = new Date();
-    await context.db.$transaction([
-      context.db.payment.update({ where: { id: payment.id }, data: { status: "REFUNDED", refundedAt: now } }),
-      context.db.subscription.updateMany({
-        where: { userId: payment.userId },
-        data: { status: "EXPIRED", currentPeriodEnd: now },
-      }),
-      context.db.analyticsEvent.create({
+    await context.db.$transaction(async (tx) => {
+      await tx.payment.update({ where: { id: payment.id }, data: { status: "REFUNDED", refundedAt: now } });
+      const subscription = await tx.subscription.findUnique({ where: { userId: payment.userId } });
+      if (subscription) {
+        // Укорачиваем подписку на periodDays возвращаемого платежа; если periodDays неизвестен
+        // (старые записи) — безопасный фолбэк: гасим подписку целиком.
+        const reducedEnd = payment.periodDays
+          ? new Date(subscription.currentPeriodEnd.getTime() - payment.periodDays * DAY_MS)
+          : now;
+        await tx.subscription.update({
+          where: { userId: payment.userId },
+          data: reducedEnd > now ? { currentPeriodEnd: reducedEnd } : { status: "EXPIRED", currentPeriodEnd: now },
+        });
+      }
+      await tx.analyticsEvent.create({
         data: {
           name: "payment_refunded",
           userId: payment.userId,
           meta: { paymentId: payment.id, amountKopecks: payment.amount },
         },
-      }),
-    ]);
+      });
+    });
     return true;
   });
 

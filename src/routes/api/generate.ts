@@ -1,15 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { FREE_DECK_GENERATIONS, PAYWALL_ERRORS, PRO_DECK_GENERATIONS_PER_DAY, typo } from "~/lib";
+import { FREE_DECK_GENERATIONS, PAYWALL_ERRORS, PRO_DECK_GENERATIONS_PER_DAY, startOfDayMsk, typo } from "~/lib";
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 import { hasActivePro } from "~/server/entitlement";
 import { enqueueGeneration, type GenerationFile } from "~/server/generation";
-import { countUsageToday, countUsageTotal, recordUsage } from "~/server/usage";
+import { countUsageToday, countUsageTotal, tryChargeUsage } from "~/server/usage";
 
 // Приём материалов/вопросов (текст + файлы) и постановка колоды в очередь генерации claude -p.
 const MAX_FILES_PER_FIELD = 5;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+const FAIR_USE_ERROR = typo("Дневной fair-use лимит генераций исчерпан — попробуйте завтра");
 
 function asString(value: FormDataEntryValue | null): string {
   return typeof value === "string" ? value : "";
@@ -40,6 +42,7 @@ export const Route = createFileRoute("/api/generate")({
 
         // Гейт монетизации: генерация — самый дорогой вызов (opus). Free — 1 за всё время,
         // Pro — дневной fair-use. Клиент различает случаи по коду/тексту в error.
+        // Здесь — только быстрый отказ до разбора формы; гонкоустойчивое списание — ниже.
         const pro = await hasActivePro(db, session.user.id);
         if (!pro) {
           const usedTotal = await countUsageTotal(db, session.user.id, "deck_generation");
@@ -49,10 +52,7 @@ export const Route = createFileRoute("/api/generate")({
         } else {
           const usedToday = await countUsageToday(db, session.user.id, "deck_generation");
           if (usedToday >= PRO_DECK_GENERATIONS_PER_DAY) {
-            return Response.json(
-              { error: typo("Дневной fair-use лимит генераций исчерпан — попробуйте завтра") },
-              { status: 402 },
-            );
+            return Response.json({ error: FAIR_USE_ERROR }, { status: 402 });
           }
         }
 
@@ -86,8 +86,28 @@ export const Route = createFileRoute("/api/generate")({
           select: { id: true },
         });
 
-        // Попытка списывается до постановки в очередь; при провале генерации вернётся (refundUsage).
-        await recordUsage(db, session.user.id, "deck_generation", deck.id);
+        // Попытка списывается до постановки в очередь атомарно (проверка лимита и запись
+        // события — под одним локом): параллельные запросы не обходят лимит гонкой между
+        // count и create. При провале генерации попытка вернётся (refundUsage).
+        const charged = pro
+          ? await tryChargeUsage(db, {
+              userId: session.user.id,
+              kind: "deck_generation",
+              refId: deck.id,
+              limit: PRO_DECK_GENERATIONS_PER_DAY,
+              since: startOfDayMsk(new Date()),
+            })
+          : await tryChargeUsage(db, {
+              userId: session.user.id,
+              kind: "deck_generation",
+              refId: deck.id,
+              limit: FREE_DECK_GENERATIONS,
+            });
+        if (!charged) {
+          // Гонку проиграли — лимит выбрали параллельные запросы; пустую колоду убираем.
+          await db.deck.delete({ where: { id: deck.id } });
+          return Response.json({ error: pro ? FAIR_USE_ERROR : PAYWALL_ERRORS.GENERATION }, { status: 402 });
+        }
         enqueueGeneration(deck.id, { materialsText, questionsText, instructions, files });
 
         return Response.json({ deckId: deck.id });

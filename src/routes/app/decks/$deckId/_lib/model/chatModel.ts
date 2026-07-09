@@ -22,9 +22,15 @@ export function useCardChat(cardId: string, enabled: boolean) {
   const ask = useMutation({
     mutationFn: (message: string) => askCardChat({ data: { cardId, message } }),
     onSuccess: (result) => {
-      queryClient.setQueryData<CardChatData>(queryKey, (previous) => ({
-        messages: [...(previous?.messages ?? []), result.userMessage, result.assistantMessage],
-      }));
+      queryClient.setQueryData<CardChatData>(queryKey, (previous) => {
+        const existing = previous?.messages ?? [];
+        // Рефокус окна мог уже рефетчнуть историю с обеими репликами (в БД они пишутся
+        // до ответа мутации) — добавляем только те, которых в кэше ещё нет, без дублей.
+        const appended = [result.userMessage, result.assistantMessage].filter(
+          (message) => !existing.some((existingMessage) => existingMessage.id === message.id),
+        );
+        return { messages: [...existing, ...appended] };
+      });
     },
     onError: (error) => {
       // Дневной лимит чата — не ошибка: диалог сам покажет PaywallCard по ask.error.

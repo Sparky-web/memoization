@@ -23,8 +23,41 @@ export async function recordUsage(db: PrismaClient, userId: string, kind: UsageK
   await db.usageEvent.create({ data: { userId, kind, refId } });
 }
 
-/** Компенсация: генерация упала — возвращаем списанные попытки (удаляем события по refId). */
+/**
+ * Атомарное списание с проверкой лимита: подсчёт и запись события идут в одной транзакции
+ * под advisory-локом по паре (пользователь, вид), поэтому параллельные запросы сериализуются
+ * и не обходят лимит гонкой «прочитали count → записали событие». since задаёт окно дневных
+ * лимитов; без него лимит считается за всё время. Возвращает false, если лимит уже исчерпан.
+ */
+export function tryChargeUsage(
+  db: PrismaClient,
+  input: { userId: string; kind: UsageKind; refId: string; limit: number; since?: Date },
+): Promise<boolean> {
+  return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${input.userId}:${input.kind}`}, 0))`;
+    const used = await tx.usageEvent.count({
+      where: {
+        userId: input.userId,
+        kind: input.kind,
+        ...(input.since ? { createdAt: { gte: input.since } } : {}),
+      },
+    });
+    if (used >= input.limit) return false;
+    await tx.usageEvent.create({ data: { userId: input.userId, kind: input.kind, refId: input.refId } });
+    return true;
+  });
+}
+
+/** Компенсация: генерация упала — возвращаем по одной списанной попытке на каждый refId. */
 export async function refundUsage(db: PrismaClient, kind: UsageKind, refIds: readonly string[]): Promise<void> {
-  if (!refIds.length) return;
-  await db.usageEvent.deleteMany({ where: { kind, refId: { in: [...refIds] } } });
+  for (const refId of refIds) {
+    // Удаляем только последнее событие: у колоды могла накопиться история успешных
+    // перегенераций (Pro), их учёт возврат текущей неудачи затрагивать не должен.
+    const lastEvent = await db.usageEvent.findFirst({
+      where: { kind, refId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (lastEvent) await db.usageEvent.deleteMany({ where: { id: lastEvent.id } });
+  }
 }

@@ -43,8 +43,8 @@ interface PendingReview {
   /** Снимок для «Отменить» — вернуть карточку на прежнее место. */
   snapshot: SessionSnapshot;
   timer: ReturnType<typeof setTimeout>;
-  /** Отправка ответа на сервер (замыкание свайпа — с откатом при ошибке сети). */
-  send: () => void;
+  /** Отправка ответа на сервер (замыкание свайпа — с откатом при ошибке сети; не реджектится). */
+  send: () => Promise<unknown>;
 }
 
 function requeue(queue: StudyCardView[], gap: number): StudyCardView[] {
@@ -87,14 +87,15 @@ export function StudySession({
   };
 
   // Немедленно отправляет отложенный ответ (следующий свайп, истечение таймера, уход со страницы).
+  // Возвращает промис отправки — «Начать заново» дожидается его перед сбросом прогресса.
   // Замыкается только на стабильные значения (ref и сеттер) — безопасно звать из cleanup при размонтировании.
-  const flushPending = () => {
+  const flushPending = (): Promise<unknown> | null => {
     const pending = pendingRef.current;
-    if (!pending) return;
+    if (!pending) return null;
     pendingRef.current = null;
     clearTimeout(pending.timer);
     setPendingGrade(null);
-    pending.send();
+    return pending.send();
   };
 
   // «Отменить»: возвращаем карточку на прежнее место, мутация не уходит.
@@ -107,20 +108,43 @@ export function StudySession({
     restoreSnapshot(pending.snapshot);
   };
 
-  // Уход со страницы любым путём (в том числе навигация из шапки): отложенный ответ не должен потеряться.
-  useMountEffect(() => () => {
-    flushPending();
+  // Уход со страницы любым путём не должен терять отложенный ответ: cleanup покрывает
+  // SPA-навигацию и размонтирование, pagehide/visibilitychange — закрытие вкладки и
+  // сворачивание PWA в фон (iOS замораживает JS, и таймер отправки иначе не доживёт).
+  useMountEffect(() => {
+    const flushOnPageHide = () => {
+      void flushPending();
+    };
+    const flushOnHide = () => {
+      if (document.visibilityState === "hidden") void flushPending();
+    };
+    window.addEventListener("pagehide", flushOnPageHide);
+    document.addEventListener("visibilitychange", flushOnHide);
+    return () => {
+      window.removeEventListener("pagehide", flushOnPageHide);
+      document.removeEventListener("visibilitychange", flushOnHide);
+      void flushPending();
+    };
   });
 
   const goToDeck = () => {
-    flushPending();
+    void flushPending();
     void navigate({ to: "/app/decks/$deckId", params: { deckId } });
   };
 
   const confirmRestart = () => {
     setRestartConfirmOpen(false);
-    flushPending();
-    onRestart();
+    // Дожидаемся отправки отложенного ответа перед сбросом: иначе reviewCard и
+    // resetDeckProgress гонятся, и «воскресший» после сброса прогресс одной карточки
+    // выпадал бы из перечитанной очереди.
+    const pendingSend = flushPending();
+    if (pendingSend) {
+      void pendingSend.then(() => {
+        onRestart();
+      });
+    } else {
+      onRestart();
+    }
   };
 
   const restartConfirmDialog = (
@@ -210,7 +234,7 @@ export function StudySession({
 
   const handleSwipe = (grade: ReviewGrade) => {
     // Предыдущий отложенный ответ уходит немедленно — окно отмены действует только для последнего.
-    flushPending();
+    void flushPending();
 
     const card = current;
     const snapshot: SessionSnapshot = { queue, progress, reviewed, learned };
@@ -226,14 +250,13 @@ export function StudySession({
 
     swipeSeqRef.current += 1;
     const swipeSeq = swipeSeqRef.current;
-    const send = () => {
-      void onReview(card.id, grade).catch(() => {
+    const send = () =>
+      onReview(card.id, grade).catch(() => {
         // Откатываем, только если это всё ещё последний свайп — иначе затёрли бы более новое состояние.
         if (swipeSeqRef.current === swipeSeq) restoreSnapshot(snapshot);
       });
-    };
     const timer = setTimeout(() => {
-      flushPending();
+      void flushPending();
     }, UNDO_DELAY_MS);
     pendingRef.current = { snapshot, timer, send };
     setPendingGrade(grade);

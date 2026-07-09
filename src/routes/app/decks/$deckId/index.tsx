@@ -37,7 +37,8 @@ function DeckDetailPage() {
   const { deckId } = Route.useParams();
   const navigate = useNavigate();
   const { data: deck } = useSuspenseQuery(deckQueries.detail(deckId));
-  const { data: stats } = useSuspenseQuery(deckQueries.stats(deckId));
+  // stats получает срез detail и сам догоняет его после генерации (см. deckQueries.stats).
+  const { data: stats } = useSuspenseQuery(deckQueries.stats(deckId, { status: deck.status, cardCount: deck.cards.length }));
   const reset = useResetDeck(deckId);
   const retry = useRetryGeneration(deckId);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
@@ -93,7 +94,7 @@ function DeckDetailPage() {
             <Button size="lg" disabled={stats.dueCards === 0} onClick={startStudy}>
               {stats.dueCards > 0 ? typo(`Учить · ${stats.dueCards}`) : typo("Всё повторено")}
             </Button>
-            {stats.totalCards > 0 && (
+            {deck.cards.length > 0 && (
               <Button
                 size="lg"
                 variant="outline"
@@ -125,15 +126,18 @@ function DeckDetailPage() {
           {deck.isOwner && (
             <ExercisesPanel
               deckId={deckId}
-              fillCount={stats.fillCount}
-              quizCount={stats.quizCount}
+              // Счётчики берём из detail-запроса (не из stats): он поллится во время генерации,
+              // поэтому статус и счётчики заданий всегда согласованы — панель не покажет
+              // «Сгенерировать задания» по устаревшим нулям, когда задания уже готовы.
+              fillCount={deck.fillCount}
+              quizCount={deck.quizCount}
               exercisesStatus={deck.exercisesStatus}
               exercisesError={deck.exercisesError}
             />
           )}
 
           <VStack gap="md">
-            <Heading variant="h3">{typo(`Карточки · ${stats.totalCards}`)}</Heading>
+            <Heading variant="h3">{typo(`Карточки · ${deck.cards.length}`)}</Heading>
             {deck.isOwner && <AddCardButton deckId={deckId} />}
             {deck.cards.length ? (
               <VStack gap="sm">

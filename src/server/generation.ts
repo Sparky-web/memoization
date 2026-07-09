@@ -186,12 +186,16 @@ async function runExercisesPasses(deckId: string, jobDir: string): Promise<void>
         ? { exercisesStatus: "ready", exercisesError: null }
         : { exercisesStatus: "failed", exercisesError: typo("Не удалось сгенерировать задания и тесты") },
     });
+    // Неудача не сжигает списанную попытку — возвращаем её (ручная генерация). У инлайновых
+    // проходов при создании колоды события exercise_generation нет — удалять нечего.
+    if (!hasAny) await refundUsage(db, "exercise_generation", [deckId]).catch(() => undefined);
   } catch (error) {
     console.error(error);
     const message = error instanceof Error ? error.message : typo("Ошибка генерации заданий");
     await db.deck
       .update({ where: { id: deckId }, data: { exercisesStatus: "failed", exercisesError: message.slice(0, 500) } })
       .catch(() => undefined);
+    await refundUsage(db, "exercise_generation", [deckId]).catch(() => undefined);
   }
 }
 
@@ -355,6 +359,7 @@ async function runDeckExercisesJob(deckId: string): Promise<void> {
         where: { id: deckId },
         data: { exercisesStatus: "failed", exercisesError: typo("В колоде нет карточек для генерации заданий") },
       });
+      await refundUsage(db, "exercise_generation", [deckId]).catch(() => undefined);
       return;
     }
 
@@ -364,11 +369,14 @@ async function runDeckExercisesJob(deckId: string): Promise<void> {
 
     await runExercisesPasses(deckId, jobDir);
   } catch (error) {
+    // Сюда попадают только сбои подготовки входных данных: свои провалы runExercisesPasses
+    // обрабатывает (и рефандит) сам, наружу не пробрасывает — двойного возврата не будет.
     console.error(error);
     const message = error instanceof Error ? error.message : typo("Ошибка генерации заданий");
     await db.deck
       .update({ where: { id: deckId }, data: { exercisesStatus: "failed", exercisesError: message.slice(0, 500) } })
       .catch(() => undefined);
+    await refundUsage(db, "exercise_generation", [deckId]).catch(() => undefined);
   } finally {
     await rm(jobDir, { recursive: true, force: true }).catch(() => undefined);
   }

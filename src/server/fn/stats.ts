@@ -103,8 +103,17 @@ export const getOverallStats = createServerFn({ method: "GET" })
           orderBy: { reviewedAt: "desc" },
           take: 1000,
         }),
-        // Прогноз нагрузки: все сроки повторения пользователя в ближайшую неделю (включая просроченные).
-        context.db.cardProgress.findMany({ where: { userId, dueAt: { lte: endWeek } }, select: { dueAt: true } }),
+        // Прогноз нагрузки: та же выборка, что dueCards (свои колоды), на неделю вперёд.
+        // Карточки без прогресса — новые, due сразу (dueAt IS NULL); прогресс по колодам,
+        // к которым доступа больше нет (убраны из избранного/распубликованы), не считаем —
+        // иначе «Прогноз: 0» противоречил бы «К повторению: N» в соседнем блоке.
+        context.db.$queryRaw<{ dueAt: Date | null }[]>`
+        SELECT cp."dueAt" AS "dueAt"
+        FROM "Card" c
+        JOIN "Deck" d ON d.id = c."deckId"
+        LEFT JOIN "CardProgress" cp ON cp."cardId" = c.id AND cp."userId" = ${userId}
+        WHERE d."userId" = ${userId} AND (cp.id IS NULL OR cp."dueAt" <= ${endWeek})
+      `,
       ]);
 
     const masteredCards = masteredRows[0]?.n ?? 0;
@@ -116,10 +125,13 @@ export const getOverallStats = createServerFn({ method: "GET" })
     const reviewsToday = activity[activity.length - 1]?.count ?? 0;
     const streakDays = computeStreak(new Set(reviewDays.map((review) => dayKey(review.reviewedAt))));
 
-    // Прогноз: сколько карточек станет к повторению до конца сегодня / завтра / за неделю (накопительно).
+    // Прогноз: сколько карточек станет к повторению до конца сегодня / завтра / за неделю
+    // (накопительно). Карточка без прогресса (dueAt null) — новая, к повторению уже сегодня.
     const forecast = {
-      today: upcomingDue.filter((progress) => progress.dueAt <= endToday).length,
-      tomorrow: upcomingDue.filter((progress) => progress.dueAt > endToday && progress.dueAt <= endTomorrow).length,
+      today: upcomingDue.filter((progress) => !progress.dueAt || progress.dueAt <= endToday).length,
+      tomorrow: upcomingDue.filter(
+        (progress) => progress.dueAt && progress.dueAt > endToday && progress.dueAt <= endTomorrow,
+      ).length,
       week: upcomingDue.length,
     };
 
@@ -153,7 +165,7 @@ export const getDeckStats = createServerFn({ method: "GET" })
     const now = Date.now();
     const since = new Date(now - ACTIVITY_DAYS * DAY_MS);
 
-    const [totalCards, progressRows, gradeGroups, recentReviews, fillCount, quizCount] = await Promise.all([
+    const [totalCards, progressRows, gradeGroups, recentReviews] = await Promise.all([
       context.db.card.count({ where: { deckId: deck.id } }),
       // Прогресс пользователя по карточкам этой колоды — из него считаем новые/изучаемые/усвоенные/к повторению.
       context.db.cardProgress.findMany({
@@ -165,8 +177,6 @@ export const getDeckStats = createServerFn({ method: "GET" })
         where: { deckId: deck.id, userId, reviewedAt: { gte: since } },
         select: { reviewedAt: true },
       }),
-      context.db.fillTask.count({ where: { deckId: deck.id, hidden: false } }),
-      context.db.quizTask.count({ where: { deckId: deck.id, hidden: false } }),
     ]);
 
     // Карточки без строки прогресса — новые (и сразу к повторению).
@@ -188,8 +198,6 @@ export const getDeckStats = createServerFn({ method: "GET" })
       dueCards,
       totalReviews,
       accuracy,
-      fillCount,
-      quizCount,
       activity: buildActivitySeries(recentReviews),
     };
   });

@@ -1,8 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders, setResponseStatus } from "@tanstack/react-start/server";
 
-import { importedCardSchema, typo, zodRussian } from "~/lib";
+import {
+  FREE_DECK_GENERATIONS,
+  importedCardSchema,
+  PAYWALL_ERRORS,
+  PRO_DECK_GENERATIONS_PER_DAY,
+  startOfDayMsk,
+  typo,
+  zodRussian,
+} from "~/lib";
 import { auth } from "~/server/auth";
+import { hasActivePro } from "~/server/entitlement";
 import {
   cleanupGenerationJob,
   enqueueGenerationRetry,
@@ -10,6 +19,7 @@ import {
   getGenerationQueuePosition,
 } from "~/server/generation";
 import { authMiddleware, baseMiddleware } from "~/server/middleware";
+import { tryChargeUsage } from "~/server/usage";
 
 // Колода — подготовка к экзамену. Прогресс повторения у каждого пользователя свой (CardProgress):
 // свою колоду владелец учит как обычно, а публичную чужую можно добавить в избранное и учить по своей ссылке.
@@ -148,6 +158,16 @@ export const getDeckById = createServerFn({ method: "GET" })
     // «Повторить генерацию» доступно владельцу неудавшейся колоды, пока её материалы лежат на диске.
     const canRetryGeneration = isOwner && deck.status === "failed" ? await generationInputsExist(deck.id) : false;
 
+    // Счётчики заданий тренажёра отдаём вместе с exercisesStatus из одного запроса —
+    // панель тренажёра всегда видит согласованную пару «статус + счётчики», даже пока
+    // страница поллит статус генерации (у отдельного stats-запроса кэш обновляется позже).
+    const [fillCount, quizCount]: [number, number] = isOwner
+      ? await Promise.all([
+          context.db.fillTask.count({ where: { deckId: deck.id, hidden: false } }),
+          context.db.quizTask.count({ where: { deckId: deck.id, hidden: false } }),
+        ])
+      : [0, 0];
+
     return {
       id: deck.id,
       title: deck.title,
@@ -160,6 +180,8 @@ export const getDeckById = createServerFn({ method: "GET" })
       canRetryGeneration,
       exercisesStatus: isOwner ? deck.exercisesStatus : "none",
       exercisesError: isOwner ? deck.exercisesError : null,
+      fillCount,
+      quizCount,
       isPublic: deck.isPublic,
       createdAt: deck.createdAt,
       isOwner,
@@ -212,13 +234,16 @@ export const updateDeck = createServerFn({ method: "POST" })
   });
 
 // Повторный запуск неудавшейся генерации: материалы прошлой попытки сохранены в data/jobs/<deckId>/inputs.
+// Провал вернул списанную попытку (refundUsage), поэтому ретрай списывает её заново — иначе
+// цикл «провал → успешный ретрай» давал бы готовые колоды мимо лимитов Free/Pro.
 export const retryGeneration = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(zodRussian.object({ id: zodRussian.string() }))
   .handler(async ({ data, context }) => {
+    const userId = context.session.user.id;
     const deck = await context.db.deck.findFirst({
-      where: { id: data.id, userId: context.session.user.id },
-      select: { id: true, status: true },
+      where: { id: data.id, userId },
+      select: { id: true, status: true, generationError: true },
     });
     if (!deck) {
       setResponseStatus(404);
@@ -234,12 +259,39 @@ export const retryGeneration = createServerFn({ method: "POST" })
     }
     // Атомарный «захват»: двойной клик не поставит в очередь два задания.
     const claimed = await context.db.deck.updateMany({
-      where: { id: deck.id, userId: context.session.user.id, status: "failed" },
+      where: { id: deck.id, userId, status: "failed" },
       data: { status: "processing", generationError: null },
     });
     if (!claimed.count) {
       setResponseStatus(409);
       throw new Error(typo("Генерация уже запущена"));
+    }
+    // Списание атомарно (лимит и событие — под одним локом); при провале ретрая вернётся снова.
+    const pro = await hasActivePro(context.db, userId);
+    const charged = pro
+      ? await tryChargeUsage(context.db, {
+          userId,
+          kind: "deck_generation",
+          refId: deck.id,
+          limit: PRO_DECK_GENERATIONS_PER_DAY,
+          since: startOfDayMsk(new Date()),
+        })
+      : await tryChargeUsage(context.db, {
+          userId,
+          kind: "deck_generation",
+          refId: deck.id,
+          limit: FREE_DECK_GENERATIONS,
+        });
+    if (!charged) {
+      // Лимит исчерпан — возвращаем колоду в failed с прежним текстом ошибки.
+      await context.db.deck.updateMany({
+        where: { id: deck.id, userId },
+        data: { status: "failed", generationError: deck.generationError },
+      });
+      setResponseStatus(402);
+      throw new Error(
+        pro ? typo("Дневной fair-use лимит генераций исчерпан — попробуйте завтра") : PAYWALL_ERRORS.GENERATION,
+      );
     }
     enqueueGenerationRetry(deck.id);
     return true;

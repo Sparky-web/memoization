@@ -31,8 +31,11 @@ async function applySucceededPayment(payment: YookassaPayment): Promise<void> {
   await db.$transaction(async (tx) => {
     const existing = await tx.payment.findUnique({ where: { providerPaymentId: payment.id } });
     if (existing) {
+      // Продлеваем только необработанный платёж (PENDING). Платёж в ЮKassa после возврата
+      // остаётся succeeded, поэтому повторная доставка payment.succeeded не должна поднимать
+      // запись из REFUNDED/CANCELED — иначе возвращённый деньгами пользователь снова получил бы Pro.
       const updated = await tx.payment.updateMany({
-        where: { providerPaymentId: payment.id, status: { not: "SUCCEEDED" } },
+        where: { providerPaymentId: payment.id, status: "PENDING" },
         data: { status: "SUCCEEDED" },
       });
       if (!updated.count) return;
@@ -95,35 +98,58 @@ async function applyCanceledPayment(paymentId: string): Promise<void> {
   });
 }
 
-/** Успешный возврат: Payment → REFUNDED и немедленный отзыв доступа (подписка истекает сейчас). */
+/**
+ * Успешный ПОЛНЫЙ возврат: Payment → REFUNDED, у подписки отзываются дни именно этого платежа
+ * (currentPeriodEnd уменьшается на его periodDays с клампом к «сейчас») — дни, оплаченные
+ * другими платежами, сохраняются. Частичный возврат из кабинета ЮKassa доступом не управляет:
+ * платёж остаётся SUCCEEDED, случай уходит в Sentry на ручной разбор.
+ */
 async function applySucceededRefund(refundId: string): Promise<void> {
   const refund = await getRefund(refundId);
   if (refund.status !== "succeeded") return;
   const now = new Date();
   await db.$transaction(async (tx) => {
+    const paymentRow = await tx.payment.findUnique({ where: { providerPaymentId: refund.payment_id } });
+    if (!paymentRow) return;
+
+    const refundedKopecks = Math.round(Number(refund.amount.value) * 100);
+    if (Number.isFinite(refundedKopecks) && refundedKopecks < paymentRow.amount) {
+      console.error(
+        `ЮKassa: частичный возврат ${refund.id} (${refundedKopecks} из ${paymentRow.amount} коп.) по платежу ${refund.payment_id} — статус платежа и подписка не изменены`,
+      );
+      return;
+    }
+
     const updated = await tx.payment.updateMany({
       where: { providerPaymentId: refund.payment_id, status: { not: "REFUNDED" } },
       data: { status: "REFUNDED", refundedAt: now },
     });
     if (!updated.count) return;
-    const paymentRow = await tx.payment.findUnique({ where: { providerPaymentId: refund.payment_id } });
-    if (!paymentRow) return;
-    await tx.subscription.updateMany({
+
+    const subscription = await tx.subscription.findUnique({ where: { userId: paymentRow.userId } });
+    if (!subscription) return;
+    // periodDays неизвестен (старые записи) — безопасный фолбэк: гасим подписку целиком.
+    const reducedEnd = paymentRow.periodDays
+      ? new Date(subscription.currentPeriodEnd.getTime() - paymentRow.periodDays * DAY_MS)
+      : now;
+    await tx.subscription.update({
       where: { userId: paymentRow.userId },
-      data: { status: "EXPIRED", currentPeriodEnd: now },
+      data: reducedEnd > now ? { currentPeriodEnd: reducedEnd } : { status: "EXPIRED", currentPeriodEnd: now },
     });
   });
 }
 
 /**
- * Вебхук ЮKassa. Всегда отвечает 200 — на любой другой статус ЮKassa ретраит бесконечно;
- * ошибки уходят в Sentry через console.error.
+ * Вебхук ЮKassa. При сбое обработки (недоступна БД, упал перезапрос платежа) отвечаем 500 —
+ * ЮKassa ретраит доставку с нарастающими интервалами (до ~суток), и временный сбой не теряет
+ * оплаченный Pro навсегда. Повторные доставки безопасны: обработчики идемпотентны.
+ * Ошибки уходят в Sentry через console.error.
  */
 export async function handleYookassaWebhook(request: Request): Promise<Response> {
   try {
     if (!isYookassaConfigured()) {
-      console.error("Вебхук ЮKassa пришёл при не сконфигурированных ключах — событие пропущено");
-      return new Response("OK", { status: 200 });
+      console.error("Вебхук ЮKassa пришёл при не сконфигурированных ключах — вернули 500 для повторной доставки");
+      return new Response("NOT CONFIGURED", { status: 500 });
     }
     const body = webhookBodySchema.parse(await request.json());
     if (body.event === "payment.succeeded" || body.event === "payment.canceled") {
@@ -136,6 +162,7 @@ export async function handleYookassaWebhook(request: Request): Promise<Response>
     }
   } catch (error) {
     console.error("Ошибка обработки вебхука ЮKassa", error);
+    return new Response("ERROR", { status: 500 });
   }
   return new Response("OK", { status: 200 });
 }
