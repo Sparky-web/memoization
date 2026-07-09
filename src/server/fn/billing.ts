@@ -15,7 +15,10 @@ function daysWord(count: number): string {
   return typo("дней");
 }
 
-/** Статус подписки для клиента: флаг Pro, конец периода, план. Клиент не видит Prisma-типов. */
+/**
+ * Статус подписки для клиента: флаг Pro и конец периода. Клиент не видит Prisma-типов.
+ * currentPeriodEnd = null при pro = true — безлимитный Pro (выдан админом).
+ */
 export const getBillingStatus = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
@@ -23,7 +26,11 @@ export const getBillingStatus = createServerFn({ method: "GET" })
       where: { userId: context.session.user.id },
     });
     const now = new Date();
-    const active = Boolean(subscription && subscription.status !== "EXPIRED" && subscription.currentPeriodEnd > now);
+    const active = Boolean(
+      subscription &&
+        subscription.status !== "EXPIRED" &&
+        (!subscription.currentPeriodEnd || subscription.currentPeriodEnd > now),
+    );
     return {
       pro: active,
       currentPeriodEnd: active && subscription ? subscription.currentPeriodEnd : null,

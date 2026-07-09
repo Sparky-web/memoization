@@ -26,16 +26,15 @@ interface ManageSubscriptionDialogProps {
   onClose: () => void;
 }
 
-/** Ручное управление Pro: выдать/продлить до даты (provider MANUAL) или отключить немедленно. */
+type SubscriptionModeInput = { mode: "GRANT"; untilDate: string } | { mode: "UNLIMITED" } | { mode: "REVOKE" };
+
+/** Ручное управление Pro: выдать/продлить до даты, безлимит (provider MANUAL) или отключить немедленно. */
 export function ManageSubscriptionDialog({ user, onClose }: ManageSubscriptionDialogProps) {
   const queryClient = useQueryClient();
   const [untilDate, setUntilDate] = useState(defaultUntilDate(user.proUntil));
 
   const mutation = useMutation({
-    mutationFn: (action: "grant" | "revoke") =>
-      setUserSubscription({
-        data: { userId: user.id, action, untilDate: action === "grant" ? untilDate : undefined },
-      }),
+    mutationFn: (input: SubscriptionModeInput) => setUserSubscription({ data: { userId: user.id, ...input } }),
     onSuccess: () => {
       toast.success(typo("Подписка обновлена"));
       void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
@@ -78,17 +77,26 @@ export function ManageSubscriptionDialog({ user, onClose }: ManageSubscriptionDi
           <Button
             disabled={mutation.isPending || !untilDate}
             onClick={() => {
-              mutation.mutate("grant");
+              mutation.mutate({ mode: "GRANT", untilDate });
             }}
           >
             {user.proUntil ? typo("Продлить Pro до даты") : typo("Выдать Pro до даты")}
           </Button>
-          {user.proUntil && (
+          <Button
+            variant="secondary"
+            disabled={mutation.isPending || user.proUnlimited}
+            onClick={() => {
+              mutation.mutate({ mode: "UNLIMITED" });
+            }}
+          >
+            {typo("Pro безлимит")}
+          </Button>
+          {(user.proUntil || user.proUnlimited) && (
             <Button
               variant="destructive"
               disabled={mutation.isPending}
               onClick={() => {
-                mutation.mutate("revoke");
+                mutation.mutate({ mode: "REVOKE" });
               }}
             >
               {typo("Отключить Pro")}

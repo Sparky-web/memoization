@@ -85,7 +85,9 @@ function PricingPage() {
     }
   };
 
-  const proUntil = billing?.pro && billing.currentPeriodEnd ? billing.currentPeriodEnd : null;
+  const proActive = Boolean(billing?.pro);
+  // currentPeriodEnd = null при активном Pro — безлимитная подписка, выданная админом.
+  const proUntil = billing?.currentPeriodEnd ?? null;
 
   return (
     <div className="min-h-dvh">
@@ -121,16 +123,18 @@ function PricingPage() {
             </Text>
           </VStack>
 
-          {proUntil ? (
+          {proActive ? (
             <SimpleCard className="border border-primary/25 bg-primary/10" size="lg">
               <VStack gap="sm" justify="center" className="text-center">
                 <Heading variant="h3" asParagraph align="center">
-                  {typo(`Pro активен до ${formatDateRuMsk(proUntil)}`)}
+                  {proUntil ? typo(`Pro активен до ${formatDateRuMsk(proUntil)}`) : typo("Pro активен бессрочно")}
                 </Heading>
                 <Text variant="small" color="supplementary" align="center">
-                  {typo(
-                    "Платёж разовый — ничего не спишется автоматически. Когда срок закончится, новый период можно купить здесь.",
-                  )}
+                  {proUntil
+                    ? typo(
+                        "Платёж разовый — ничего не спишется автоматически. Когда срок закончится, новый период можно купить здесь.",
+                      )
+                    : typo("Доступ выдан без ограничения по сроку — покупать ничего не нужно.")}
                 </Text>
                 <Button size="pill" className="mx-auto" onClick={() => void navigate({ to: "/app" })}>
                   <BookOpen className="size-5" />

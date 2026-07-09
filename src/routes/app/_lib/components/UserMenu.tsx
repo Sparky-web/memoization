@@ -88,10 +88,12 @@ export function UserMenu({ user }: UserMenuProps) {
                 <Text variant="mini" color="supplementary">
                   {typo("Подписка")}
                 </Text>
-                {billing?.pro && billing.currentPeriodEnd ? (
+                {billing?.pro ? (
                   <Button variant="outline" size="sm" onClick={goPricing}>
                     <Crown className="size-4" />
-                    {typo(`Pro до ${formatDateRuMsk(billing.currentPeriodEnd)}`)}
+                    {billing.currentPeriodEnd
+                      ? typo(`Pro до ${formatDateRuMsk(billing.currentPeriodEnd)}`)
+                      : typo("Pro активен бессрочно")}
                   </Button>
                 ) : (
                   <Button variant="secondary" size="sm" onClick={goPricing}>

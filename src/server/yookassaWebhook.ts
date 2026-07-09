@@ -1,6 +1,7 @@
 import { BILLING_PLAN_IDS, BILLING_PLANS, zodRussian } from "~/lib";
 
 import { db } from "./db";
+import { shrinkSubscriptionAfterRefund } from "./entitlement";
 import { getPayment, getRefund, isYookassaConfigured, type YookassaPayment } from "./yookassa";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -70,20 +71,27 @@ async function applySucceededPayment(payment: YookassaPayment): Promise<void> {
     }
 
     const subscription = await tx.subscription.findUnique({ where: { userId } });
-    const extendFrom = subscription && subscription.currentPeriodEnd > now ? subscription.currentPeriodEnd : now;
-    const currentPeriodEnd = new Date(extendFrom.getTime() + periodDays * DAY_MS);
-    await tx.subscription.upsert({
-      where: { userId },
-      update: { plan: "PRO", status: "ACTIVE", provider: "YOOKASSA", currentPeriodEnd, cancelAtPeriodEnd: true },
-      create: {
-        userId,
-        plan: "PRO",
-        status: "ACTIVE",
-        provider: "YOOKASSA",
-        currentPeriodEnd,
-        cancelAtPeriodEnd: true,
-      },
-    });
+    // Безлимитный Pro (currentPeriodEnd = null, выдан админом) платёж не понижает до срочного:
+    // Payment записан выше, подписку не трогаем. Warning — в Sentry на ручной разбор (вероятно, возврат).
+    if (subscription && subscription.status !== "EXPIRED" && !subscription.currentPeriodEnd) {
+      console.warn(`ЮKassa: платёж ${payment.id} поверх безлимитного Pro пользователя ${userId} — подписка не изменена`);
+    } else {
+      const paidUntil = subscription?.currentPeriodEnd;
+      const extendFrom = paidUntil && paidUntil > now ? paidUntil : now;
+      const currentPeriodEnd = new Date(extendFrom.getTime() + periodDays * DAY_MS);
+      await tx.subscription.upsert({
+        where: { userId },
+        update: { plan: "PRO", status: "ACTIVE", provider: "YOOKASSA", currentPeriodEnd, cancelAtPeriodEnd: true },
+        create: {
+          userId,
+          plan: "PRO",
+          status: "ACTIVE",
+          provider: "YOOKASSA",
+          currentPeriodEnd,
+          cancelAtPeriodEnd: true,
+        },
+      });
+    }
     await tx.analyticsEvent.create({
       data: { name: "payment_succeeded", userId, meta: { plan: payment.metadata?.plan ?? null, periodDays } },
     });
@@ -126,16 +134,7 @@ async function applySucceededRefund(refundId: string): Promise<void> {
     });
     if (!updated.count) return;
 
-    const subscription = await tx.subscription.findUnique({ where: { userId: paymentRow.userId } });
-    if (!subscription) return;
-    // periodDays неизвестен (старые записи) — безопасный фолбэк: гасим подписку целиком.
-    const reducedEnd = paymentRow.periodDays
-      ? new Date(subscription.currentPeriodEnd.getTime() - paymentRow.periodDays * DAY_MS)
-      : now;
-    await tx.subscription.update({
-      where: { userId: paymentRow.userId },
-      data: reducedEnd > now ? { currentPeriodEnd: reducedEnd } : { status: "EXPIRED", currentPeriodEnd: now },
-    });
+    await shrinkSubscriptionAfterRefund(tx, paymentRow.userId, paymentRow.periodDays, now);
   });
 }
 

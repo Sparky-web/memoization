@@ -5,8 +5,12 @@ import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/
 import { createServerEntry } from "@tanstack/react-start/server-entry";
 
 import { typo } from "~/lib";
+import { ensureBootstrapAdmins } from "~/server/adminBootstrap";
 import { db } from "~/server/db";
 import { refundUsage } from "~/server/usage";
+
+// Владелец получает роль администратора при старте контейнера (если аккаунт уже существует)
+void ensureBootstrapAdmins(db);
 
 // При старте контейнера сбрасываем «зависшие» генерации (claude-задание прервано рестартом)
 // и возвращаем списанные попытки — прерванная рестартом генерация не должна сжигать лимит.

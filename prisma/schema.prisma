@@ -333,8 +333,8 @@ model Subscription {
   provider               PaymentProvider
   /// id рекуррентного метода/подписки у провайдера; null — разовый доступ
   providerSubscriptionId String?
-  /// До какого момента открыт Pro
-  currentPeriodEnd       DateTime
+  /// До какого момента открыт Pro; null — безлимитный Pro (выдаётся только админом)
+  currentPeriodEnd       DateTime?
   /// true — не продлевать (разовый доступ или отменённый рекуррент)
   cancelAtPeriodEnd      Boolean            @default(true)
 

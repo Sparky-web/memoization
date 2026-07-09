@@ -12,8 +12,11 @@ import { adminQueries, type AdminUserItem } from "../model/adminQueries";
 import { ManageSubscriptionDialog } from "./ManageSubscriptionDialog";
 import { PaymentStatusBadge } from "./PaymentStatusBadge";
 
-/** Бейдж подписки: активный Pro (с датой конца) или Free. */
+/** Бейдж подписки: активный Pro (с датой конца или бессрочный) или Free. */
 function SubscriptionBadge({ user }: { user: AdminUserItem }) {
+  if (user.proUnlimited) {
+    return <Badge variant="primary">{typo("Pro · бессрочно")}</Badge>;
+  }
   if (!user.proUntil) {
     return <Badge variant="muted">Free</Badge>;
   }

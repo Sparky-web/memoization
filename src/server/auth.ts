@@ -4,7 +4,9 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 
 import { serverEnv } from "~/env.server";
+import { typo } from "~/lib";
 
+import { isBootstrapAdminEmail } from "./adminBootstrap";
 import { db } from "./db";
 
 export const auth = betterAuth({
@@ -19,6 +21,21 @@ export const auth = betterAuth({
     password: {
       hash: (password) => bcrypt.hash(password, 10),
       verify: ({ hash, password }) => bcrypt.compare(password, hash),
+    },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        // Владелец получает роль администратора сразу при регистрации; сбой не валит signup
+        after: async (user) => {
+          if (!isBootstrapAdminEmail(user.email)) return;
+          try {
+            await db.user.update({ where: { id: user.id }, data: { role: "admin" } });
+          } catch (error) {
+            console.error(typo("Не удалось назначить роль администратора при регистрации"), error);
+          }
+        },
+      },
     },
   },
   plugins: [tanstackStartCookies()],

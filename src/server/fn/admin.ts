@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { setResponseStatus } from "@tanstack/react-start/server";
 
 import { startOfDayMsk, typo, zodRussian } from "~/lib";
+import { shrinkSubscriptionAfterRefund } from "~/server/entitlement";
 import { getGenerationQueuePosition } from "~/server/generation";
 import { adminMiddleware, authMiddleware } from "~/server/middleware";
 import { createRefund, isYookassaConfigured } from "~/server/yookassa";
@@ -76,7 +77,9 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
     ] = await Promise.all([
       context.db.user.count(),
       context.db.user.count({ where: { createdAt: { gte: since7 } } }),
-      context.db.subscription.count({ where: { status: { not: "EXPIRED" }, currentPeriodEnd: { gt: now } } }),
+      context.db.subscription.count({
+        where: { status: { not: "EXPIRED" }, OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: now } }] },
+      }),
       context.db.payment.aggregate({
         _sum: { amount: true },
         where: { status: "SUCCEEDED", createdAt: { gte: since30 } },
@@ -203,7 +206,9 @@ export const getAdminUsers = createServerFn({ method: "GET" })
       users: users.map((user) => {
         const subscription = user.subscription;
         const proActive = Boolean(
-          subscription && subscription.status !== "EXPIRED" && subscription.currentPeriodEnd > now,
+          subscription &&
+            subscription.status !== "EXPIRED" &&
+            (!subscription.currentPeriodEnd || subscription.currentPeriodEnd > now),
         );
         return {
           id: user.id,
@@ -217,6 +222,7 @@ export const getAdminUsers = createServerFn({ method: "GET" })
           generationsUsed: user._count.usageEvents,
           lastReviewAt: lastReviewByUser.get(user.id) ?? null,
           proUntil: proActive && subscription ? subscription.currentPeriodEnd : null,
+          proUnlimited: proActive && !subscription?.currentPeriodEnd,
           proProvider: proActive && subscription ? subscription.provider : null,
         };
       }),
@@ -245,20 +251,22 @@ export const getAdminUserPayments = createServerFn({ method: "GET" })
   );
 
 /**
- * Ручное управление Pro: grant — выдать/продлить до конца выбранного дня МСК
- * (upsert: ACTIVE, provider MANUAL, без автопродления), revoke — отключить немедленно.
+ * Ручное управление Pro: GRANT — выдать/продлить до конца выбранного дня МСК,
+ * UNLIMITED — безлимитный Pro (currentPeriodEnd = null), REVOKE — отключить немедленно.
+ * Выдача — upsert: ACTIVE, provider MANUAL, без автопродления.
  */
 export const setUserSubscription = createServerFn({ method: "POST" })
   .middleware([adminMiddleware])
   .validator(
-    zodRussian.object({
-      userId: zodRussian.string(),
-      action: zodRussian.enum(["grant", "revoke"]),
-      untilDate: zodRussian
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .optional(),
-    }),
+    zodRussian.discriminatedUnion("mode", [
+      zodRussian.object({
+        mode: zodRussian.literal("GRANT"),
+        userId: zodRussian.string(),
+        untilDate: zodRussian.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+      zodRussian.object({ mode: zodRussian.literal("UNLIMITED"), userId: zodRussian.string() }),
+      zodRussian.object({ mode: zodRussian.literal("REVOKE"), userId: zodRussian.string() }),
+    ]),
   )
   .handler(async ({ data, context }) => {
     const user = await context.db.user.findUnique({ where: { id: data.userId }, select: { id: true } });
@@ -267,7 +275,7 @@ export const setUserSubscription = createServerFn({ method: "POST" })
       throw new Error(typo("Пользователь не найден"));
     }
 
-    if (data.action === "revoke") {
+    if (data.mode === "REVOKE") {
       const revoked = await context.db.subscription.updateMany({
         where: { userId: data.userId },
         data: { status: "EXPIRED", currentPeriodEnd: new Date() },
@@ -279,13 +287,9 @@ export const setUserSubscription = createServerFn({ method: "POST" })
       return true;
     }
 
-    if (!data.untilDate) {
-      setResponseStatus(400);
-      throw new Error(typo("Укажите дату окончания Pro"));
-    }
-    // Доступ — до конца выбранного календарного дня по Москве.
-    const currentPeriodEnd = new Date(`${data.untilDate}T23:59:59.999+03:00`);
-    if (Number.isNaN(currentPeriodEnd.getTime()) || currentPeriodEnd <= new Date()) {
+    // GRANT: доступ — до конца выбранного календарного дня по Москве; UNLIMITED — без срока.
+    const currentPeriodEnd = data.mode === "GRANT" ? new Date(`${data.untilDate}T23:59:59.999+03:00`) : null;
+    if (currentPeriodEnd && (Number.isNaN(currentPeriodEnd.getTime()) || currentPeriodEnd <= new Date())) {
       setResponseStatus(400);
       throw new Error(typo("Дата окончания Pro должна быть в будущем"));
     }
@@ -430,18 +434,7 @@ export const refundPayment = createServerFn({ method: "POST" })
     const now = new Date();
     await context.db.$transaction(async (tx) => {
       await tx.payment.update({ where: { id: payment.id }, data: { status: "REFUNDED", refundedAt: now } });
-      const subscription = await tx.subscription.findUnique({ where: { userId: payment.userId } });
-      if (subscription) {
-        // Укорачиваем подписку на periodDays возвращаемого платежа; если periodDays неизвестен
-        // (старые записи) — безопасный фолбэк: гасим подписку целиком.
-        const reducedEnd = payment.periodDays
-          ? new Date(subscription.currentPeriodEnd.getTime() - payment.periodDays * DAY_MS)
-          : now;
-        await tx.subscription.update({
-          where: { userId: payment.userId },
-          data: reducedEnd > now ? { currentPeriodEnd: reducedEnd } : { status: "EXPIRED", currentPeriodEnd: now },
-        });
-      }
+      await shrinkSubscriptionAfterRefund(tx, payment.userId, payment.periodDays, now);
       await tx.analyticsEvent.create({
         data: {
           name: "payment_refunded",
