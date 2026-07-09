@@ -36,9 +36,9 @@ export function ClaudePromptCard() {
   };
 
   return (
-    <SimpleCard title={typo("Промпт для Клода")}>
+    <SimpleCard title={typo("Промпт для Claude")}>
       <Text variant="small" color="supplementary">
-        {typo("Скопируйте промпт, откройте Клода, вставьте его и добавьте свои вопросы. Полученный JSON вставьте в поле ниже.")}
+        {typo("Скопируйте промпт, откройте Claude, вставьте его и добавьте свои вопросы. Полученный JSON вставьте в поле ниже.")}
       </Text>
       <pre className="bg-muted text-muted-foreground max-h-60 overflow-auto rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
         {CLAUDE_PROMPT}

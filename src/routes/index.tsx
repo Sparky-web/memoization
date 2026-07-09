@@ -1,11 +1,21 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { BookOpen, Repeat, Sparkles } from "lucide-react";
 
 import { AdaptiveGrid, Button, Container, Heading, HStack, Link, SimpleCard, Text, VStack } from "~/components";
 import { BILLING_PLAN_IDS, BILLING_PLANS, type BillingPlanId, typo } from "~/lib";
 import { getSession } from "~/server/fn/auth";
 
-import { SELLER_REQUISITES, SUPPORT_EMAIL } from "./_lib/lib/marketing";
+import { LandingDemo } from "./_lib/components/LandingDemo";
+import { LandingFaq } from "./_lib/components/LandingFaq";
+import { LandingFeatures } from "./_lib/components/LandingFeatures";
+import { LandingFlipCard } from "./_lib/components/LandingFlipCard";
+import { LandingGroupCta } from "./_lib/components/LandingGroupCta";
+import { LandingSteps } from "./_lib/components/LandingSteps";
+import { SELLER_REQUISITES, SITE_URL, SUPPORT_EMAIL } from "./_lib/lib/marketing";
+
+const PAGE_TITLE = typo("Мемокарты — загрузи конспект и получи тренажёр для запоминания");
+const PAGE_DESCRIPTION = typo(
+  "ИИ превращает конспект в колоду карточек с тестами и тренажёром «вставь слово», а интервальные повторения напоминают, что забывается. Первая генерация — бесплатно, без карты.",
+);
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
@@ -15,13 +25,18 @@ export const Route = createFileRoute("/")({
   },
   head: () => ({
     meta: [
-      { title: typo("Мемокарты — подготовка к экзаменам") },
-      {
-        name: "description",
-        content: typo(
-          "Соберите колоду из конспектов или вопросов — ИИ составит ответы — и учите их свайпами с интервальным повторением.",
-        ),
-      },
+      { title: PAGE_TITLE },
+      { name: "description", content: PAGE_DESCRIPTION },
+      { property: "og:title", content: PAGE_TITLE },
+      { property: "og:description", content: PAGE_DESCRIPTION },
+      { property: "og:type", content: "website" },
+      { property: "og:site_name", content: typo("Мемокарты") },
+      { property: "og:url", content: SITE_URL },
+      { property: "og:image", content: `${SITE_URL}/og-image.png` },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:image", content: `${SITE_URL}/og-image.png` },
     ],
   }),
   component: HomePage,
@@ -32,8 +47,16 @@ interface LandingPlan {
   title: string;
   price: string;
   days: string;
+  note: string;
   hero: boolean;
 }
+
+/** Кому какой срок: короткая подпись под ценой на витрине. */
+const PLAN_NOTES: Record<BillingPlanId, string> = {
+  MONTH: typo("если экзамен уже на носу"),
+  TERM: typo("вся сессия — с запасом на пересдачи"),
+  YEAR: typo("обе сессии и госы"),
+};
 
 // Компактная витрина тарифов для лендинга: детали и покупка — на /pricing
 const LANDING_PLANS: readonly LandingPlan[] = BILLING_PLAN_IDS.map((planId) => ({
@@ -41,129 +64,165 @@ const LANDING_PLANS: readonly LandingPlan[] = BILLING_PLAN_IDS.map((planId) => (
   title: BILLING_PLANS[planId].title,
   price: typo(`${BILLING_PLANS[planId].rub} ₽`),
   days: typo(`${BILLING_PLANS[planId].days} дней`),
+  note: PLAN_NOTES[planId],
   hero: planId === "TERM",
 }));
 
 function HomePage() {
   const navigate = useNavigate();
+  const goSignup = () => void navigate({ to: "/auth/signup" });
+  const goSignin = () => void navigate({ to: "/auth/signin" });
   const goPricing = () => void navigate({ to: "/pricing" });
 
   return (
-    <div>
-      <Container className="page-enter py-16">
-        <VStack gap="2xl">
-          <VStack gap="md" className="max-w-2xl">
-            <Heading variant="h1">{typo("Готовьтесь к экзаменам с умными карточками")}</Heading>
-            <Text variant="large" color="supplementary">
-              {typo(
-                "Загрузите конспекты или список вопросов — ИИ соберёт колоду с краткими и развёрнутыми ответами. Учите свайпами: трудные карточки возвращаются чаще, выученные — реже.",
-              )}
-            </Text>
-            <HStack gap="sm" wrap>
-              <Button
-                onClick={() => {
-                  void navigate({ to: "/auth/signup" });
-                }}
-              >
-                {typo("Начать бесплатно")}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  void navigate({ to: "/auth/signin" });
-                }}
-              >
+    <div className="min-h-dvh">
+      <header className="border-b border-border/60">
+        <Container className="py-3">
+          <HStack justify="between" align="center" gap="md">
+            <Text bold>{typo("Мемокарты")}</Text>
+            <HStack gap="md" align="center">
+              <Link to="/pricing" variant="secondary">
+                {typo("Тарифы")}
+              </Link>
+              <Button variant="outline" size="sm" onClick={goSignin}>
                 {typo("Войти")}
               </Button>
             </HStack>
-            <Text variant="small" color="supplementary">
-              {typo("Первая ИИ-генерация колоды — бесплатно; ручные колоды и повторения не ограничены.")}
-            </Text>
-          </VStack>
+          </HStack>
+        </Container>
+      </header>
 
-          <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="md">
-            <SimpleCard title={typo("1. Соберите колоду")}>
-              <HStack gap="sm" align="start">
-                <Sparkles className="mt-0.5 size-5 shrink-0 text-primary" />
-                <Text color="supplementary">
-                  {typo(
-                    "Сгенерируйте карточки из конспектов, вопросов или файлов (doc, pdf, txt) — или добавьте их вручную.",
-                  )}
-                </Text>
-              </HStack>
-            </SimpleCard>
-            <SimpleCard title={typo("2. Учите свайпами")}>
-              <HStack gap="sm" align="start">
-                <Repeat className="mt-0.5 size-5 shrink-0 text-primary" />
-                <Text color="supplementary">
-                  {typo(
-                    "Переворачивайте карточку и свайпайте: вправо — вспомнил, влево — трудно. Сложное возвращается чаще.",
-                  )}
-                </Text>
-              </HStack>
-            </SimpleCard>
-            <SimpleCard title={typo("3. Разбирайтесь глубже")}>
-              <HStack gap="sm" align="start">
-                <BookOpen className="mt-0.5 size-5 shrink-0 text-primary" />
-                <Text color="supplementary">
-                  {typo(
-                    "Открывайте развёрнутые ответы с формулами и примерами и следите за прогрессом по каждой колоде.",
-                  )}
-                </Text>
-              </HStack>
-            </SimpleCard>
-          </AdaptiveGrid>
+      <main>
+        <Container className="page-enter py-12 md:py-16">
+          <VStack gap="5xl">
+            {/* 1. Hero */}
+            <section>
+              <VStack gap="lg" justify="center">
+                <VStack gap="md" justify="center">
+                  <div className="max-w-3xl">
+                    <Heading variant="h1" align="center">
+                      {typo("Загрузи конспект — получи тренажёр для запоминания")}
+                    </Heading>
+                  </div>
+                  <div className="max-w-2xl">
+                    <Text variant="large" color="supplementary" align="center">
+                      {typo(
+                        "Claude разберёт материал на карточки, а интервальные повторения закрепят его в памяти — ровно к экзамену.",
+                      )}
+                    </Text>
+                  </div>
+                </VStack>
+                <VStack gap="xs" justify="center">
+                  <HStack gap="sm" justify="center" wrap>
+                    <Button size="pill" onClick={goSignup}>
+                      {typo("Попробовать бесплатно")}
+                    </Button>
+                    <Button variant="outline" size="pill" onClick={goSignin}>
+                      {typo("Войти")}
+                    </Button>
+                  </HStack>
+                  <Text variant="mini" color="supplementary" align="center">
+                    {typo("1 генерация колоды бесплатно · без карты · ручные колоды не ограничены")}
+                  </Text>
+                </VStack>
+              </VStack>
+            </section>
 
-          {/* Тарифы */}
-          <VStack gap="lg">
-            <VStack gap="xs">
-              <Heading variant="h2" align="center">
-                {typo("Бесплатно — карточки и повторения. Pro — ИИ без лимитов")}
-              </Heading>
-              <Text color="supplementary" align="center">
-                {typo(
-                  "Разовый платёж без автосписаний. Генерация колод, тренажёры и чат по карточкам — на всю сессию.",
-                )}
-              </Text>
-            </VStack>
-            <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="sm" align="stretch">
-              {LANDING_PLANS.map((plan) => (
-                <Link key={plan.id} to="/pricing" className="block h-full w-full">
-                  <SimpleCard
-                    className={
-                      plan.hero
-                        ? "relative h-full border-2 border-primary bg-primary/10"
-                        : "h-full border border-border transition-colors hover:bg-accent"
-                    }
-                  >
-                    {plan.hero && (
-                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 whitespace-nowrap text-primary-foreground">
-                        <Text variant="mini" bold>
-                          {typo("Выгоднее всего")}
-                        </Text>
-                      </span>
+            {/* 2. Живая демка «конспект → карточки» */}
+            <LandingDemo />
+
+            {/* 3. Интерактивная флип-карточка */}
+            <LandingFlipCard />
+
+            {/* 4. Как это работает */}
+            <LandingSteps />
+
+            {/* 5. Фичи */}
+            <LandingFeatures />
+
+            {/* 6. Для группы */}
+            <LandingGroupCta />
+
+            {/* 7. Тарифы */}
+            <section>
+              <VStack gap="lg">
+                <VStack gap="xs">
+                  <Heading variant="h2" align="center">
+                    {typo("Бесплатно — навсегда. Pro — на сессию")}
+                  </Heading>
+                  <div className="mx-auto max-w-2xl">
+                    <Text color="supplementary" align="center">
+                      {typo(
+                        "Ручные колоды и повторения бесплатны. Pro снимает лимиты на ИИ-генерацию колод и тренажёров: разовый платёж без автосписаний — карта не привязывается.",
+                      )}
+                    </Text>
+                  </div>
+                </VStack>
+                <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="sm" align="stretch">
+                  {LANDING_PLANS.map((plan) => (
+                    <Link key={plan.id} to="/pricing" className="block h-full w-full">
+                      <SimpleCard
+                        className={
+                          plan.hero
+                            ? "relative h-full border-2 border-primary bg-primary/10"
+                            : "h-full border border-border transition-colors hover:bg-accent"
+                        }
+                      >
+                        {plan.hero && (
+                          <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 whitespace-nowrap text-primary-foreground">
+                            <Text variant="mini" bold>
+                              {typo("Выгоднее всего")}
+                            </Text>
+                          </span>
+                        )}
+                        <VStack gap="3xs">
+                          <Text variant="small" bold>
+                            {plan.title}
+                          </Text>
+                          <Heading variant="h3" asParagraph>
+                            {plan.price}
+                          </Heading>
+                          <Text variant="mini" color="supplementary">
+                            {plan.days}
+                          </Text>
+                          <Text variant="mini" color="supplementary">
+                            {plan.note}
+                          </Text>
+                        </VStack>
+                      </SimpleCard>
+                    </Link>
+                  ))}
+                </AdaptiveGrid>
+                <Button variant="outline" className="mx-auto" onClick={goPricing}>
+                  {typo("Подробнее о Pro")}
+                </Button>
+              </VStack>
+            </section>
+
+            {/* 8. FAQ */}
+            <LandingFaq />
+
+            {/* 9. Финальный CTA */}
+            <section>
+              <VStack gap="md" justify="center">
+                <Heading variant="h2" align="center">
+                  {typo("Ближайший экзамен — хороший повод попробовать")}
+                </Heading>
+                <div className="max-w-xl">
+                  <Text color="supplementary" align="center">
+                    {typo(
+                      "Загрузи конспект — через несколько минут получишь колоду. Первая генерация бесплатно, карта не нужна.",
                     )}
-                    <VStack gap="3xs">
-                      <Text variant="small" bold>
-                        {plan.title}
-                      </Text>
-                      <Heading variant="h3" asParagraph>
-                        {plan.price}
-                      </Heading>
-                      <Text variant="mini" color="supplementary">
-                        {plan.days}
-                      </Text>
-                    </VStack>
-                  </SimpleCard>
-                </Link>
-              ))}
-            </AdaptiveGrid>
-            <Button variant="outline" className="mx-auto" onClick={goPricing}>
-              {typo("Подробнее о Pro")}
-            </Button>
+                  </Text>
+                </div>
+                <Button size="pill" onClick={goSignup}>
+                  {typo("Попробовать бесплатно")}
+                </Button>
+              </VStack>
+            </section>
           </VStack>
-        </VStack>
-      </Container>
+        </Container>
+      </main>
 
       <footer className="border-t border-border/60">
         <Container>

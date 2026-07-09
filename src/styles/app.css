@@ -158,6 +158,63 @@ body {
   animation: good-pulse 0.6s ease-out forwards;
 }
 
+/* ===== Лендинг: живая демка «конспект → карточки» (без JS) ===== */
+
+/* Волна «чтения» по строкам-полоскам конспекта; сдвиг фаз строк — inline animation-delay. */
+@keyframes landing-line-pulse {
+  0%,
+  14%,
+  100% {
+    opacity: 0.25;
+  }
+  5% {
+    opacity: 0.7;
+  }
+}
+
+.landing-demo-line {
+  opacity: 0.25;
+  animation: landing-line-pulse 9s ease-in-out infinite;
+}
+
+/* Карточки появляются одна за другой и в конце цикла растворяются; сдвиг фаз — inline
+   animation-delay, fill-mode backwards прячет карточку до её выхода. */
+@keyframes landing-card-deal {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  8%,
+  84% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  93%,
+  100% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.99);
+  }
+}
+
+.landing-demo-card {
+  animation: landing-card-deal 9s ease-in-out infinite backwards;
+}
+
+/* Мягкий пульс стрелки-потока между конспектом и карточками. */
+@keyframes landing-flow-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.landing-demo-flow {
+  animation: landing-flow-pulse 2.4s ease-in-out infinite;
+}
+
 /* Уважаем настройку «уменьшить движение». */
 @media (prefers-reduced-motion: reduce) {
   .page-enter {
@@ -167,6 +224,12 @@ body {
   .good-pulse {
     animation: none;
     opacity: 0;
+  }
+  /* Демка лендинга замирает в «собранном» виде: карточки видимы, строки статичны. */
+  .landing-demo-line,
+  .landing-demo-card,
+  .landing-demo-flow {
+    animation: none;
   }
 }
 

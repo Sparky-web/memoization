@@ -118,7 +118,7 @@ export function ManualDeckForm() {
             )}
             {parseResult?.status === "error" && (
               <Text variant="small" color="destructive">
-                {typo("Не удалось разобрать JSON. Проверьте, что вставлен ответ Клода по образцу.")}
+                {typo("Не удалось разобрать JSON. Проверьте, что вставлен ответ Claude по образцу.")}
               </Text>
             )}
           </div>
