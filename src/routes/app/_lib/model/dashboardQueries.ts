@@ -1,10 +1,17 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { getBillingStatus } from "~/server/fn/billing";
 import { getDecks, getFavorites } from "~/server/fn/decks";
 
 export type { DeckListItem, FavoriteDeckItem } from "~/server/fn/decks";
 
 export const dashboardQueries = {
+  // Статус подписки для пункта «Подписка» в меню пользователя.
+  billing: () =>
+    queryOptions({
+      queryKey: ["billing", "status"],
+      queryFn: () => getBillingStatus(),
+    }),
   decks: () =>
     queryOptions({
       queryKey: ["decks", "list"],

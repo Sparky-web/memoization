@@ -8,6 +8,7 @@ import type { GeneratedFillTask, GeneratedQuizTask } from "~/lib";
 import { parseGeneratedDeck, parseGeneratedExercises, typo } from "~/lib";
 
 import { db } from "./db";
+import { refundUsage } from "./usage";
 
 export interface GenerationFile {
   field: "materials" | "questions";
@@ -332,6 +333,8 @@ async function runGenerationJob(deckId: string, input: GenerationInput | null): 
     await db.deck
       .update({ where: { id: deckId }, data: { status: "failed", generationError: message.slice(0, 500) } })
       .catch(() => undefined);
+    // Неудачная генерация не списывает лимит: возвращаем попытку (ретрай новую не списывает).
+    await refundUsage(db, "deck_generation", [deckId]).catch(() => undefined);
     // При ошибке inputs сознательно оставляем на диске — из них работает «Повторить генерацию».
   }
 }

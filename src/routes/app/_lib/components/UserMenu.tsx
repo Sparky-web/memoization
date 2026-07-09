@@ -1,9 +1,12 @@
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { LogOut, Moon, Sun } from "lucide-react";
+import { Crown, LogOut, Moon, Sun } from "lucide-react";
 import { useState } from "react";
 
 import { authClient, Button, HStack, Text, useTheme, VStack } from "~/components";
-import { typo } from "~/lib";
+import { formatDateRuMsk, typo } from "~/lib";
+
+import { dashboardQueries } from "../model/dashboardQueries";
 
 export interface HeaderUser {
   name: string;
@@ -20,11 +23,19 @@ export function UserMenu({ user }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const { isDark, setDark } = useTheme();
 
+  // Статус подписки нужен только внутри открытого меню — не дёргаем сервер на каждый рендер шапки.
+  const { data: billing } = useQuery({ ...dashboardQueries.billing(), enabled: open });
+
   const initial = (user.name.trim().charAt(0) || user.email.charAt(0) || "?").toUpperCase();
 
   const handleSignOut = async () => {
     await authClient.signOut();
     await navigate({ to: "/auth/signin" });
+  };
+
+  const goPricing = () => {
+    setOpen(false);
+    void navigate({ to: "/pricing" });
   };
 
   return (
@@ -65,6 +76,23 @@ export function UserMenu({ user }: UserMenuProps) {
                 <Text variant="small" color="supplementary" maxLines={1}>
                   {user.email}
                 </Text>
+              </VStack>
+
+              <VStack gap="2xs">
+                <Text variant="mini" color="supplementary">
+                  {typo("Подписка")}
+                </Text>
+                {billing?.pro && billing.currentPeriodEnd ? (
+                  <Button variant="outline" size="sm" onClick={goPricing}>
+                    <Crown className="size-4" />
+                    {typo(`Pro до ${formatDateRuMsk(billing.currentPeriodEnd)}`)}
+                  </Button>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={goPricing}>
+                    <Crown className="size-4" />
+                    {typo("Открыть Pro")}
+                  </Button>
+                )}
               </VStack>
 
               <VStack gap="2xs">

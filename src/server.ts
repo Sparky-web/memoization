@@ -6,12 +6,20 @@ import { createServerEntry } from "@tanstack/react-start/server-entry";
 
 import { typo } from "~/lib";
 import { db } from "~/server/db";
+import { refundUsage } from "~/server/usage";
 
-// При старте контейнера сбрасываем «зависшие» генерации (claude-задание прервано рестартом).
+// При старте контейнера сбрасываем «зависшие» генерации (claude-задание прервано рестартом)
+// и возвращаем списанные попытки — прерванная рестартом генерация не должна сжигать лимит.
 void db.deck
-  .updateMany({
-    where: { status: "processing" },
-    data: { status: "failed", generationError: typo("Генерация прервана перезапуском сервера") },
+  .findMany({ where: { status: "processing" }, select: { id: true } })
+  .then(async (stuckDecks) => {
+    if (!stuckDecks.length) return;
+    const stuckIds = stuckDecks.map((deck) => deck.id);
+    await db.deck.updateMany({
+      where: { id: { in: stuckIds } },
+      data: { status: "failed", generationError: typo("Генерация прервана перезапуском сервера") },
+    });
+    await refundUsage(db, "deck_generation", stuckIds);
   })
   .catch(() => undefined);
 

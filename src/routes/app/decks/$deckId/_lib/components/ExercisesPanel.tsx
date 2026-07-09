@@ -1,9 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
 
-import { Button, HStack, SimpleCard, Text, VStack } from "~/components";
-import { typo } from "~/lib";
+import { Button, HStack, PaywallCard, SimpleCard, Text, VStack } from "~/components";
+import { isPaywallError, typo } from "~/lib";
 
-import { useGenerateExercises } from "../model/deckMutations";
+import { reportPaywallShown, useGenerateExercises } from "../model/deckMutations";
 
 interface ExercisesPanelProps {
   deckId: string;
@@ -33,12 +33,29 @@ export function ExercisesPanel({ deckId, fillCount, quizCount, exercisesStatus, 
     generate.mutate();
   };
 
+  // 402 с кодом пейвола: бесплатная генерация тренажёров израсходована — предлагаем Pro.
+  if (isPaywallError(generate.error, "EXERCISES")) {
+    return (
+      <SimpleCard title={typo("Тренажёр")}>
+        <PaywallCard
+          reason="EXERCISES"
+          compact
+          onShown={() => {
+            reportPaywallShown("exercise_generation");
+          }}
+        />
+      </SimpleCard>
+    );
+  }
+
   return (
     <SimpleCard title={typo("Тренажёр")}>
       {hasExercises && (
         <VStack gap="md">
           <Text color="supplementary">
-            {typo("Вставляйте пропущенные слова и проходите тесты — задания, на которых вы спотыкаетесь, показываем чаще.")}
+            {typo(
+              "Вставляйте пропущенные слова и проходите тесты — задания, на которых вы спотыкаетесь, показываем чаще.",
+            )}
           </Text>
           <HStack gap="sm" wrap>
             <Button size="lg" disabled={fillCount === 0} onClick={goWords}>
@@ -67,7 +84,9 @@ export function ExercisesPanel({ deckId, fillCount, quizCount, exercisesStatus, 
         <HStack gap="sm" align="center">
           <div className="size-5 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" />
           <Text color="supplementary">
-            {typo("Claude готовит задания «вставь слово» и тесты по колоде. Это займёт несколько минут — блок обновится сам.")}
+            {typo(
+              "Claude готовит задания «вставь слово» и тесты по колоде. Это займёт несколько минут — блок обновится сам.",
+            )}
           </Text>
         </HStack>
       )}

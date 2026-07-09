@@ -2,14 +2,20 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
-import { typo } from "~/lib";
+import { isPaywallError, typo } from "~/lib";
 import { addCard, deleteCard, updateCard } from "~/server/fn/cards";
 import { deleteDeck, removeFavorite, retryGeneration, setDeckPublic, updateDeck } from "~/server/fn/decks";
+import { logEvent } from "~/server/fn/events";
 import { generateDeckExercises } from "~/server/fn/exercises";
 import { resetDeckProgress } from "~/server/fn/study";
 
 // Все мутации инвалидируют корневой ключ ["decks"] — он покрывает список, деталь и статистику.
 const DECKS_KEY = ["decks"];
+
+/** Аналитика показа пейвола: слой components не зовёт server functions напрямую. */
+export function reportPaywallShown(source: string): void {
+  void logEvent({ data: { name: "paywall_shown", meta: { source } } }).catch(() => undefined);
+}
 
 interface CardFields {
   question: string;
@@ -122,6 +128,8 @@ export function useGenerateExercises(deckId: string) {
       void queryClient.invalidateQueries({ queryKey: DECKS_KEY });
     },
     onError: (error) => {
+      // Пейвол — не ошибка: панель тренажёра сама покажет PaywallCard по generate.error.
+      if (isPaywallError(error, "EXERCISES")) return;
       console.error(error);
       toast.error(typo("Не удалось запустить генерацию заданий"));
     },

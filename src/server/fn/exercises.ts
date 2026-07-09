@@ -1,9 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
 import { setResponseStatus } from "@tanstack/react-start/server";
 
-import { EXERCISE_BATCH_SIZE, nextExerciseWeight, normalizeAnswer, sampleByWeight, shuffleItems, typo, zodRussian } from "~/lib";
+import {
+  EXERCISE_BATCH_SIZE,
+  FREE_EXERCISE_GENERATIONS,
+  nextExerciseWeight,
+  normalizeAnswer,
+  PAYWALL_ERRORS,
+  sampleByWeight,
+  shuffleItems,
+  typo,
+  zodRussian,
+} from "~/lib";
+import { hasActivePro } from "~/server/entitlement";
 import { enqueueDeckExercises } from "~/server/generation";
 import { authMiddleware } from "~/server/middleware";
+import { countUsageTotal, recordUsage } from "~/server/usage";
 
 // Тренажёр: режимы «вставь слово» и «тесты». Порция взвешена по «спотыканию»,
 // дизлайкнутые задания исключаются. Всё скоупится по владельцу колоды.
@@ -111,7 +123,11 @@ export const getQuizSession = createServerFn({ method: "GET" })
       deckId: deck.id,
       deckTitle: deck.title,
       // Варианты дедупим и перемешиваем; correctIndex клиенту не отдаём — верность проверяем по тексту на submit.
-      tasks: batch.map((task) => ({ id: task.id, question: task.question, options: shuffleItems([...new Set(task.options)]) })),
+      tasks: batch.map((task) => ({
+        id: task.id,
+        question: task.question,
+        options: shuffleItems([...new Set(task.options)]),
+      })),
     };
   });
 
@@ -174,6 +190,16 @@ export const generateDeckExercises = createServerFn({ method: "POST" })
       throw new Error(typo("В колоде нет карточек для генерации заданий"));
     }
 
+    // Гейт монетизации: Free — одна генерация тренажёров за всё время, Pro — безлимит.
+    const pro = await hasActivePro(context.db, context.session.user.id);
+    if (!pro) {
+      const usedTotal = await countUsageTotal(context.db, context.session.user.id, "exercise_generation");
+      if (usedTotal >= FREE_EXERCISE_GENERATIONS) {
+        setResponseStatus(402);
+        throw new Error(PAYWALL_ERRORS.EXERCISES);
+      }
+    }
+
     // Атомарный «захват»: переводим в processing только если генерация ещё не идёт.
     // Так двойной клик/ретрай не поставит в очередь два прохода Claude на одну колоду.
     const claimed = await context.db.deck.updateMany({
@@ -184,6 +210,7 @@ export const generateDeckExercises = createServerFn({ method: "POST" })
       setResponseStatus(409);
       throw new Error(typo("Задания уже генерируются"));
     }
+    await recordUsage(context.db, context.session.user.id, "exercise_generation", deck.id);
     enqueueDeckExercises(deck.id);
     return true;
   });
@@ -193,6 +220,19 @@ export const generateMissingExercises = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const userId = context.session.user.id;
+
+    // Гейт монетизации: Free ставит в очередь не больше остатка бесплатных генераций тренажёров.
+    const pro = await hasActivePro(context.db, userId);
+    let allowed = Number.POSITIVE_INFINITY;
+    if (!pro) {
+      const usedTotal = await countUsageTotal(context.db, userId, "exercise_generation");
+      allowed = FREE_EXERCISE_GENERATIONS - usedTotal;
+      if (allowed <= 0) {
+        setResponseStatus(402);
+        throw new Error(PAYWALL_ERRORS.EXERCISES);
+      }
+    }
+
     const decks = await context.db.deck.findMany({
       where: {
         userId,
@@ -206,11 +246,13 @@ export const generateMissingExercises = createServerFn({ method: "POST" })
     // чтобы параллельные вызовы не поставили дубли проходов Claude.
     let queued = 0;
     for (const deck of decks) {
+      if (queued >= allowed) break;
       const claimed = await context.db.deck.updateMany({
         where: { id: deck.id, userId, exercisesStatus: { in: ["none", "failed"] } },
         data: { exercisesStatus: "processing", exercisesError: null },
       });
       if (claimed.count) {
+        await recordUsage(context.db, userId, "exercise_generation", deck.id);
         enqueueDeckExercises(deck.id);
         queued += 1;
       }

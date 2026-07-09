@@ -1,9 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { setResponseStatus } from "@tanstack/react-start/server";
 
-import { typo, zodRussian } from "~/lib";
+import { FREE_CHAT_PER_DAY, PAYWALL_ERRORS, PRO_CHAT_PER_DAY, typo, zodRussian } from "~/lib";
 import { generateChatReply } from "~/server/chat";
+import { hasActivePro } from "~/server/entitlement";
 import { authMiddleware } from "~/server/middleware";
+import { countUsageToday, recordUsage } from "~/server/usage";
 
 // Чат по теме карточки: история диалога и отправка нового вопроса в Claude.
 
@@ -50,6 +52,19 @@ export const askCardChat = createServerFn({ method: "POST" })
       throw new Error(typo("Карточка не найдена"));
     }
 
+    // Гейт монетизации: дневной лимит сообщений (календарный день МСК).
+    // Free — пейвол-код (клиент показывает PaywallCard), Pro — человеческий текст про fair-use.
+    const pro = await hasActivePro(context.db, userId);
+    const usedToday = await countUsageToday(context.db, userId, "chat_message");
+    if (!pro && usedToday >= FREE_CHAT_PER_DAY) {
+      setResponseStatus(402);
+      throw new Error(PAYWALL_ERRORS.CHAT);
+    }
+    if (pro && usedToday >= PRO_CHAT_PER_DAY) {
+      setResponseStatus(402);
+      throw new Error(typo("Дневной fair-use лимит чата исчерпан — продолжите завтра"));
+    }
+
     if (inFlightUsers.has(userId)) {
       setResponseStatus(429);
       throw new Error(typo("Дождитесь ответа на предыдущий вопрос."));
@@ -86,6 +101,13 @@ export const askCardChat = createServerFn({ method: "POST" })
         data: { cardId: card.id, role: "assistant", content: reply.slice(0, MAX_REPLY_CHARS) },
         select: messageSelect,
       });
+
+      // Списываем сообщение только после успешного ответа; сбой учёта не отнимает готовый ответ.
+      try {
+        await recordUsage(context.db, userId, "chat_message", card.id);
+      } catch (error) {
+        console.error("Не удалось записать использование чата", error);
+      }
 
       return { userMessage, assistantMessage };
     } finally {

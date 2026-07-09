@@ -15,6 +15,7 @@ model User {
   email         String   @unique
   emailVerified Boolean  @default(false)
   image         String?
+  role          String   @default("user")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @default(now()) @updatedAt
 
@@ -24,6 +25,11 @@ model User {
   reviews      Review[]
   cardProgress CardProgress[]
   favorites    DeckFavorite[]
+
+  subscription    Subscription?
+  payments        Payment[]
+  analyticsEvents AnalyticsEvent[]
+  usageEvents     UsageEvent[]
 }
 
 model Session {
@@ -287,4 +293,109 @@ model QuizTask {
   deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
 
   @@index([deckId, hidden])
+}
+
+// --- Монетизация: подписка Pro, платежи, аналитика, учёт лимитов ---
+
+enum PlanTier {
+  FREE
+  PRO
+}
+
+enum SubscriptionStatus {
+  /// Оплачено, currentPeriodEnd в будущем
+  ACTIVE
+  /// Отменён, но доступ до конца периода
+  CANCELED
+  /// Период истёк
+  EXPIRED
+}
+
+enum PaymentProvider {
+  YOOKASSA
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  CANCELED
+  REFUNDED
+}
+
+/// Текущее право доступа пользователя. Одна запись на пользователя;
+/// апгрейд/продление перезаписывает поля и двигает currentPeriodEnd.
+model Subscription {
+  id                     String             @id @default(cuid())
+  plan                   PlanTier           @default(PRO)
+  status                 SubscriptionStatus
+  provider               PaymentProvider
+  /// id рекуррентного метода/подписки у провайдера; null — разовый доступ
+  providerSubscriptionId String?
+  /// До какого момента открыт Pro
+  currentPeriodEnd       DateTime
+  /// true — не продлевать (разовый доступ или отменённый рекуррент)
+  cancelAtPeriodEnd      Boolean            @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([currentPeriodEnd])
+}
+
+/// Журнал платежей. providerPaymentId уникален — на нём идемпотентность вебхука.
+model Payment {
+  id                String          @id @default(cuid())
+  provider          PaymentProvider
+  providerPaymentId String          @unique
+  amount            Int             // в копейках
+  currency          String          @default("RUB")
+  status            PaymentStatus
+  plan              PlanTier
+  /// Сколько дней доступа докупается этим платежом (для разовых)
+  periodDays        Int?
+  /// Назначение платежа — то же, что ушло в чек 54-ФЗ
+  description       String?
+  refundedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// Продуктовая аналитика: paywall/чекаут/оплаты. Пользователь удаляется — события остаются.
+model AnalyticsEvent {
+  id   String @id @default(cuid())
+  name String
+  meta Json?
+
+  createdAt DateTime @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([name, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// Учёт использования платных ИИ-функций — на нём лимиты Free и fair-use Pro.
+/// kind: "deck_generation" | "exercise_generation" | "chat_message".
+model UsageEvent {
+  id   String @id @default(cuid())
+  kind String
+  /// Для генераций — id колоды (по нему компенсация при неудаче), для чата — id карточки.
+  refId String?
+
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, createdAt])
 }

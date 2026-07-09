@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { AdaptiveGrid, Button, Heading, HStack, Input, SimpleCard, Stat, Text, VStack } from "~/components";
-import { typo } from "~/lib";
+import { isPaywallError, typo } from "~/lib";
 import { generateMissingExercises } from "~/server/fn/exercises";
 
 import { DeckCard } from "./_lib/components/DeckCard";
@@ -80,6 +80,12 @@ function DashboardPage() {
       void queryClient.invalidateQueries({ queryKey: ["decks"] });
     },
     onError: (error) => {
+      // Бесплатная генерация тренажёров израсходована — ведём на тарифы вместо тоста-ошибки.
+      if (isPaywallError(error, "EXERCISES")) {
+        toast.info(typo("Генерация тренажёров для всех колод — в Pro"));
+        void navigate({ to: "/pricing" });
+        return;
+      }
       console.error(error);
       toast.error(typo("Не удалось запустить генерацию заданий"));
     },

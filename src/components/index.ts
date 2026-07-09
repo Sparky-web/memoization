@@ -7,6 +7,7 @@ export { Heading } from "./blaze/Heading";
 export { HStack } from "./blaze/HStack";
 export { Link } from "./blaze/Link";
 export { MarkdownView } from "./blaze/MarkdownView";
+export { PaywallCard } from "./blaze/PaywallCard";
 export { PracticeFrame } from "./blaze/PracticeFrame";
 export { PracticeSummary } from "./blaze/PracticeSummary";
 export { ProgressBar } from "./blaze/ProgressBar";

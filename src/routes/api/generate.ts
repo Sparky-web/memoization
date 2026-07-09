@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { typo } from "~/lib";
+import { FREE_DECK_GENERATIONS, PAYWALL_ERRORS, PRO_DECK_GENERATIONS_PER_DAY, typo } from "~/lib";
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
+import { hasActivePro } from "~/server/entitlement";
 import { enqueueGeneration, type GenerationFile } from "~/server/generation";
+import { countUsageToday, countUsageTotal, recordUsage } from "~/server/usage";
 
 // Приём материалов/вопросов (текст + файлы) и постановка колоды в очередь генерации claude -p.
 const MAX_FILES_PER_FIELD = 5;
@@ -36,6 +38,24 @@ export const Route = createFileRoute("/api/generate")({
         const session = await auth.api.getSession({ headers: request.headers });
         if (!session) return new Response("UNAUTHORIZED", { status: 401 });
 
+        // Гейт монетизации: генерация — самый дорогой вызов (opus). Free — 1 за всё время,
+        // Pro — дневной fair-use. Клиент различает случаи по коду/тексту в error.
+        const pro = await hasActivePro(db, session.user.id);
+        if (!pro) {
+          const usedTotal = await countUsageTotal(db, session.user.id, "deck_generation");
+          if (usedTotal >= FREE_DECK_GENERATIONS) {
+            return Response.json({ error: PAYWALL_ERRORS.GENERATION }, { status: 402 });
+          }
+        } else {
+          const usedToday = await countUsageToday(db, session.user.id, "deck_generation");
+          if (usedToday >= PRO_DECK_GENERATIONS_PER_DAY) {
+            return Response.json(
+              { error: typo("Дневной fair-use лимит генераций исчерпан — попробуйте завтра") },
+              { status: 402 },
+            );
+          }
+        }
+
         const form = await request.formData();
         const materialsText = asString(form.get("materials"));
         const questionsText = asString(form.get("questions"));
@@ -66,6 +86,8 @@ export const Route = createFileRoute("/api/generate")({
           select: { id: true },
         });
 
+        // Попытка списывается до постановки в очередь; при провале генерации вернётся (refundUsage).
+        await recordUsage(db, session.user.id, "deck_generation", deck.id);
         enqueueGeneration(deck.id, { materialsText, questionsText, instructions, files });
 
         return Response.json({ deckId: deck.id });

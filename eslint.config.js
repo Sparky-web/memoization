@@ -43,7 +43,8 @@ export default tseslint.config(
         "error",
         {
           selector: "TSAsExpression",
-          message: "Оператор `as` запрещён. Используйте satisfies, явную аннотацию типа, type guard или перестройте код.",
+          message:
+            "Оператор `as` запрещён. Используйте satisfies, явную аннотацию типа, type guard или перестройте код.",
         },
       ],
       "@typescript-eslint/consistent-type-assertions": ["error", { assertionStyle: "never" }],
@@ -56,7 +57,8 @@ export default tseslint.config(
             {
               name: "react",
               importNames: ["useEffect"],
-              message: "useEffect запрещён. Для одноразовой инициализации используйте useMountEffect; подписки на данные — через @tanstack/react-query.",
+              message:
+                "useEffect запрещён. Для одноразовой инициализации используйте useMountEffect; подписки на данные — через @tanstack/react-query.",
             },
           ],
         },
@@ -65,7 +67,10 @@ export default tseslint.config(
       "no-nested-ternary": "error",
       // console.log запрещён; error/warn — канал ошибок (улетают в Sentry), info — для скриптов
       "no-console": ["error", { allow: ["error", "warn", "info"] }],
-      "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports", fixStyle: "inline-type-imports" }],
+      "@typescript-eslint/consistent-type-imports": [
+        "error",
+        { prefer: "type-imports", fixStyle: "inline-type-imports" },
+      ],
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
@@ -78,7 +83,13 @@ export default tseslint.config(
       // throw notFound() / throw redirect() — идиомы TanStack Router
       "@typescript-eslint/only-throw-error": [
         "error",
-        { allow: [{ from: "package", package: "@tanstack/router-core", name: ["NotFoundError", "Redirect"] }, "Redirect", "NotFoundError"] },
+        {
+          allow: [
+            { from: "package", package: "@tanstack/router-core", name: ["NotFoundError", "Redirect"] },
+            "Redirect",
+            "NotFoundError",
+          ],
+        },
       ],
       "@typescript-eslint/restrict-template-expressions": ["error", { allowNumber: true }],
       "react-hooks/exhaustive-deps": "error",
@@ -159,12 +170,7 @@ export default tseslint.config(
             {
               from: { type: "page-barrel" },
               allow: {
-                to: [
-                  { type: "page-components" },
-                  { type: "page-model" },
-                  { type: "page-api" },
-                  { type: "page-lib" },
-                ],
+                to: [{ type: "page-components" }, { type: "page-model" }, { type: "page-api" }, { type: "page-lib" }],
               },
             },
             // Файлы роутов видят всё
@@ -218,6 +224,14 @@ export default tseslint.config(
     rules: {
       "no-restricted-imports": "off",
       "react-hooks/exhaustive-deps": "off",
+    },
+  },
+  {
+    // Внутри src/lib импорт из барреля «~/lib» невозможен (цикл) — typo импортируется относительно.
+    // Само требование оборачивать кириллицу в typo() остаётся в силе.
+    files: ["src/lib/**/*.ts"],
+    rules: {
+      "require-typo/typo-import-from-lib": "off",
     },
   },
   {

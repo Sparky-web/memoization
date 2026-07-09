@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { typo } from "~/lib";
+import { isPaywallError, typo } from "~/lib";
 import { askCardChat, type ChatMessageView, getCardChat } from "~/server/fn/chat";
 
 interface CardChatData {
@@ -27,8 +27,12 @@ export function useCardChat(cardId: string, enabled: boolean) {
       }));
     },
     onError: (error) => {
+      // Дневной лимит чата — не ошибка: диалог сам покажет PaywallCard по ask.error.
+      if (isPaywallError(error, "CHAT")) return;
       console.error(error);
-      toast.error(typo("Не удалось отправить вопрос"));
+      // Русский текст с сервера (fair-use Pro, «дождитесь ответа») показываем как есть.
+      const humanMessage = /[а-яё]/i.test(error.message) ? error.message : typo("Не удалось отправить вопрос");
+      toast.error(humanMessage);
     },
   });
 

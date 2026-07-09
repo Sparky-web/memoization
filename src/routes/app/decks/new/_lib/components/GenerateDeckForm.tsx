@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Button, Input, Label, SimpleCard, Text, Textarea, VStack } from "~/components";
-import { typo } from "~/lib";
+import { Button, Input, Label, PaywallCard, SimpleCard, Text, Textarea, VStack } from "~/components";
+import { isPaywallError, typo } from "~/lib";
 
-import { useGenerateDeck } from "../model/newDeckMutations";
+import { reportPaywallShown, useGenerateDeck } from "../model/newDeckMutations";
 
 const MAX_FILES = 5;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -39,6 +39,18 @@ export function GenerateDeckForm() {
   const [instructions, setInstructions] = useState("");
   const [requiredCorrect, setRequiredCorrect] = useState(2);
   const generate = useGenerateDeck();
+
+  // 402 с кодом пейвола: вместо формы — предложение Pro (бесплатная генерация израсходована).
+  if (isPaywallError(generate.error, "GENERATION")) {
+    return (
+      <PaywallCard
+        reason="GENERATION"
+        onShown={() => {
+          reportPaywallShown("deck_generation");
+        }}
+      />
+    );
+  }
 
   const handleSubmit = (event: { preventDefault: () => void }) => {
     event.preventDefault();
