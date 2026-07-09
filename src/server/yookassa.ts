@@ -48,13 +48,18 @@ function basicAuthHeader(): string {
   return `Basic ${Buffer.from(credentials).toString("base64")}`;
 }
 
-async function yookassaRequest(path: string, init: { method: "GET" | "POST"; body?: unknown }): Promise<unknown> {
+async function yookassaRequest(
+  path: string,
+  init: { method: "GET" | "POST"; body?: unknown; idempotenceKey?: string },
+): Promise<unknown> {
   const headers: Record<string, string> = {
     Authorization: basicAuthHeader(),
     "Content-Type": "application/json",
   };
-  // Idempotence-Key обязателен для всех POST: повтор запроса с тем же ключом не создаст дубль
-  if (init.method === "POST") headers["Idempotence-Key"] = crypto.randomUUID();
+  // Idempotence-Key обязателен для всех POST: повтор запроса с тем же ключом не создаст дубль.
+  // Для операций с естественным ключом (возврат по платежу) вызывающий передаёт детерминированный ключ,
+  // чтобы ретрай после сбоя вернул тот же объект, а не создал новый запрос.
+  if (init.method === "POST") headers["Idempotence-Key"] = init.idempotenceKey ?? crypto.randomUUID();
 
   const response = await fetch(`${YOOKASSA_API_BASE}${path}`, {
     method: init.method,
@@ -122,5 +127,24 @@ export async function getPayment(paymentId: string): Promise<YookassaPayment> {
 /** Перезапрос возврата по id — для проверки события refund.succeeded. */
 export async function getRefund(refundId: string): Promise<YookassaRefund> {
   const raw = await yookassaRequest(`/refunds/${refundId}`, { method: "GET" });
+  return refundSchema.parse(raw);
+}
+
+/**
+ * Возврат (полный или частичный) по платежу — для админки и поддержки.
+ * idempotenceKey детерминирован на стороне вызывающего: повтор с тем же ключом и телом
+ * вернёт уже созданный возврат вместо второй попытки списания.
+ */
+export async function createRefund(
+  paymentId: string,
+  amountRub: number,
+  description: string,
+  idempotenceKey: string,
+): Promise<YookassaRefund> {
+  const raw = await yookassaRequest("/refunds", {
+    method: "POST",
+    body: { payment_id: paymentId, amount: rubAmount(amountRub), description },
+    idempotenceKey,
+  });
   return refundSchema.parse(raw);
 }

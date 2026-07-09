@@ -313,6 +313,8 @@ enum SubscriptionStatus {
 
 enum PaymentProvider {
   YOOKASSA
+  /// Ручная выдача Pro администратором
+  MANUAL
 }
 
 enum PaymentStatus {

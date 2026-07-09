@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { getAdminAccess } from "~/server/fn/admin";
 import { getBillingStatus } from "~/server/fn/billing";
 import { getDecks, getFavorites } from "~/server/fn/decks";
 
@@ -11,6 +12,12 @@ export const dashboardQueries = {
     queryOptions({
       queryKey: ["billing", "status"],
       queryFn: () => getBillingStatus(),
+    }),
+  // Флаг администратора — только для пункта «Админка» в открытом меню пользователя.
+  adminAccess: () =>
+    queryOptions({
+      queryKey: ["admin", "access"],
+      queryFn: () => getAdminAccess(),
     }),
   decks: () =>
     queryOptions({

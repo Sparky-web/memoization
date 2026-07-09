@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Crown, LogOut, Moon, Sun } from "lucide-react";
+import { Crown, LogOut, Moon, ShieldCheck, Sun } from "lucide-react";
 import { useState } from "react";
 
 import { authClient, Button, HStack, Text, useTheme, VStack } from "~/components";
@@ -23,8 +23,9 @@ export function UserMenu({ user }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const { isDark, setDark } = useTheme();
 
-  // Статус подписки нужен только внутри открытого меню — не дёргаем сервер на каждый рендер шапки.
+  // Статус подписки и флаг админа нужны только внутри открытого меню — не дёргаем сервер на каждый рендер шапки.
   const { data: billing } = useQuery({ ...dashboardQueries.billing(), enabled: open });
+  const { data: adminAccess } = useQuery({ ...dashboardQueries.adminAccess(), enabled: open });
 
   const initial = (user.name.trim().charAt(0) || user.email.charAt(0) || "?").toUpperCase();
 
@@ -36,6 +37,11 @@ export function UserMenu({ user }: UserMenuProps) {
   const goPricing = () => {
     setOpen(false);
     void navigate({ to: "/pricing" });
+  };
+
+  const goAdmin = () => {
+    setOpen(false);
+    void navigate({ to: "/admin/dashboard" });
   };
 
   return (
@@ -122,6 +128,13 @@ export function UserMenu({ user }: UserMenuProps) {
                   </Button>
                 </HStack>
               </VStack>
+
+              {adminAccess?.isAdmin && (
+                <Button variant="outline" size="sm" onClick={goAdmin}>
+                  <ShieldCheck className="size-4" />
+                  {typo("Админка")}
+                </Button>
+              )}
 
               <Button variant="outline" size="sm" onClick={handleSignOut}>
                 <LogOut className="size-4" />
