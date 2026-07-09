@@ -1,13 +1,16 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Dumbbell, MessageCircle, Sparkles } from "lucide-react";
+import { CheckCheck, FileText, Layers, MessageCircle, Mic, Sparkles, Zap } from "lucide-react";
 
 import {
   BILLING_PLANS,
   FREE_CHAT_PER_DAY,
   FREE_DECK_GENERATIONS,
+  FREE_QUESTIONS_PER_EXAM,
   type PaywallReason,
   PRO_CHAT_PER_DAY,
   PRO_DECK_GENERATIONS_PER_DAY,
+  PRO_EXAMS,
+  PRO_QUESTIONS_PER_EXAM,
   typo,
 } from "~/lib";
 
@@ -29,21 +32,49 @@ const PAYWALL_CONTENT: Record<PaywallReason, PaywallContent> = {
     icon: Sparkles,
     title: typo("Бесплатная генерация израсходована"),
     text: typo(
-      `Бесплатно доступна ${FREE_DECK_GENERATIONS} ИИ-генерация колоды. В Pro — до ${PRO_DECK_GENERATIONS_PER_DAY} колод в день: загружайте конспекты по всем предметам. Колоды вручную и повторения остаются без ограничений.`,
-    ),
-  },
-  EXERCISES: {
-    icon: Dumbbell,
-    title: typo("Генерация тренажёров — в Pro"),
-    text: typo(
-      "Бесплатная генерация заданий «вставь слово» и тестов израсходована. В Pro — генерируйте тренажёры для всех колод без ограничений.",
+      `Бесплатно доступна ${FREE_DECK_GENERATIONS} ИИ-генерация экзамена. В Pro — до ${PRO_DECK_GENERATIONS_PER_DAY} генераций в день: загружайте вопросы и конспекты по всем предметам.`,
     ),
   },
   CHAT: {
     icon: MessageCircle,
-    title: typo("Лимит чата на сегодня исчерпан"),
+    title: typo("Лимит сообщений на сегодня исчерпан"),
     text: typo(
-      `Бесплатно доступно ${FREE_CHAT_PER_DAY} сообщений в день. В Pro — до ${PRO_CHAT_PER_DAY} сообщений: разбирайте сложные темы сколько нужно.`,
+      `Бесплатно доступно ${FREE_CHAT_PER_DAY} сообщений в день. В Pro — до ${PRO_CHAT_PER_DAY}: разбирайте сложные темы и объясняйте ученику сколько нужно.`,
+    ),
+  },
+  MULTI_EXAM: {
+    icon: Layers,
+    title: typo("Несколько экзаменов — в Pro"),
+    text: typo(
+      `Бесплатно можно готовиться к одному экзамену (до ${FREE_QUESTIONS_PER_EXAM} вопросов). В Pro — до ${PRO_EXAMS} экзаменов с общим планом дня и до ${PRO_QUESTIONS_PER_EXAM} вопросов на каждый.`,
+    ),
+  },
+  MATERIALS: {
+    icon: FileText,
+    title: typo("Свои материалы — в Pro"),
+    text: typo(
+      "В Pro ответы строятся по вашим конспектам и методичкам с цитатой источника у каждой карточки — до 5 файлов по 10 МБ на экзамен.",
+    ),
+  },
+  VOICE: {
+    icon: Mic,
+    title: typo("Голосовой ученик — в Pro"),
+    text: typo(
+      "Объясняйте тему голосом, как на настоящем экзамене: ученик переспрашивает, а в конце покажет, что осталось непонятным.",
+    ),
+  },
+  AI_CHECK: {
+    icon: CheckCheck,
+    title: typo("ИИ-сверка ответов — в Pro"),
+    text: typo(
+      "Бесплатно вы оцениваете свой ответ сами. В Pro нейросеть сверяет ответ с эталоном по смыслу и сразу говорит, что упущено.",
+    ),
+  },
+  CRAM: {
+    icon: Zap,
+    title: typo("Умная зубрёжка — в Pro"),
+    text: typo(
+      "Экзамен уже завтра? Режим спринтов по самым слабым карточкам с повтором ошибок и защитой сна — максимум пользы за оставшиеся часы.",
     ),
   },
 };

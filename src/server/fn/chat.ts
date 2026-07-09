@@ -23,7 +23,7 @@ export const getCardChat = createServerFn({ method: "GET" })
   .validator(zodRussian.object({ cardId: zodRussian.string() }))
   .handler(async ({ data, context }) => {
     const card = await context.db.card.findFirst({
-      where: { id: data.cardId, deck: { userId: context.session.user.id } },
+      where: { id: data.cardId, exam: { userId: context.session.user.id } },
       select: { id: true },
     });
     if (!card) {
@@ -44,8 +44,8 @@ export const askCardChat = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const userId = context.session.user.id;
     const card = await context.db.card.findFirst({
-      where: { id: data.cardId, deck: { userId } },
-      select: { id: true, question: true, answer: true, answerDeep: true },
+      where: { id: data.cardId, exam: { userId } },
+      select: { id: true, prompt: true, answer: true, deepMd: true },
     });
     if (!card) {
       setResponseStatus(404);
@@ -89,7 +89,12 @@ export const askCardChat = createServerFn({ method: "POST" })
 
       let reply: string;
       try {
-        reply = await generateChatReply(card, history, data.message);
+        // Контекст для Claude: prompt/answer/deepMd новой карточки в полях ChatCard.
+        reply = await generateChatReply(
+          { question: card.prompt, answer: card.answer, answerDeep: card.deepMd },
+          history,
+          data.message,
+        );
       } catch (error) {
         await context.db.chatMessage.delete({ where: { id: userMessage.id } }).catch(() => undefined);
         console.error(error);
@@ -114,5 +119,3 @@ export const askCardChat = createServerFn({ method: "POST" })
       inFlightUsers.delete(userId);
     }
   });
-
-export type ChatMessageView = Awaited<ReturnType<typeof getCardChat>>["messages"][number];

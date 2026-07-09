@@ -21,10 +21,12 @@ model User {
 
   accounts     Account[]
   sessions     Session[]
-  decks        Deck[]
+  exams        Exam[]
   reviews      Review[]
   cardProgress CardProgress[]
-  favorites    DeckFavorite[]
+  favorites    ExamFavorite[]
+  anxietyDumps AnxietyDump[]
+  settings     UserSettings?
 
   subscription    Subscription?
   payments        Payment[]
@@ -75,105 +77,146 @@ model Verification {
   updatedAt  DateTime @default(now()) @updatedAt
 }
 
-// --- Доменная модель: колоды (экзамены), карточки и журнал повторений ---
+// --- Доменная модель «Домашник»: экзамен → вопросы → карточки → FSRS-прогресс и журнал ---
 
-/// Колода = подготовка к одному экзамену. Принадлежит пользователю; весь прогресс по карточкам — его.
-model Deck {
-  id          String   @id @default(cuid())
+/// Экзамен — центральная сущность: список вопросов + дата + материалы.
+/// При миграции id = старый Deck.id (публичные ссылки и редиректы бесплатно).
+model Exam {
+  id          String    @id @default(cuid())
   title       String
   description String?
-  /// Сколько раз свайпнуть карточку вправо, чтобы считать её выученной в сессии.
-  requiredCorrect Int    @default(2)
-  /// Статус колоды: "ready" | "processing" (идёт генерация Claude) | "failed".
+  /// null — без даты (мигрированные колоды; режим поддерживающего повторения).
+  examDate    DateTime?
+  /// Цель: «сдать» / «4» / «5» — свободная строка.
+  targetGrade String?
+  dailyMinutes Int      @default(25)
+  /// "oral" | "written" | "test" | null — смещение пропорций форматов карточек.
+  examFormat  String?
+  /// Статус генерации: "draft" | "processing" | "ready" | "failed".
   status          String  @default("ready")
-  /// Текст ошибки генерации (если status = "failed").
   generationError String?
-  /// Статус генерации заданий и тестов: "none" | "processing" | "ready" | "failed".
-  exercisesStatus String  @default("none")
-  /// Текст ошибки генерации заданий (если exercisesStatus = "failed").
-  exercisesError  String?
-  /// Колода опубликована — доступна по ссылке /d/:id и её можно добавить в избранное.
-  isPublic        Boolean @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  /// "long" — долгая подготовка | "cram" — умная зубрёжка (Pro).
+  mode     String  @default("long")
+  /// Экзамен опубликован — доступен по ссылке /d/:id, его можно форкнуть.
+  isPublic Boolean @default(false)
+  /// Прошёл экзамен — экзамен в архиве (скрыт из плана дня).
+  archivedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  cards     Card[]
-  reviews   Review[]
-  fillTasks FillTask[]
-  quizTasks QuizTask[]
-  favorites DeckFavorite[]
+  questions      Question[]
+  cards          Card[]
+  materials      Material[]
+  favorites      ExamFavorite[]
+  forecastChecks ForecastCheck[]
+  teachSessions  TeachSession[]
+  conceptMaps    ConceptMap[]
+  memoryPalaces  MemoryPalace[]
 
   @@index([userId])
 }
 
-/// Карточка: вопрос + ответ. Прогресс повторения теперь у каждого пользователя свой — в CardProgress
-/// (чтобы чужую колоду можно было учить по своей ссылке со своим прогрессом).
-/// Поля box…lastReviewedAt ниже — историческое состояние владельца (снимок до перехода на CardProgress),
-/// код их больше не читает; источник истины — CardProgress.
-model Card {
+/// Исходный вопрос из списка к экзамену; тема — кластер для интерливинга и готовности по темам.
+model Question {
   id       String @id @default(cuid())
-  question String
-  answer   String
-  /// Развёрнутый ответ (markdown) для режима «глубинное изучение»; null — если не сгенерирован.
-  answerDeep String?
-  /// Порядок добавления (для стабильного показа в списке колоды).
-  position Int    @default(0)
+  position Int
+  text     String
+  /// Тема-кластер (ИИ группирует вопросы в 4–8 тем).
+  topic    String?
+  /// Сгенерированный полный ответ (markdown, страница вопроса).
+  answerMd String?
+  /// false — материалы пользователя не покрыли вопрос (ответ из общих знаний, плашка в UI).
+  covered     Boolean @default(true)
+  /// false — ответ построен из материалов пользователя.
+  aiGenerated Boolean @default(true)
+  /// «файл.pdf · короткая цитата» — привязка ответа к материалу.
+  sourceRef   String?
 
-  /// Leitner-уровень: 0 — новая, выше — лучше усвоена.
-  box Int @default(0)
-  /// Коэффициент лёгкости SM-2 (как быстро растёт интервал).
-  ease Float @default(2.5)
-  /// Текущий интервал до следующего показа, в днях.
-  intervalDays Float @default(0)
-  /// Когда карточка снова станет к показу. Новая карточка due сразу.
-  dueAt DateTime @default(now())
-  /// Всего повторений.
-  reps         Int @default(0)
-  correctCount Int @default(0)
-  wrongCount   Int @default(0)
-  /// Подряд верных ответов (сбрасывается при «сложно»).
-  streak         Int       @default(0)
-  lastReviewedAt DateTime?
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  cards Card[]
+
+  @@index([examId, position])
+}
+
+/// Загруженный материал (конспект): файл лежит на диске, в БД — метаданные.
+model Material {
+  id        String @id @default(cuid())
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  /// data/materials/<examId>/<materialId>_<safe-name>
+  storagePath String
+
+  createdAt DateTime @default(now())
+
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+}
+
+/// Атомарная карточка: один факт — одна карточка. id при миграции = старый Card.id (ChatMessage живёт).
+model Card {
+  id     String @id @default(cuid())
+  /// "open" | "mcq" | "cloze" | "truefalse".
+  format String
+  /// Вопрос карточки; для cloze — текст с пропуском «___».
+  prompt String
+  /// Верный ответ (краткий); для truefalse — "true"/"false".
+  answer String
+  /// mcq/cloze: ВСЕ варианты выбора; правильный проверяется на сервере по тексту (анти-чит).
+  options String[]
+  /// Однострочное «почему» для немедленной обратной связи.
+  explanation String?
+  /// Развёрнутый разбор (markdown; из старого answerDeep).
+  deepMd   String?
+  /// Ключевая ассоциация (мнемоника).
+  mnemonic String?
+  /// «файл.pdf · цитата» — источник факта в материалах.
+  sourceRef   String?
+  aiGenerated Boolean @default(false)
+  /// «Проверить» — пользователь сомневается в ответе ИИ (анти-галлюцинации).
+  flagged   Boolean @default(false)
+  /// Выключена из сессий (из старого hidden).
+  suspended Boolean @default(false)
+  position  Int
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  deckId String
-  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  examId     String
+  exam       Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  questionId String?
+  question   Question? @relation(fields: [questionId], references: [id], onDelete: SetNull)
 
-  reviews      Review[]
-  chatMessages ChatMessage[]
-  progress     CardProgress[]
+  progress      CardProgress[]
+  reviews       Review[]
+  chatMessages  ChatMessage[]
+  memoryPalaces MemoryPalace[]
 
-  @@index([deckId, dueAt])
+  @@index([examId, position])
 }
 
-/// Прогресс интервального повторения по карточке у конкретного пользователя (SM-2 + Leitner-бокс).
-/// Отсутствие строки = карточка для этого пользователя новая и подлежит показу сразу.
+/// FSRS-состояние карточки у конкретного пользователя. Отсутствие строки = карточка новая.
 model CardProgress {
   id String @id @default(cuid())
 
-  /// Leitner-уровень: 0 — новая, выше — лучше усвоена.
-  box Int @default(0)
-  /// Коэффициент лёгкости SM-2 (как быстро растёт интервал).
-  ease Float @default(2.5)
-  /// Текущий интервал до следующего показа, в днях.
-  intervalDays Float @default(0)
-  /// Когда карточка снова станет к показу.
-  dueAt DateTime @default(now())
-  /// Всего повторений.
-  reps         Int @default(0)
-  correctCount Int @default(0)
-  wrongCount   Int @default(0)
-  /// Подряд верных ответов (сбрасывается при «сложно»).
-  streak         Int       @default(0)
+  stability  Float    @default(0)
+  difficulty Float    @default(0)
+  due        DateTime @default(now())
+  /// ts-fsrs State: 0 New / 1 Learning / 2 Review / 3 Relearning.
+  state  Int @default(0)
+  reps   Int @default(0)
+  lapses Int @default(0)
   lastReviewedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  /// Successive relearning: в скольких РАЗНЫХ днях МСК был верный ответ (инкремент максимум раз в день).
+  masteredDays Int @default(0)
+  /// Уверенный промах → в приоритет ближайшей сессии; сбрасывается верным ответом.
+  priority Boolean @default(false)
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -181,44 +224,164 @@ model CardProgress {
   card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@unique([userId, cardId])
-  @@index([userId, dueAt])
+  @@index([userId, due])
+}
+
+/// Журнал каждого ответа — источник готовности, серий и аналитики.
+model Review {
+  id String @id @default(cuid())
+  /// FSRS: 1 Again / 2 Hard / 3 Good / 4 Easy.
+  rating  Int
+  correct Boolean
+  /// Уверенность 0..100 (ползунок ДО показа ответа).
+  confidence Int?
+  /// Введённый открытый ответ.
+  answerText String?
+  /// "match" | "partial" | "miss" — вердикт ИИ-сверки открытого ответа (Pro).
+  aiVerdict String?
+  /// "daily" | "pretest" | "cram" | "bedtime".
+  mode       String   @default("daily")
+  durationMs Int?
+  reviewedAt DateTime @default(now())
+
+  cardId String
+  card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Денормализация для агрегатов по экзамену (каскад придёт через Card).
+  examId String
+
+  @@index([userId, reviewedAt])
+  @@index([examId, reviewedAt])
   @@index([cardId])
 }
 
-/// Избранная (чужая) колода: ссылка пользователя на публичную колоду другого автора.
-model DeckFavorite {
+/// «Прогноз против факта»: предсказанный процент до сессии и реальный после.
+model ForecastCheck {
+  id               String    @id @default(cuid())
+  userId           String
+  predictedPercent Int
+  actualPercent    Int?
+  createdAt        DateTime  @default(now())
+  resolvedAt       DateTime?
+
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// Сессия «объясни ученику» (текст или голос).
+model TeachSession {
+  id        String   @id @default(cuid())
+  userId    String
+  topic     String?
+  summaryMd String?
+  voice     Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  turns TeachTurn[]
+
+  @@index([userId, createdAt])
+}
+
+model TeachTurn {
+  id String @id @default(cuid())
+  /// "user" — объяснение пользователя | "student" — реплика ученика.
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+
+  sessionId String
+  session   TeachSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+/// Карта связей: узлы и рёбра в JSON ([{id,label,x,y}] / [{from,to,label}]).
+model ConceptMap {
+  id     String @id @default(cuid())
+  userId String
+  title  String
+  nodes  Json
+  edges  Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Дворец памяти: маршрут локусов в JSON ([{place,item,image}]).
+model MemoryPalace {
+  id     String @id @default(cuid())
+  userId String
+  title  String
+  loci   Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+  cardId String?
+  card   Card?   @relation(fields: [cardId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+/// Выгрузка тревог перед экзаменом (экспрессивное письмо).
+model AnxietyDump {
+  id      String  @id @default(cuid())
+  examId  String?
+  content String  @db.Text
+
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// Избранный (чужой публичный) экзамен — данные мигрированы из DeckFavorite.
+model ExamFavorite {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deckId String
-  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, deckId])
-  @@index([userId])
-  @@index([deckId])
+  @@unique([userId, examId])
+  @@index([examId])
 }
 
-/// Журнал каждого свайпа — основа статистики (точность, активность по дням, серия).
-model Review {
+/// Настройки пользователя: дневной бюджет, дни отдыха и заморозки серии.
+model UserSettings {
   id String @id @default(cuid())
-  /// "good" (вспомнил, свайп вправо) | "again" (сложно, свайп влево).
-  grade      String
-  reviewedAt DateTime @default(now())
+  /// Общий дневной бюджет минут на все экзамены.
+  dailyMinutesTotal Int @default(25)
+  /// Запланированные дни отдыха (0 — воскресенье … 6 — суббота, счёт по МСК) — не рвут серию.
+  restWeekdays Int[] @default([])
+  /// Остаток заморозок серии (2 в месяц, автосписание при пропуске).
+  streakFreezesLeft Int       @default(2)
+  freezesRenewedAt  DateTime?
+  /// Час предсонного напоминания по МСК (null — выключено).
+  bedtimeHour Int?
 
-  cardId String
-  card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  deckId String
-  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
-  userId String
+  userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([deckId, reviewedAt])
-  @@index([userId, reviewedAt])
 }
 
-/// История чата по теме карточки (вопросы пользователя и ответы Claude).
+/// История чата по карточке («вопрос по карточке» / «объясни почему»).
 model ChatMessage {
   id String @id @default(cuid())
   /// "user" — вопрос пользователя | "assistant" — ответ Claude.
@@ -231,68 +394,6 @@ model ChatMessage {
   card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@index([cardId, createdAt])
-}
-
-// --- Тренажёр: задания «вставь слово» и тесты (генерируются Claude по материалам) ---
-
-/// Задание «вставь слово»: предложение/определение с пропуском (обозначен «___»).
-/// Отвечать можно выбором из вариантов (answer + distractors) или вводом вручную.
-model FillTask {
-  id          String   @id @default(cuid())
-  /// Текст с пропуском; место пропуска — ровно три подчёркивания «___».
-  prompt      String
-  /// Правильное слово/короткая фраза для пропуска.
-  answer      String
-  /// Неверные варианты для режима выбора (обычно 3).
-  distractors String[]
-  /// Порядок добавления (стабильный показ/диагностика).
-  position    Int      @default(0)
-
-  /// Накопленная статистика для весов выборки.
-  attempts     Int   @default(0)
-  correctCount Int   @default(0)
-  wrongCount   Int   @default(0)
-  /// Вес подмешивания: растёт при ошибке, падает при успехе — спотыкания показываем чаще.
-  weight       Float @default(1)
-  lastSeenAt   DateTime?
-  /// Дизлайк: задание отсеяно пользователем и больше не показывается.
-  hidden       Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  deckId String
-  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
-
-  @@index([deckId, hidden])
-}
-
-/// Тест: вопрос с несколькими вариантами, ровно один правильный (по индексу correctIndex).
-model QuizTask {
-  id           String   @id @default(cuid())
-  question     String
-  /// Варианты ответа (обычно 4).
-  options      String[]
-  /// Индекс правильного варианта в options (0-based).
-  correctIndex Int
-  /// Короткое пояснение к правильному ответу (необязательно).
-  explanation  String?
-  position     Int      @default(0)
-
-  attempts     Int   @default(0)
-  correctCount Int   @default(0)
-  wrongCount   Int   @default(0)
-  weight       Float @default(1)
-  lastSeenAt   DateTime?
-  hidden       Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  deckId String
-  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
-
-  @@index([deckId, hidden])
 }
 
 // --- Монетизация: подписка Pro, платежи, аналитика, учёт лимитов ---
@@ -387,11 +488,11 @@ model AnalyticsEvent {
 }
 
 /// Учёт использования платных ИИ-функций — на нём лимиты Free и fair-use Pro.
-/// kind: "deck_generation" | "exercise_generation" | "chat_message".
+/// kind: "deck_generation" (генерация экзамена; имя историческое) | "chat_message".
 model UsageEvent {
   id   String @id @default(cuid())
   kind String
-  /// Для генераций — id колоды (по нему компенсация при неудаче), для чата — id карточки.
+  /// Для генераций — id экзамена (по нему компенсация при неудаче), для чата — id карточки.
   refId String?
 
   createdAt DateTime @default(now())

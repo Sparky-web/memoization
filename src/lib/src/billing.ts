@@ -18,16 +18,20 @@ export const BILLING_PLANS = {
 /** Порядок ключей для валидаторов и витрины тарифов. */
 export const BILLING_PLAN_IDS: readonly ["MONTH", "TERM", "YEAR"] = ["MONTH", "TERM", "YEAR"];
 
-// Лимиты бесплатного тарифа: платим только за дорогой ИИ (генерации — claude opus).
-// Ручные колоды, повторения и тренажёры — безлимит для всех.
-/** ИИ-генераций колод бесплатно — всего, не в день. */
+// Лимиты бесплатного тарифа: один экзамен целиком бесплатен (сессии, FSRS, готовность, серии),
+// платим за мультиэкзамены и дорогой ИИ. Матрица — docs/domashnik.md, раздел 7.
+/** Активных (неархивных) экзаменов на Free. */
+export const FREE_EXAMS = 1;
+/** Вопросов на экзамен на Free. */
+export const FREE_QUESTIONS_PER_EXAM = 60;
+/** ИИ-генераций экзамена бесплатно — всего, не в день. */
 export const FREE_DECK_GENERATIONS = 1;
-/** ИИ-генераций заданий/тестов бесплатно — всего, не в день. */
-export const FREE_EXERCISE_GENERATIONS = 1;
-/** Сообщений чата по карточке в календарный день МСК. */
+/** Сообщений чата/«объясни ученику» в календарный день МСК. */
 export const FREE_CHAT_PER_DAY = 10;
 
-// Fair-use лимиты Pro — защита от злоупотребления дорогими вызовами claude.
+// Лимиты Pro: потолки fair-use — защита от злоупотребления дорогими вызовами claude.
+export const PRO_EXAMS = 10;
+export const PRO_QUESTIONS_PER_EXAM = 300;
 export const PRO_DECK_GENERATIONS_PER_DAY = 5;
 export const PRO_CHAT_PER_DAY = 50;
 
@@ -37,12 +41,20 @@ export const PRO_CHAT_PER_DAY = 50;
  */
 export const PAYWALL_ERRORS: {
   readonly GENERATION: "PAYWALL_GENERATION";
-  readonly EXERCISES: "PAYWALL_EXERCISES";
   readonly CHAT: "PAYWALL_CHAT";
+  readonly MULTI_EXAM: "PAYWALL_MULTI_EXAM";
+  readonly MATERIALS: "PAYWALL_MATERIALS";
+  readonly VOICE: "PAYWALL_VOICE";
+  readonly AI_CHECK: "PAYWALL_AI_CHECK";
+  readonly CRAM: "PAYWALL_CRAM";
 } = {
   GENERATION: "PAYWALL_GENERATION",
-  EXERCISES: "PAYWALL_EXERCISES",
   CHAT: "PAYWALL_CHAT",
+  MULTI_EXAM: "PAYWALL_MULTI_EXAM",
+  MATERIALS: "PAYWALL_MATERIALS",
+  VOICE: "PAYWALL_VOICE",
+  AI_CHECK: "PAYWALL_AI_CHECK",
+  CRAM: "PAYWALL_CRAM",
 };
 
 /** Идентификатор тарифа для покупки Pro. */
@@ -51,7 +63,15 @@ export type BillingPlanId = (typeof BILLING_PLAN_IDS)[number];
 /** Причина пейвола = ключ PAYWALL_ERRORS; по ней подбираются тексты PaywallCard. */
 export type PaywallReason = keyof typeof PAYWALL_ERRORS;
 
-const PAYWALL_REASONS: readonly PaywallReason[] = ["GENERATION", "EXERCISES", "CHAT"];
+const PAYWALL_REASONS: readonly PaywallReason[] = [
+  "GENERATION",
+  "CHAT",
+  "MULTI_EXAM",
+  "MATERIALS",
+  "VOICE",
+  "AI_CHECK",
+  "CRAM",
+];
 
 /** Причина пейвола из ошибки server function (сервер кладёт код в message при 402) или null. */
 export function paywallReasonOf(error: unknown): PaywallReason | null {

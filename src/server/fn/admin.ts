@@ -172,7 +172,7 @@ export const getAdminUsers = createServerFn({ method: "GET" })
         subscription: { select: { status: true, currentPeriodEnd: true, provider: true } },
         _count: {
           select: {
-            decks: true,
+            exams: true,
             reviews: true,
             usageEvents: { where: { kind: "deck_generation" } },
           },
@@ -181,14 +181,14 @@ export const getAdminUsers = createServerFn({ method: "GET" })
     });
 
     const userIds = users.map((user) => user.id);
-    // Карточки лежат в колодах — количество по владельцу считаем одним raw-запросом на страницу.
+    // Карточки лежат в экзаменах — количество по владельцу считаем одним raw-запросом на страницу.
     const cardRows = userIds.length
       ? await context.db.$queryRaw<{ userId: string; n: number }[]>`
-          SELECT d."userId" AS "userId", count(c.id)::int AS n
+          SELECT e."userId" AS "userId", count(c.id)::int AS n
           FROM "Card" c
-          JOIN "Deck" d ON d.id = c."deckId"
-          WHERE d."userId" = ANY(${userIds})
-          GROUP BY d."userId"
+          JOIN "Exam" e ON e.id = c."examId"
+          WHERE e."userId" = ANY(${userIds})
+          GROUP BY e."userId"
         `
       : [];
     const lastReviewGroups = userIds.length
@@ -216,7 +216,7 @@ export const getAdminUsers = createServerFn({ method: "GET" })
           name: user.name,
           role: user.role,
           createdAt: user.createdAt,
-          deckCount: user._count.decks,
+          examCount: user._count.exams,
           cardCount: cardsByUser.get(user.id) ?? 0,
           reviewCount: user._count.reviews,
           generationsUsed: user._count.usageEvents,
@@ -453,13 +453,13 @@ export const getAdminGeneration = createServerFn({ method: "GET" })
     const since7 = sinceDays(7);
     const since30 = sinceDays(30);
 
-    const [processingDecks, failedDecks, weekEvents, topGroups] = await Promise.all([
-      context.db.deck.findMany({
+    const [processingExams, failedExams, weekEvents, topGroups] = await Promise.all([
+      context.db.exam.findMany({
         where: { status: "processing" },
         orderBy: { createdAt: "asc" },
         select: { id: true, title: true, createdAt: true, user: { select: { email: true } } },
       }),
-      context.db.deck.findMany({
+      context.db.exam.findMany({
         where: { status: "failed" },
         orderBy: { updatedAt: "desc" },
         take: 10,
@@ -487,20 +487,20 @@ export const getAdminGeneration = createServerFn({ method: "GET" })
     const emailById = new Map(topUserRows.map((user) => [user.id, user.email]));
 
     return {
-      processing: processingDecks.map((deck) => ({
-        id: deck.id,
-        title: deck.title,
-        ownerEmail: deck.user.email,
-        createdAt: deck.createdAt,
+      processing: processingExams.map((exam) => ({
+        id: exam.id,
+        title: exam.title,
+        ownerEmail: exam.user.email,
+        createdAt: exam.createdAt,
         // 0 — генерируется сейчас, ≥1 — ждёт очереди, null — в очереди процесса нет (потеряна при рестарте).
-        queuePosition: getGenerationQueuePosition(deck.id),
+        queuePosition: getGenerationQueuePosition(exam.id),
       })),
-      failed: failedDecks.map((deck) => ({
-        id: deck.id,
-        title: deck.title,
-        ownerEmail: deck.user.email,
-        failedAt: deck.updatedAt,
-        error: deck.generationError,
+      failed: failedExams.map((exam) => ({
+        id: exam.id,
+        title: exam.title,
+        ownerEmail: exam.user.email,
+        failedAt: exam.updatedAt,
+        error: exam.generationError,
       })),
       generationsDaily: buildDailySeries(
         weekEvents.map((event) => ({ at: event.createdAt, weight: 1 })),

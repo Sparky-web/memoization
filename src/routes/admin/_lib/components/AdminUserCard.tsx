@@ -97,7 +97,7 @@ export function AdminUserCard({ user }: { user: AdminUserItem }) {
             )}
             <Text variant="small" color="supplementary">
               {typo(
-                `регистрация ${formatDateRuMsk(user.createdAt)} · колод ${user.deckCount} · карточек ${user.cardCount} · повторений ${user.reviewCount} · генераций ${user.generationsUsed}`,
+                `регистрация ${formatDateRuMsk(user.createdAt)} · экзаменов ${user.examCount} · карточек ${user.cardCount} · повторений ${user.reviewCount} · генераций ${user.generationsUsed}`,
               )}
             </Text>
             <Text variant="small" color="supplementary">

@@ -45,6 +45,7 @@
     "sonner": "^2.0.7",
     "srvx": "^0.11.16",
     "tailwind-merge": "^3.6.0",
+    "ts-fsrs": "^5",
     "typograf": "^6.8.2",
     "vaul": "^1.1.2",
     "word-extractor": "^1.0.4",

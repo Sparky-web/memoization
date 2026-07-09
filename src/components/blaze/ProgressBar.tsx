@@ -1,17 +1,14 @@
-import { cn } from "../utils/cn";
-
 interface ProgressBarProps {
-  /** Доля заполнения 0…1. */
+  /** Доля 0..1. */
   value: number;
-  className?: string;
 }
 
-/** Тонкий индикатор прогресса. Ширина — динамическая, поэтому через инлайн-style (санкционированное исключение). */
-export function ProgressBar({ value, className }: ProgressBarProps) {
-  const percent = Math.round(Math.min(Math.max(value, 0), 1) * 100);
+/** Тонкая полоса прогресса на токенах темы; значение клампится в 0..1. */
+export function ProgressBar({ value }: ProgressBarProps) {
+  const ratio = Math.min(Math.max(value, 0), 1);
   return (
-    <div className={cn("bg-muted h-2 w-full overflow-hidden rounded-full", className)}>
-      <div className="bg-primary h-full rounded-full transition-all" style={{ width: `${percent}%` }} />
+    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+      <div className="h-full rounded-full bg-primary" style={{ width: `${ratio * 100}%` }} />
     </div>
   );
 }

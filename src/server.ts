@@ -14,31 +14,16 @@ void ensureBootstrapAdmins(db);
 
 // При старте контейнера сбрасываем «зависшие» генерации (claude-задание прервано рестартом)
 // и возвращаем списанные попытки — прерванная рестартом генерация не должна сжигать лимит.
-void db.deck
+void db.exam
   .findMany({ where: { status: "processing" }, select: { id: true } })
-  .then(async (stuckDecks) => {
-    if (!stuckDecks.length) return;
-    const stuckIds = stuckDecks.map((deck) => deck.id);
-    await db.deck.updateMany({
+  .then(async (stuckExams) => {
+    if (!stuckExams.length) return;
+    const stuckIds = stuckExams.map((exam) => exam.id);
+    await db.exam.updateMany({
       where: { id: { in: stuckIds } },
       data: { status: "failed", generationError: typo("Генерация прервана перезапуском сервера") },
     });
     await refundUsage(db, "deck_generation", stuckIds);
-  })
-  .catch(() => undefined);
-
-// Аналогично — прерванная генерация заданий/тестов (у инлайновых проходов при создании
-// колоды события exercise_generation нет — возврат удалит только реально списанные попытки).
-void db.deck
-  .findMany({ where: { exercisesStatus: "processing" }, select: { id: true } })
-  .then(async (stuckDecks) => {
-    if (!stuckDecks.length) return;
-    const stuckIds = stuckDecks.map((deck) => deck.id);
-    await db.deck.updateMany({
-      where: { id: { in: stuckIds } },
-      data: { exercisesStatus: "failed", exercisesError: typo("Генерация заданий прервана перезапуском сервера") },
-    });
-    await refundUsage(db, "exercise_generation", stuckIds);
   })
   .catch(() => undefined);
 

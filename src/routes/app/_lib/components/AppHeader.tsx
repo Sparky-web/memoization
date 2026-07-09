@@ -16,7 +16,7 @@ export function AppHeader({ user }: AppHeaderProps) {
             {typo("Мемокарты")}
           </Link>
           <HStack gap="lg" align="center">
-            <Link to="/app">{typo("Колоды")}</Link>
+            <Link to="/app">{typo("Экзамены")}</Link>
             <Link to="/app/stats">{typo("Статистика")}</Link>
             <UserMenu user={user} />
           </HStack>

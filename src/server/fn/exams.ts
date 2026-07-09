@@ -1,0 +1,522 @@
+import { type PrismaClient } from "@prisma/client";
+import { createServerFn } from "@tanstack/react-start";
+import { getRequestHeaders, setResponseStatus } from "@tanstack/react-start/server";
+
+import {
+  FREE_EXAMS,
+  mskCalendarDaysBetween,
+  PAYWALL_ERRORS,
+  PRO_EXAMS,
+  readiness,
+  retrievability,
+  typo,
+  zodRussian,
+} from "~/lib";
+import { auth } from "~/server/auth";
+import { hasActivePro } from "~/server/entitlement";
+import { cleanupGenerationJob, getGenerationQueuePosition } from "~/server/generation";
+import { authMiddleware, baseMiddleware } from "~/server/middleware";
+import { examReadinessMap } from "~/server/readiness";
+
+// Экзамен — центральная сущность. Всё скоупится по владельцу; публичное — только isPublic
+// (превью /d/$examId и форк «Забрать себе» — перенос механики публичных колод).
+
+// Сколько вопросов отдаём в публичном превью по ссылке (остальное — после форка).
+const PUBLIC_PREVIEW_LIMIT = 20;
+
+// Дата экзамена приходит строкой «YYYY-MM-DD» и трактуется как календарный день МСК.
+const examDateInput = zodRussian
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .nullable();
+
+function parseExamDate(value: string | null): Date | null {
+  return value ? new Date(`${value}T00:00:00+03:00`) : null;
+}
+
+function daysToExamOf(examDate: Date | null, now: Date): number | null {
+  return examDate ? mskCalendarDaysBetween(now, examDate) : null;
+}
+
+// Гейт мультиэкзаменов: Free — 1 активный (2-й — пейвол), Pro — до 10 (fair-use).
+async function assertActiveExamCapacity(db: PrismaClient, userId: string, addedCount: number): Promise<void> {
+  const activeCount = await db.exam.count({ where: { userId, archivedAt: null } });
+  const pro = await hasActivePro(db, userId);
+  if (!pro && activeCount + addedCount > FREE_EXAMS) {
+    setResponseStatus(402);
+    throw new Error(PAYWALL_ERRORS.MULTI_EXAM);
+  }
+  if (pro && activeCount + addedCount > PRO_EXAMS) {
+    setResponseStatus(402);
+    throw new Error(typo(`В Pro можно вести до ${PRO_EXAMS} активных экзаменов — заархивируйте прошедшие`));
+  }
+}
+
+export const getExams = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const userId = context.session.user.id;
+    const now = new Date();
+
+    const exams = await context.db.exam.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        examDate: true,
+        status: true,
+        generationError: true,
+        mode: true,
+        isPublic: true,
+        archivedAt: true,
+        createdAt: true,
+        _count: { select: { cards: true, questions: true } },
+      },
+    });
+
+    const readinessByExam = await examReadinessMap(
+      context.db,
+      userId,
+      exams.map((exam) => exam.id),
+      now,
+    );
+
+    return exams.map((exam) => ({
+      id: exam.id,
+      title: exam.title,
+      description: exam.description,
+      examDate: exam.examDate,
+      daysToExam: daysToExamOf(exam.examDate, now),
+      status: exam.status,
+      generationError: exam.generationError,
+      mode: exam.mode,
+      isPublic: exam.isPublic,
+      archivedAt: exam.archivedAt,
+      createdAt: exam.createdAt,
+      totalCards: exam._count.cards,
+      totalQuestions: exam._count.questions,
+      readiness: readinessByExam.get(exam.id) ?? 0,
+      // Позиция в очереди генерации: 0 — генерируется сейчас, ≥1 — ждёт очереди, null — не в очереди.
+      queuePosition: exam.status === "processing" ? getGenerationQueuePosition(exam.id) : null,
+    }));
+  });
+
+export const getExamById = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ id: zodRussian.string() }))
+  .handler(async ({ data, context }) => {
+    const userId = context.session.user.id;
+    const now = new Date();
+    const exam = await context.db.exam.findFirst({
+      where: { id: data.id, userId },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        examDate: true,
+        targetGrade: true,
+        dailyMinutes: true,
+        examFormat: true,
+        status: true,
+        generationError: true,
+        mode: true,
+        isPublic: true,
+        archivedAt: true,
+        createdAt: true,
+        questions: {
+          orderBy: { position: "asc" },
+          select: {
+            id: true,
+            position: true,
+            text: true,
+            topic: true,
+            covered: true,
+            aiGenerated: true,
+            sourceRef: true,
+            answerMd: true,
+            _count: { select: { cards: true } },
+          },
+        },
+      },
+    });
+    if (!exam) {
+      setResponseStatus(404);
+      throw new Error(typo("Экзамен не найден"));
+    }
+
+    // Карточки с прогрессом — для счётчиков и готовности по темам (тема — у вопроса карточки).
+    const cards = await context.db.card.findMany({
+      where: { examId: exam.id },
+      select: {
+        id: true,
+        format: true,
+        suspended: true,
+        flagged: true,
+        question: { select: { topic: true } },
+        progress: {
+          where: { userId },
+          select: { stability: true, difficulty: true, due: true, state: true, reps: true, lapses: true, lastReviewedAt: true },
+        },
+      },
+    });
+
+    const activeCards = cards.filter((card) => !card.suspended);
+    const retrievabilityOf = (card: (typeof cards)[number]) => {
+      const progress = card.progress[0];
+      return progress ? retrievability(progress, now) : 0;
+    };
+
+    const byTopic = new Map<string, { retrievability: number }[]>();
+    for (const card of activeCards) {
+      const key = card.question?.topic ?? "";
+      const bucket = byTopic.get(key);
+      const entry = { retrievability: retrievabilityOf(card) };
+      if (bucket) {
+        bucket.push(entry);
+      } else {
+        byTopic.set(key, [entry]);
+      }
+    }
+    const topics = [...byTopic.entries()].map(([topic, entries]) => ({
+      topic: topic || null,
+      cardCount: entries.length,
+      readiness: readiness(entries),
+    }));
+
+    const formatCounts = { open: 0, mcq: 0, cloze: 0, truefalse: 0 };
+    for (const card of activeCards) {
+      if (card.format === "open") formatCounts.open += 1;
+      if (card.format === "mcq") formatCounts.mcq += 1;
+      if (card.format === "cloze") formatCounts.cloze += 1;
+      if (card.format === "truefalse") formatCounts.truefalse += 1;
+    }
+
+    const dueCount = activeCards.filter((card) => {
+      const progress = card.progress[0];
+      return progress ? progress.due <= now : false;
+    }).length;
+    const newCount = activeCards.filter((card) => !card.progress.length).length;
+
+    return {
+      id: exam.id,
+      title: exam.title,
+      description: exam.description,
+      examDate: exam.examDate,
+      daysToExam: daysToExamOf(exam.examDate, now),
+      targetGrade: exam.targetGrade,
+      dailyMinutes: exam.dailyMinutes,
+      examFormat: exam.examFormat,
+      status: exam.status,
+      generationError: exam.generationError,
+      mode: exam.mode,
+      isPublic: exam.isPublic,
+      archivedAt: exam.archivedAt,
+      createdAt: exam.createdAt,
+      queuePosition: exam.status === "processing" ? getGenerationQueuePosition(exam.id) : null,
+      questions: exam.questions.map((question) => ({
+        id: question.id,
+        position: question.position,
+        text: question.text,
+        topic: question.topic,
+        covered: question.covered,
+        aiGenerated: question.aiGenerated,
+        sourceRef: question.sourceRef,
+        hasAnswer: Boolean(question.answerMd),
+        cardCount: question._count.cards,
+      })),
+      topics,
+      readiness: readiness(activeCards.map((card) => ({ retrievability: retrievabilityOf(card) }))),
+      counters: {
+        totalCards: cards.length,
+        suspended: cards.length - activeCards.length,
+        flagged: cards.filter((card) => card.flagged).length,
+        due: dueCount,
+        new: newCount,
+        byFormat: formatCounts,
+      },
+    };
+  });
+
+const draftExamInput = zodRussian.object({
+  title: zodRussian.string().min(1).max(200),
+  examDate: examDateInput,
+});
+
+// Черновики экзаменов пачкой (мастер создаёт несколько за раз). Free видит пейвол на 2-м активном.
+export const createExamsDraft = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ exams: zodRussian.array(draftExamInput).min(1).max(10) }))
+  .handler(async ({ data, context }) => {
+    const userId = context.session.user.id;
+    await assertActiveExamCapacity(context.db, userId, data.exams.length);
+
+    const created: { id: string; title: string }[] = [];
+    for (const draft of data.exams) {
+      const exam = await context.db.exam.create({
+        data: {
+          userId,
+          title: draft.title,
+          examDate: parseExamDate(draft.examDate),
+          status: "draft",
+        },
+        select: { id: true, title: true },
+      });
+      created.push(exam);
+    }
+    return created;
+  });
+
+const examFieldsInput = zodRussian.object({
+  title: zodRussian.string().min(1).max(200).optional(),
+  description: zodRussian.string().max(2000).nullable().optional(),
+  examDate: examDateInput.optional(),
+  targetGrade: zodRussian.string().max(50).nullable().optional(),
+  dailyMinutes: zodRussian.number().int().min(5).max(240).optional(),
+  examFormat: zodRussian.enum(["oral", "written", "test"]).nullable().optional(),
+  mode: zodRussian.enum(["long", "cram"]).optional(),
+});
+
+export const updateExam = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ id: zodRussian.string(), data: examFieldsInput }))
+  .handler(async ({ data: input, context }) => {
+    const userId = context.session.user.id;
+    // Умная зубрёжка — Pro (защита сна и спринты живут поверх этого режима).
+    if (input.data.mode === "cram" && !(await hasActivePro(context.db, userId))) {
+      setResponseStatus(402);
+      throw new Error(PAYWALL_ERRORS.CRAM);
+    }
+    const result = await context.db.exam.updateMany({
+      where: { id: input.id, userId },
+      data: {
+        ...(input.data.title !== undefined ? { title: input.data.title } : {}),
+        ...(input.data.description !== undefined ? { description: input.data.description } : {}),
+        ...(input.data.examDate !== undefined ? { examDate: parseExamDate(input.data.examDate) } : {}),
+        ...(input.data.targetGrade !== undefined ? { targetGrade: input.data.targetGrade } : {}),
+        ...(input.data.dailyMinutes !== undefined ? { dailyMinutes: input.data.dailyMinutes } : {}),
+        ...(input.data.examFormat !== undefined ? { examFormat: input.data.examFormat } : {}),
+        ...(input.data.mode !== undefined ? { mode: input.data.mode } : {}),
+      },
+    });
+    if (!result.count) {
+      setResponseStatus(404);
+      throw new Error(typo("Экзамен не найден"));
+    }
+    return true;
+  });
+
+// Архив «после экзамена»; разархивирование проходит тот же гейт активных экзаменов, что и создание.
+export const archiveExam = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ id: zodRussian.string(), archived: zodRussian.boolean() }))
+  .handler(async ({ data, context }) => {
+    const userId = context.session.user.id;
+    if (!data.archived) {
+      await assertActiveExamCapacity(context.db, userId, 1);
+    }
+    const result = await context.db.exam.updateMany({
+      where: { id: data.id, userId },
+      data: { archivedAt: data.archived ? new Date() : null },
+    });
+    if (!result.count) {
+      setResponseStatus(404);
+      throw new Error(typo("Экзамен не найден"));
+    }
+    return true;
+  });
+
+export const deleteExam = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ id: zodRussian.string() }))
+  .handler(async ({ data, context }) => {
+    const result = await context.db.exam.deleteMany({
+      where: { id: data.id, userId: context.session.user.id },
+    });
+    if (!result.count) {
+      setResponseStatus(404);
+      throw new Error(typo("Экзамен не найден"));
+    }
+    // Материалы генерации хранились для ретрая — вместе с экзаменом они больше не нужны.
+    cleanupGenerationJob(data.id);
+    return true;
+  });
+
+// Публикация: экзамен доступен по ссылке /d/:id. Снятие публикации отзывает избранное.
+export const setExamPublic = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ id: zodRussian.string(), isPublic: zodRussian.boolean() }))
+  .handler(async ({ data, context }) => {
+    const result = await context.db.exam.updateMany({
+      where: { id: data.id, userId: context.session.user.id },
+      data: { isPublic: data.isPublic },
+    });
+    if (!result.count) {
+      setResponseStatus(404);
+      throw new Error(typo("Экзамен не найден"));
+    }
+    if (!data.isPublic) {
+      await context.db.examFavorite.deleteMany({ where: { examId: data.id } });
+    }
+    return { isPublic: data.isPublic };
+  });
+
+// Публичная страница экзамена: доступна без входа (read-only превью). Сессию читаем опционально —
+// кнопки зависят от того, кто смотрит.
+export const getPublicExam = createServerFn({ method: "GET" })
+  .middleware([baseMiddleware])
+  .validator(zodRussian.object({ id: zodRussian.string() }))
+  .handler(async ({ data, context }) => {
+    const session = await auth.api.getSession({ headers: new Headers(getRequestHeaders()) });
+    const viewerId = session?.user.id ?? null;
+
+    const exam = await context.db.exam.findFirst({
+      where: { id: data.id },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        examDate: true,
+        isPublic: true,
+        userId: true,
+        user: { select: { name: true } },
+        _count: { select: { cards: true, questions: true } },
+        questions: {
+          orderBy: { position: "asc" },
+          take: PUBLIC_PREVIEW_LIMIT,
+          select: { id: true, text: true, topic: true },
+        },
+      },
+    });
+    const isOwner = !!viewerId && exam?.userId === viewerId;
+    if (!exam || (!exam.isPublic && !isOwner)) {
+      setResponseStatus(404);
+      throw new Error(typo("Экзамен не найден или недоступен"));
+    }
+
+    return {
+      id: exam.id,
+      title: exam.title,
+      description: exam.description,
+      examDate: exam.examDate,
+      authorName: exam.user.name,
+      totalCards: exam._count.cards,
+      totalQuestions: exam._count.questions,
+      questions: exam.questions,
+      isOwner,
+      isAuthenticated: Boolean(viewerId),
+    };
+  });
+
+// Форк «Забрать себе»: копия Exam + Questions + Cards под своим userId, со своей датой и прогрессом с нуля.
+export const forkExam = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ id: zodRussian.string(), examDate: examDateInput }))
+  .handler(async ({ data, context }) => {
+    const userId = context.session.user.id;
+    const source = await context.db.exam.findFirst({
+      where: { id: data.id, isPublic: true },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        userId: true,
+        questions: {
+          orderBy: { position: "asc" },
+          select: {
+            id: true,
+            position: true,
+            text: true,
+            topic: true,
+            answerMd: true,
+            covered: true,
+            aiGenerated: true,
+            sourceRef: true,
+          },
+        },
+        cards: {
+          orderBy: { position: "asc" },
+          select: {
+            format: true,
+            prompt: true,
+            answer: true,
+            options: true,
+            explanation: true,
+            deepMd: true,
+            mnemonic: true,
+            sourceRef: true,
+            aiGenerated: true,
+            suspended: true,
+            position: true,
+            questionId: true,
+          },
+        },
+      },
+    });
+    if (!source) {
+      setResponseStatus(404);
+      throw new Error(typo("Экзамен недоступен для копирования"));
+    }
+    if (source.userId === userId) {
+      setResponseStatus(400);
+      throw new Error(typo("Это ваш экзамен — он и так у вас есть"));
+    }
+    await assertActiveExamCapacity(context.db, userId, 1);
+
+    const forked = await context.db.$transaction(async (tx) => {
+      const exam = await tx.exam.create({
+        data: {
+          userId,
+          title: source.title,
+          description: source.description,
+          examDate: parseExamDate(data.examDate),
+          status: "ready",
+        },
+        select: { id: true },
+      });
+
+      // Вопросы копируются с новой картой id — карточки привязываются к копиям.
+      const questionIdMap = new Map<string, string>();
+      for (const question of source.questions) {
+        const copy = await tx.question.create({
+          data: {
+            examId: exam.id,
+            position: question.position,
+            text: question.text,
+            topic: question.topic,
+            answerMd: question.answerMd,
+            covered: question.covered,
+            aiGenerated: question.aiGenerated,
+            sourceRef: question.sourceRef,
+          },
+          select: { id: true },
+        });
+        questionIdMap.set(question.id, copy.id);
+      }
+
+      await tx.card.createMany({
+        data: source.cards.map((card) => ({
+          examId: exam.id,
+          format: card.format,
+          prompt: card.prompt,
+          answer: card.answer,
+          options: card.options,
+          explanation: card.explanation,
+          deepMd: card.deepMd,
+          mnemonic: card.mnemonic,
+          sourceRef: card.sourceRef,
+          aiGenerated: card.aiGenerated,
+          suspended: card.suspended,
+          position: card.position,
+          questionId: card.questionId ? (questionIdMap.get(card.questionId) ?? null) : null,
+        })),
+      });
+
+      return exam;
+    });
+
+    return { id: forked.id };
+  });
+
+export type ExamListItem = Awaited<ReturnType<typeof getExams>>[number];

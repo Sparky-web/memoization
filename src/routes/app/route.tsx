@@ -21,24 +21,17 @@ export const Route = createFileRoute("/app")({
 function AppLayout() {
   const { user } = Route.useRouteContext();
   // Меняется при навигации → область содержимого перемонтируется и проигрывает анимацию появления.
+  // Полноэкранный плеер сессии без прокрутки страницы вернётся вместе с новым плеером (волна 3).
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  // Экран повторения занимает весь экран без прокрутки страницы (скролл — только внутри карточки).
-  const isStudy = pathname.endsWith("/study");
 
   return (
     <div className="flex h-dvh flex-col">
       <AppHeader user={user} />
-      {isStudy ? (
-        <main key={pathname} className="min-h-0 flex-1 overflow-hidden">
+      <main key={pathname} className="page-enter min-h-0 flex-1 overflow-y-auto">
+        <Container className="py-8">
           <Outlet />
-        </main>
-      ) : (
-        <main key={pathname} className="page-enter min-h-0 flex-1 overflow-y-auto">
-          <Container className="py-8">
-            <Outlet />
-          </Container>
-        </main>
-      )}
+        </Container>
+      </main>
     </div>
   );
 }

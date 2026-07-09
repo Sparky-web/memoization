@@ -7,7 +7,8 @@ import { hasActivePro } from "~/server/entitlement";
 import { enqueueGeneration, type GenerationFile } from "~/server/generation";
 import { countUsageToday, countUsageTotal, tryChargeUsage } from "~/server/usage";
 
-// Приём материалов/вопросов (текст + файлы) и постановка колоды в очередь генерации claude -p.
+// Приём материалов/вопросов (текст + файлы) и постановка экзамена в очередь генерации claude -p.
+// Волна 2 заменит поток на «вопросы → ответы → карточки»; форма и гейты сохраняются.
 const MAX_FILES_PER_FIELD = 5;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -15,11 +16,6 @@ const FAIR_USE_ERROR = typo("Дневной fair-use лимит генераци
 
 function asString(value: FormDataEntryValue | null): string {
   return typeof value === "string" ? value : "";
-}
-
-function clampRequired(value: number): number {
-  if (Number.isNaN(value)) return 1;
-  return Math.min(Math.max(Math.round(value), 1), 10);
 }
 
 async function collectFiles(values: FormDataEntryValue[], field: "materials" | "questions"): Promise<GenerationFile[]> {
@@ -61,7 +57,6 @@ export const Route = createFileRoute("/api/generate")({
         const questionsText = asString(form.get("questions"));
         // Пожелания к стилю/форме ответов — ограничиваем длину, чтобы не раздувать промпт.
         const instructions = asString(form.get("instructions")).slice(0, 4000);
-        const requiredCorrect = clampRequired(Number(asString(form.get("requiredCorrect"))));
 
         let files: GenerationFile[];
         try {
@@ -75,12 +70,11 @@ export const Route = createFileRoute("/api/generate")({
         const hasInput = materialsText.trim().length > 0 || questionsText.trim().length > 0 || files.length > 0;
         if (!hasInput) return Response.json({ error: "EMPTY" }, { status: 400 });
 
-        const deck = await db.deck.create({
+        const exam = await db.exam.create({
           data: {
             userId: session.user.id,
-            title: typo("Колода генерируется…"),
+            title: typo("Экзамен генерируется…"),
             description: null,
-            requiredCorrect,
             status: "processing",
           },
           select: { id: true },
@@ -93,24 +87,24 @@ export const Route = createFileRoute("/api/generate")({
           ? await tryChargeUsage(db, {
               userId: session.user.id,
               kind: "deck_generation",
-              refId: deck.id,
+              refId: exam.id,
               limit: PRO_DECK_GENERATIONS_PER_DAY,
               since: startOfDayMsk(new Date()),
             })
           : await tryChargeUsage(db, {
               userId: session.user.id,
               kind: "deck_generation",
-              refId: deck.id,
+              refId: exam.id,
               limit: FREE_DECK_GENERATIONS,
             });
         if (!charged) {
-          // Гонку проиграли — лимит выбрали параллельные запросы; пустую колоду убираем.
-          await db.deck.delete({ where: { id: deck.id } });
+          // Гонку проиграли — лимит выбрали параллельные запросы; пустой экзамен убираем.
+          await db.exam.delete({ where: { id: exam.id } });
           return Response.json({ error: pro ? FAIR_USE_ERROR : PAYWALL_ERRORS.GENERATION }, { status: 402 });
         }
-        enqueueGeneration(deck.id, { materialsText, questionsText, instructions, files });
+        enqueueGeneration(exam.id, { materialsText, questionsText, instructions, files });
 
-        return Response.json({ deckId: deck.id });
+        return Response.json({ examId: exam.id });
       },
     },
   },
