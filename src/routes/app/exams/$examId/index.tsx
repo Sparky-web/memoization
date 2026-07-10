@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
-import { GraduationCap, Play, Waypoints } from "lucide-react";
+import { CalendarDays, GraduationCap, Play, Waypoints } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -20,7 +20,15 @@ import {
 import { formatDateRuMsk, isPaywallError, typo } from "~/lib";
 import { logEvent } from "~/server/fn/events";
 
-import { daysToExamLabel, type ExamDetail, examQueries, generateExam, type SessionKind, updateExam } from "../_lib";
+import {
+  Chip,
+  daysToExamLabel,
+  type ExamDetail,
+  examQueries,
+  generateExam,
+  type SessionKind,
+  updateExam,
+} from "../_lib";
 import { CardsSection } from "./_lib/components/CardsSection";
 import { MaterialsSection } from "./_lib/components/MaterialsSection";
 import { QuestionsSection } from "./_lib/components/QuestionsSection";
@@ -141,6 +149,7 @@ function GenerationStatusBanner({ exam }: { exam: ExamDetail }) {
           </Text>
           <HStack>
             <Button
+              variant="brand"
               disabled={generate.isPending}
               onClick={() => {
                 generate.mutate();
@@ -219,35 +228,44 @@ function ExamHubPage() {
     <VStack gap="lg">
       <VStack gap="sm">
         <HStack justify="between" align="start" gap="md" wrap>
-          <VStack gap="2xs">
+          <VStack gap="2xs" className="min-w-0 flex-1">
             <Heading variant="h1" breakWords>
               {typo(exam.title)}
             </Heading>
-            <HStack gap="xs" align="center" wrap>
-              {exam.archivedAt && <Badge variant="outline">{typo("в архиве")}</Badge>}
-              {exam.isPublic && <Badge variant="outline">{typo("по ссылке")}</Badge>}
-              <Text variant="small" color="supplementary">
-                {examDateLine(exam)}
-              </Text>
+            <HStack gap="sm" align="center" wrap>
+              <HStack gap="2xs" align="center">
+                <CalendarDays className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+                <Text variant="small" color="supplementary">
+                  {examDateLine(exam)}
+                </Text>
+              </HStack>
+              {exam.archivedAt && (
+                <Badge variant="dot" dot="muted">
+                  {typo("в архиве")}
+                </Badge>
+              )}
+              {exam.isPublic && (
+                <Badge variant="dot" dot="success">
+                  {typo("по ссылке")}
+                </Badge>
+              )}
             </HStack>
           </VStack>
           <ReadinessRing value={exam.readiness} size="lg" />
         </HStack>
 
         <HStack gap="2xs" align="center" wrap>
-          <Button
-            variant={exam.mode === "long" ? "secondary" : "outline"}
-            size="sm"
+          <Chip
+            active={exam.mode === "long"}
             disabled={setMode.isPending}
             onClick={() => {
               setMode.mutate("long");
             }}
           >
             {typo("Долгая подготовка")}
-          </Button>
-          <Button
-            variant={exam.mode === "cram" ? "secondary" : "outline"}
-            size="sm"
+          </Chip>
+          <Chip
+            active={exam.mode === "cram"}
             disabled={setMode.isPending}
             onClick={() => {
               setMode.mutate("cram");
@@ -255,7 +273,7 @@ function ExamHubPage() {
           >
             {typo("Умная зубрёжка")}
             <Badge variant="primary">Pro</Badge>
-          </Button>
+          </Chip>
         </HStack>
         {showCramPaywall && (
           <PaywallCard
@@ -272,11 +290,12 @@ function ExamHubPage() {
         {hasActiveCards && !exam.archivedAt && (
           <HStack gap="sm" wrap>
             <Button
+              variant="brand"
               onClick={() => {
                 goSession(mainSessionKind);
               }}
             >
-              <Play className="size-4" />
+              <Play className="size-4" strokeWidth={1.8} />
               {exam.mode === "cram" ? typo("Начать зубрёжку") : typo("Начать сессию")}
             </Button>
             <Button
@@ -316,22 +335,41 @@ function ExamHubPage() {
         </AdaptiveGrid>
       )}
 
-      <HStack gap="2xs" wrap>
-        {HUB_TABS.map((option) => (
-          <Button
-            key={option.value}
-            variant={tab === option.value ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => {
-              setTab(option.value);
-            }}
-          >
-            {option.label}
-          </Button>
-        ))}
-      </HStack>
+      {/* Вкладки — сегмент-контрол пилюлей; на узком экране прокручивается горизонтально:
+          вынос за поля Container (-mx-4/px-4) + edge-fade справа как аффорданс скролла. */}
+      <div className="relative -mx-4 sm:mx-0">
+        <div className="overflow-x-auto px-4 sm:px-0">
+          <div className="flex w-max gap-1 rounded-full bg-muted p-1">
+            {HUB_TABS.map((option) => {
+              const active = tab === option.value;
+              const stateClasses = active
+                ? "bg-primary text-primary-foreground shadow-card"
+                : "text-muted-foreground hover:text-foreground";
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={active}
+                  className={`press h-9 shrink-0 rounded-full px-4 text-sm font-semibold whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none ${stateClasses}`}
+                  onClick={() => {
+                    setTab(option.value);
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-linear-to-l from-background to-transparent sm:hidden"
+        />
+      </div>
 
-      {renderTabContent()}
+      <div key={tab} className="rise">
+        {renderTabContent()}
+      </div>
     </VStack>
   );
 }

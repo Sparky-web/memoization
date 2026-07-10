@@ -4,30 +4,46 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Бренд-палитра: индиго на светло-сером фоне. Фон НЕ белый, карточки (--card) белые — чтобы выделялись. */
+/* Бренд-палитра: индиго на слегка ТЁПЛОМ серо-белом фоне. Фон НЕ белый, карточки (--card)
+   чисто белые и отделяются от фона мягкой двойной тенью, а не линией-бордером. */
 :root {
-  --background: oklch(0.955 0.007 286);
+  --background: oklch(0.966 0.006 84);
   --foreground: oklch(0.21 0.02 285);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.21 0.02 285);
   --primary: oklch(0.55 0.215 277);
   --primary-foreground: oklch(0.985 0.01 277);
-  --secondary: oklch(0.925 0.012 286);
+  --secondary: oklch(0.93 0.009 84);
   --secondary-foreground: oklch(0.32 0.025 285);
-  --muted: oklch(0.948 0.008 286);
+  --muted: oklch(0.945 0.008 84);
   --muted-foreground: oklch(0.52 0.02 285);
   --accent: oklch(0.925 0.04 277);
   --accent-foreground: oklch(0.4 0.12 277);
-  --destructive: oklch(0.585 0.22 27.2);
+  --destructive: oklch(0.58 0.18 27.2);
   --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.62 0.17 150);
+  --success: oklch(0.63 0.145 140);
   --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.66 0.15 60);
+  --warning: oklch(0.68 0.15 65);
   --warning-foreground: oklch(0.985 0 0);
-  --border: oklch(0.9 0.008 286);
-  --input: oklch(0.9 0.008 286);
+  /* Огонь серии: тёплый янтарно-оранжевый. */
+  --flame: oklch(0.7 0.17 50);
+  --flame-foreground: oklch(0.99 0.005 85);
+  /* Фирменный градиент индиго → фиолет; ТОЛЬКО для героев (главный CTA, кольцо, hero-акценты). */
+  --gradient-brand-from: oklch(0.55 0.215 277);
+  --gradient-brand-to: oklch(0.61 0.22 293);
+  /* Граница почти невидима: разделение поверхностей несёт тень, не линия. */
+  --border: oklch(0.88 0.012 286 / 55%);
+  --input: oklch(0.87 0.012 286);
   --ring: oklch(0.55 0.215 277);
-  --radius: 0.625rem;
+  --radius: 0.75rem;
+
+  /* Двойная мягкая тень (ambient + key) карточек; hover-состояние поднимает. */
+  --shadow-card: 0 1px 2px oklch(0.25 0.04 285 / 4%), 0 8px 24px -12px oklch(0.25 0.04 285 / 12%);
+  --shadow-card-hover: 0 2px 4px oklch(0.25 0.04 285 / 5%), 0 16px 36px -14px oklch(0.25 0.04 285 / 18%);
+
+  /* Единые кривые движения: выход — мягкое торможение, циклы — ровный ease-in-out. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 
   /* Типографика (токены для Heading/Text из библиотеки компонентов) */
   --font-family-headings: ui-sans-serif, system-ui, sans-serif;
@@ -61,30 +77,44 @@
   --monospaced-font-size: 14px;
   --monospaced-line-height: 22px;
   --monospaced-letter-spacing: 0px;
+
+  /* Цифры-герои (готовность %, серия, счёт сессии) — фирменные «маяки» экранов. */
+  --stat-value-font-size: 32px;
+  --stat-value-line-height: 1.1;
 }
 
+/* Тёмная тема — НЕ чёрная: глубокий сине-фиолетовый (#14131f-семейство),
+   карточки — приподнятый слой (+5% светлоты), primary чуть светлее и сочнее. */
 .dark {
-  --background: oklch(0.18 0.015 285);
+  --background: oklch(0.19 0.026 291);
   --foreground: oklch(0.96 0.005 286);
-  --card: oklch(0.235 0.018 285);
+  --card: oklch(0.24 0.028 290);
   --card-foreground: oklch(0.96 0.005 286);
-  --primary: oklch(0.68 0.17 277);
-  --primary-foreground: oklch(0.18 0.02 285);
-  --secondary: oklch(0.3 0.02 285);
+  --primary: oklch(0.7 0.18 279);
+  --primary-foreground: oklch(0.16 0.02 285);
+  --secondary: oklch(0.3 0.028 289);
   --secondary-foreground: oklch(0.96 0.005 286);
-  --muted: oklch(0.3 0.02 285);
-  --muted-foreground: oklch(0.72 0.02 285);
-  --accent: oklch(0.34 0.06 277);
+  --muted: oklch(0.3 0.028 289);
+  --muted-foreground: oklch(0.72 0.022 288);
+  --accent: oklch(0.34 0.065 280);
   --accent-foreground: oklch(0.96 0.01 286);
-  --destructive: oklch(0.7 0.19 22);
+  --destructive: oklch(0.68 0.17 22);
   --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.7 0.16 150);
-  --success-foreground: oklch(0.18 0.02 285);
+  --success: oklch(0.71 0.135 141);
+  --success-foreground: oklch(0.16 0.02 285);
   --warning: oklch(0.75 0.14 70);
-  --warning-foreground: oklch(0.18 0.02 285);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.68 0.17 277);
+  --warning-foreground: oklch(0.16 0.02 285);
+  --flame: oklch(0.75 0.16 55);
+  --flame-foreground: oklch(0.16 0.02 285);
+  --gradient-brand-from: oklch(0.6 0.2 279);
+  --gradient-brand-to: oklch(0.65 0.2 293);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.7 0.18 279);
+
+  /* Тени в тёмной слабее — глубину несёт слой светлоты карточки. */
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 20%), 0 8px 24px -12px oklch(0 0 0 / 35%);
+  --shadow-card-hover: 0 2px 4px oklch(0 0 0 / 25%), 0 16px 36px -14px oklch(0 0 0 / 45%);
 }
 
 @theme inline {
@@ -106,14 +136,44 @@
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-flame: var(--flame);
+  --color-flame-foreground: var(--flame-foreground);
+  /* Белый текст на фирменном градиенте (обе темы — градиент средней насыщенности). */
+  --color-brand-foreground: oklch(1 0 0);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  /* Радиусы крупные: кнопки/инпуты 12px (lg), карточки 20px (2xl), модалки 24px (3xl). */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
   --font-sans: ui-sans-serif, system-ui, sans-serif;
   --font-headings: var(--font-family-headings);
+}
+
+/* Тень карточки токенами — как утилиты, чтобы работали variants (hover:shadow-card-hover). */
+@utility shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+@utility shadow-card-hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* Фирменный градиент фоном; текст поверх — text-brand-foreground. */
+@utility bg-brand-gradient {
+  background-image: linear-gradient(135deg, var(--gradient-brand-from), var(--gradient-brand-to));
+}
+
+/* Градиентное слово-акцент в заголовках (hero лендинга). */
+@utility text-brand-gradient {
+  background-image: linear-gradient(100deg, var(--gradient-brand-from), var(--gradient-brand-to));
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
 }
 
 html,
@@ -132,6 +192,256 @@ body {
   color: var(--foreground);
 }
 
+/* ===== Motion identity: подъём, нажатие, появление, пульс, огонь, конфетти ===== */
+
+/* Интерактивный подъём: hover приподнимает и растит тень. Вешать на элементы с shadow-card. */
+.lift,
+.press {
+  transition:
+    transform 0.16s var(--ease-out),
+    box-shadow 0.2s var(--ease-out),
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+@media (hover: hover) {
+  .lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-card-hover);
+  }
+}
+
+/* Отклик нажатия; при сочетании с .lift active-правило ниже по файлу перекрывает hover-подъём. */
+.press:active {
+  transform: scale(0.98);
+}
+
+/* Появление элемента списка: fade-up. Stagger — inline animation-delay по индексу
+   (максимум ~8 элементов, дальше без задержки); backwards-заливка прячет элемент до старта. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise {
+  animation: rise 0.4s var(--ease-out) both;
+}
+
+/* Колыхание огня серии: едва заметное, качание от «основания» пламени. */
+@keyframes flame-sway {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+
+.flame-sway {
+  animation: flame-sway 2.5s var(--ease-in-out) infinite;
+  transform-origin: 50% 85%;
+}
+
+/* Пульс текущего сегмента прогресса сессии. */
+@keyframes segment-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+.segment-pulse {
+  animation: segment-pulse 1.2s var(--ease-in-out) infinite;
+}
+
+/* Отрисовка кольца готовности от нуля при маунте: дуга — circle с pathLength=100,
+   stroke-dasharray: 100; конечный stroke-dashoffset задаёт компонент инлайн. */
+@keyframes ring-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+}
+
+.ring-draw {
+  animation: ring-draw 0.7s var(--ease-out) both;
+}
+
+/* Конфетти-бёрст «День засчитан»: контейнер поверх героя (position: relative у родителя),
+   внутри РОВНО 12 пустых span — частицы разлетаются один раз и исчезают. */
+@keyframes confetti-pop {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(0deg) scale(1);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--confetti-x)), calc(-50% + var(--confetti-y))) rotate(var(--confetti-r))
+      scale(0.55);
+  }
+}
+
+.confetti-burst {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.confetti-burst > span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 10px;
+  border-radius: 2px;
+  animation: confetti-pop 0.9s var(--ease-out) forwards;
+}
+
+/* Траектории и цвета частиц: брендовые + тепло прогресса, разлёт с уклоном вверх. */
+.confetti-burst > span:nth-child(1)  { background: var(--gradient-brand-from); --confetti-x: -72px; --confetti-y: -88px; --confetti-r: -220deg; }
+.confetti-burst > span:nth-child(2)  { background: var(--gradient-brand-to);   --confetti-x: -28px; --confetti-y: -112px; --confetti-r: 160deg; }
+.confetti-burst > span:nth-child(3)  { background: var(--flame);               --confetti-x: 14px;  --confetti-y: -104px; --confetti-r: -300deg; }
+.confetti-burst > span:nth-child(4)  { background: var(--success);             --confetti-x: 56px;  --confetti-y: -86px; --confetti-r: 240deg; }
+.confetti-burst > span:nth-child(5)  { background: var(--warning);             --confetti-x: 94px;  --confetti-y: -44px; --confetti-r: -160deg; }
+.confetti-burst > span:nth-child(6)  { background: var(--primary);             --confetti-x: -96px; --confetti-y: -36px; --confetti-r: 200deg; }
+.confetti-burst > span:nth-child(7)  { background: var(--gradient-brand-from); --confetti-x: -62px; --confetti-y: 26px;  --confetti-r: -180deg; }
+.confetti-burst > span:nth-child(8)  { background: var(--gradient-brand-to);   --confetti-x: 68px;  --confetti-y: 32px;  --confetti-r: 280deg; }
+.confetti-burst > span:nth-child(9)  { background: var(--flame);               --confetti-x: 26px;  --confetti-y: 64px;  --confetti-r: -240deg; }
+.confetti-burst > span:nth-child(10) { background: var(--success);             --confetti-x: -22px; --confetti-y: 72px;  --confetti-r: 320deg; }
+.confetti-burst > span:nth-child(11) { background: var(--warning);             --confetti-x: 108px; --confetti-y: -68px; --confetti-r: -320deg; }
+.confetti-burst > span:nth-child(12) { background: var(--primary);             --confetti-x: -112px; --confetti-y: -58px; --confetti-r: 180deg; }
+
+/* ===== Плеер: смена карточек slide+fade (текущая уходит влево, новая входит справа) ===== */
+
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.card-enter {
+  animation: card-enter 0.25s var(--ease-out) both;
+}
+
+@keyframes card-leave {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+
+.card-leave {
+  animation: card-leave 0.18s var(--ease-out) forwards;
+}
+
+/* ===== Ползунок уверенности: крупный трек-пилюля и ручка с брендовым кольцом =====
+   Сам input прозрачный и рисует только ручку; трек, заливку и засечки рисуют
+   div-слои ПОД ним (у WebKit нет ::range-progress — иначе заливку не сделать). */
+
+.confidence-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 32px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.confidence-slider:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.confidence-slider:focus-visible {
+  outline: none;
+}
+
+.confidence-slider::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.confidence-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px;
+  height: 28px;
+  margin-top: -9px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 4px solid var(--primary);
+  box-shadow: var(--shadow-card);
+  transition: transform 0.16s var(--ease-out);
+}
+
+.confidence-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    var(--shadow-card),
+    0 0 0 4px color-mix(in oklab, var(--ring) 30%, transparent);
+}
+
+.confidence-slider:active::-webkit-slider-thumb {
+  transform: scale(1.1);
+}
+
+.confidence-slider::-moz-range-track {
+  height: 10px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.confidence-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 4px solid var(--primary);
+  box-shadow: var(--shadow-card);
+}
+
+.confidence-slider:focus-visible::-moz-range-thumb {
+  box-shadow:
+    var(--shadow-card),
+    0 0 0 4px color-mix(in oklab, var(--ring) 30%, transparent);
+}
+
+/* ===== «Объясни ученику»: мягкий градиентный ореол сцены аватара ===== */
+
+.teach-halo {
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--primary) 14%, transparent), transparent);
+}
+
+/* ===== Карта связей: узлы-чипы на полотне ===== */
+
+/* Мягкая тень узла (box-shadow к SVG неприменим — только drop-shadow фильтром). */
+.map-node {
+  filter: drop-shadow(0 2px 5px color-mix(in oklab, var(--foreground) 14%, transparent));
+}
+
 /* Появление содержимого страницы при переходе между экранами. */
 @keyframes page-enter {
   from {
@@ -145,7 +455,7 @@ body {
 }
 
 .page-enter {
-  animation: page-enter 0.28s ease-out both;
+  animation: page-enter 0.28s var(--ease-out) both;
 }
 
 /* Зелёная пульсация на весь экран при свайпе «вспомнил». */
@@ -164,7 +474,7 @@ body {
 }
 
 .good-pulse {
-  animation: good-pulse 0.6s ease-out forwards;
+  animation: good-pulse 0.6s var(--ease-out) forwards;
 }
 
 /* ===== Лендинг: живая демка «вопросы → ответ → карточка → план» (без JS) ===== */
@@ -189,7 +499,7 @@ body {
 }
 
 .landing-demo-card {
-  animation: landing-card-deal 9s ease-in-out infinite backwards;
+  animation: landing-card-deal 9s var(--ease-in-out) infinite backwards;
 }
 
 /* Мягкий пульс стрелки-потока между конспектом и карточками. */
@@ -204,7 +514,7 @@ body {
 }
 
 .landing-demo-flow {
-  animation: landing-flow-pulse 2.4s ease-in-out infinite;
+  animation: landing-flow-pulse 2.4s var(--ease-in-out) infinite;
 }
 
 /* ===== «Объясни ученику»: аватар-ученик и голосовые индикаторы ===== */
@@ -221,7 +531,7 @@ body {
 }
 
 .teach-avatar-idle {
-  animation: teach-breathe 3.2s ease-in-out infinite;
+  animation: teach-breathe 3.2s var(--ease-in-out) infinite;
 }
 
 /* Listening: концентрические кольца расходятся от аватара, пока идёт запись. */
@@ -237,7 +547,7 @@ body {
 }
 
 .teach-ring {
-  animation: teach-ring 1.6s ease-out infinite;
+  animation: teach-ring 1.6s var(--ease-out) infinite;
 }
 
 .teach-ring-late {
@@ -259,7 +569,7 @@ body {
 }
 
 .teach-dot {
-  animation: teach-dot 1.2s ease-in-out infinite;
+  animation: teach-dot 1.2s var(--ease-in-out) infinite;
 }
 
 .teach-dot-2 {
@@ -294,13 +604,44 @@ body {
 }
 
 .teach-state-enter {
-  animation: teach-state-enter 0.22s ease-out both;
+  animation: teach-state-enter 0.22s var(--ease-out) both;
 }
 
 /* Уважаем настройку «уменьшить движение». */
 @media (prefers-reduced-motion: reduce) {
   .page-enter {
     animation: none;
+  }
+  /* Подъём/нажатие: без движения, но смены цветов остаются мгновенными. */
+  .lift,
+  .press {
+    transition: none;
+  }
+  .lift:hover {
+    transform: none;
+    box-shadow: var(--shadow-card);
+  }
+  .press:active {
+    transform: none;
+  }
+  /* Появление, огонь и пульс сегмента — статично; кольцо сразу в конечном состоянии. */
+  .rise,
+  .flame-sway,
+  .segment-pulse,
+  .ring-draw,
+  .card-enter,
+  .card-leave {
+    animation: none;
+  }
+  .confidence-slider::-webkit-slider-thumb {
+    transition: none;
+  }
+  .confidence-slider:active::-webkit-slider-thumb {
+    transform: none;
+  }
+  /* Без анимации частицы конфетти зависли бы по центру — прячем контейнер целиком. */
+  .confetti-burst {
+    display: none;
   }
   /* Вспышку без анимации полностью прячем: иначе статичный overlay залил бы экран зелёным. */
   .good-pulse {
@@ -342,6 +683,17 @@ body {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0.2em 0;
+}
+/* Вопрос-«сцена» плеера: первый абзац markdown-промпта — в масштабе Heading h3,
+   чтобы все форматы карточек держали одинаково крупный главный элемент экрана. */
+.markdown-prompt > p:first-child {
+  margin-top: 0;
+  font-family: var(--font-family-headings);
+  font-size: var(--heading-3-font-size);
+  line-height: var(--heading-3-line-height);
+  letter-spacing: var(--heading-3-letter-spacing);
+  font-weight: 600;
+  text-wrap: balance;
 }
 .markdown h1,
 .markdown h2,

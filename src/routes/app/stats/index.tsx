@@ -1,6 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { AdaptiveGrid, Heading, HStack, Link, ReadinessRing, SimpleCard, Stat, Text, VStack } from "~/components";
+import {
+  AdaptiveGrid,
+  Badge,
+  Heading,
+  HStack,
+  Link,
+  ProgressBar,
+  ReadinessRing,
+  SimpleCard,
+  Stat,
+  Text,
+  VStack,
+} from "~/components";
 import { formatDateRuMsk, typo } from "~/lib";
 import { getOverallStats } from "~/server/fn/stats";
 
@@ -35,8 +47,9 @@ function forecastSummaryOf(averageDelta: number): string {
 // Календарь-бары активности за 30 дней; высота — от максимума за период.
 function ActivityBars({ activity }: { activity: OverallStats["activity"] }) {
   const maxCount = Math.max(...activity.map((day) => day.count), 1);
+  // Success с прозрачностью: месяц «зелёных кирпичей» не превращается в сплошную стену цвета.
   const barClassOf = (day: OverallStats["activity"][number]): string => {
-    if (day.counted) return "bg-success";
+    if (day.counted) return "bg-success/75";
     if (day.count) return "bg-primary/60";
     return "bg-muted";
   };
@@ -63,9 +76,18 @@ function ActivityBars({ activity }: { activity: OverallStats["activity"] }) {
           {lastDay ? formatDateRuMsk(new Date(`${lastDay.date}T12:00:00+03:00`)) : ""}
         </Text>
       </HStack>
-      <Text variant="mini" color="supplementary">
-        {typo("Зелёные дни засчитаны в серию: закрытый план дня или от 10 карточек.")}
-      </Text>
+      {/* Легенда — тихие статусы «точка + текст» вместо абзаца-пояснения. */}
+      <HStack gap="sm" wrap>
+        <Badge variant="dot" dot="success">
+          {typo("день засчитан в серию")}
+        </Badge>
+        <Badge variant="dot" dot="primary">
+          {typo("занимался")}
+        </Badge>
+        <Badge variant="dot" dot="muted">
+          {typo("пропуск")}
+        </Badge>
+      </HStack>
     </VStack>
   );
 }
@@ -145,7 +167,8 @@ function CalibrationSection({ stats }: { stats: OverallStats }) {
           {typo("Прогноз против факта")}
         </Text>
         {stats.forecasts.length ? (
-          <VStack gap="2xs">
+          // max-w-2xl: строки «метка — значение» на всю ширину контейнера разрывают связь глазом.
+          <VStack gap="2xs" className="max-w-2xl">
             {stats.averageForecastDelta !== null && (
               <Text variant="small">{forecastSummaryOf(stats.averageForecastDelta)}</Text>
             )}
@@ -174,22 +197,39 @@ function CalibrationSection({ stats }: { stats: OverallStats }) {
           {typo("Уверенность против результата")}
         </Text>
         {hasConfidence ? (
-          <VStack gap="2xs">
+          <VStack gap="sm">
+            {/* Две колонки «думал / оказалось» только с md: на 390 метки ломались,
+                а бары ужимались вдвое — на base метка встаёт над баром. */}
+            <div className="hidden md:block">
+              <AdaptiveGrid cols={{ base: 2 }} gap="sm">
+                <Text variant="mini" color="supplementary">
+                  {typo("Думал")}
+                </Text>
+                <Text variant="mini" color="supplementary">
+                  {typo("Оказалось")}
+                </Text>
+              </AdaptiveGrid>
+            </div>
             {buckets.map((bucket) => {
               const row = stats.confidenceBuckets[bucket.key];
               return (
-                <HStack key={bucket.key} justify="between" align="center" gap="sm" wrap>
-                  <Text variant="small" color="supplementary">
-                    {bucket.label}
-                  </Text>
-                  <Text variant="small" bold>
-                    {row.total
-                      ? typo(
-                          `точность ${percentLabel(row.correct, row.total)} · ${row.total} ${pluralRu(row.total, "ответ", "ответа", "ответов")}`,
-                        )
-                      : typo("нет ответов")}
-                  </Text>
-                </HStack>
+                <AdaptiveGrid key={bucket.key} cols={{ base: 1, md: 2 }} gap="sm" className="md:items-center">
+                  <Text variant="small">{bucket.label}</Text>
+                  {row.total ? (
+                    <VStack gap="3xs">
+                      <Text variant="small" bold>
+                        {typo(
+                          `${percentLabel(row.correct, row.total)} верно · ${row.total} ${pluralRu(row.total, "ответ", "ответа", "ответов")}`,
+                        )}
+                      </Text>
+                      <ProgressBar value={row.correct / row.total} />
+                    </VStack>
+                  ) : (
+                    <Text variant="small" color="supplementary">
+                      {typo("нет ответов")}
+                    </Text>
+                  )}
+                </AdaptiveGrid>
               );
             })}
             <Text variant="mini" color="supplementary">
@@ -222,18 +262,22 @@ function FormatsSection({ stats }: { stats: OverallStats }) {
   }
   return (
     <SimpleCard title={typo("Форматы карточек")}>
-      <VStack gap="2xs">
+      {/* Бар точности заполняет ширину строки данными — без «пустыни» между меткой и значением. */}
+      <VStack gap="sm">
         {stats.formats.map((format) => (
-          <HStack key={format.format} justify="between" align="center" gap="sm" wrap>
-            <Text variant="small" color="supplementary">
-              {cardFormatLabel(format.format)}
-            </Text>
-            <Text variant="small" bold>
-              {typo(
-                `точность ${percentLabel(format.correct, format.total)} · ${format.total} ${pluralRu(format.total, "ответ", "ответа", "ответов")}`,
-              )}
-            </Text>
-          </HStack>
+          <VStack key={format.format} gap="3xs">
+            <HStack justify="between" align="center" gap="sm" wrap>
+              <Text variant="small" color="supplementary">
+                {cardFormatLabel(format.format)}
+              </Text>
+              <Text variant="small" bold>
+                {typo(
+                  `точность ${percentLabel(format.correct, format.total)} · ${format.total} ${pluralRu(format.total, "ответ", "ответа", "ответов")}`,
+                )}
+              </Text>
+            </HStack>
+            <ProgressBar value={format.total ? format.correct / format.total : 0} />
+          </VStack>
         ))}
       </VStack>
     </SimpleCard>

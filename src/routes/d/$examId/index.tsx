@@ -5,23 +5,28 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import {
+  AdaptiveGrid,
   Badge,
   Button,
   Container,
+  EmptyState,
   Heading,
   HStack,
   Input,
   PaywallCard,
   ResponsiveModal,
   SimpleCard,
+  Stat,
   Text,
   VStack,
 } from "~/components";
 import { isPaywallError, typo } from "~/lib";
 import { forkExam, getPublicExam, setExamFavorite } from "~/server/fn/exams";
 
-// Публичное превью экзамена: вопросы без ответов + «Забрать себе» — форк со своей датой
-// и прогрессом с нуля. Гостю предлагаем войти.
+import { riseDelay, SiteHeader } from "../../_lib";
+
+// Публичное превью экзамена — мини-лендинг: вопросы без ответов + «Забрать себе» — форк
+// со своей датой и прогрессом с нуля. Гостю предлагаем войти.
 
 const publicExamQuery = (examId: string) =>
   queryOptions({
@@ -66,12 +71,15 @@ export const Route = createFileRoute("/d/$examId/")({
 function PublicExamNotFound() {
   const navigate = useNavigate();
   return (
-    <main className="min-h-dvh overflow-y-auto">
-      <Container className="py-8">
-        <VStack gap="md">
-          <Heading variant="h1">{typo("Экзамен недоступен")}</Heading>
-          <Text color="supplementary">{typo("Ссылка неверна или владелец закрыл доступ по ссылке.")}</Text>
-          <HStack>
+    <div className="min-h-dvh">
+      <SiteHeader containerClassName="max-w-3xl" />
+      <main>
+        <Container className="max-w-3xl py-14 md:py-20">
+          <EmptyState
+            illustration="map"
+            title={typo("Экзамен недоступен")}
+            text={typo("Ссылка неверна или владелец закрыл доступ по ссылке.")}
+          >
             <Button
               onClick={() => {
                 void navigate({ to: "/" });
@@ -79,10 +87,10 @@ function PublicExamNotFound() {
             >
               {typo("На главную")}
             </Button>
-          </HStack>
-        </VStack>
-      </Container>
-    </main>
+          </EmptyState>
+        </Container>
+      </main>
+    </div>
   );
 }
 
@@ -162,6 +170,25 @@ function ForkModal({ examId, onClose }: { examId: string; onClose: () => void })
   );
 }
 
+/** Кольцо тем — брендовый акцент героя: градиентный обод, внутри количество тем билетов. */
+function TopicsRing({ count }: { count: number }) {
+  return (
+    <div className="size-24 shrink-0 rounded-full bg-brand-gradient p-1 shadow-card">
+      <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-card">
+        <span className="font-headings text-(length:--heading-2-font-size) font-extrabold tracking-tight tabular-nums">
+          {count}
+        </span>
+        <Text variant="mini" color="supplementary">
+          {typo("тем")}
+        </Text>
+      </div>
+    </div>
+  );
+}
+
+/** Сколько тем показываем бейджами, прежде чем свернуть хвост в «+N». */
+const TOPIC_BADGES_LIMIT = 8;
+
 function PublicExamPage() {
   const { examId } = Route.useParams();
   const navigate = useNavigate();
@@ -189,11 +216,13 @@ function PublicExamPage() {
     ...new Set(exam.questions.map((question) => question.topic).filter((topic): topic is string => Boolean(topic))),
   ];
   const restCount = exam.totalQuestions - exam.questions.length;
+  const restTopics = topics.length - TOPIC_BADGES_LIMIT;
 
   const renderAction = () => {
     if (exam.isOwner) {
       return (
         <Button
+          size="pill"
           onClick={() => {
             void navigate({ to: "/app/exams/$examId", params: { examId } });
           }}
@@ -204,8 +233,9 @@ function PublicExamPage() {
     }
     if (exam.isAuthenticated) {
       return (
-        <HStack gap="sm" wrap>
+        <HStack gap="sm" wrap justify="center">
           <Button
+            variant="brand"
             size="pill"
             onClick={() => {
               setForkOpen(true);
@@ -215,12 +245,13 @@ function PublicExamPage() {
           </Button>
           <Button
             variant="outline"
+            size="pill"
             disabled={favorite.isPending}
             onClick={() => {
               favorite.mutate();
             }}
           >
-            <Star className={exam.isFavorite ? "size-4 fill-current" : "size-4"} />
+            <Star className={exam.isFavorite ? "size-4 fill-current" : "size-4"} strokeWidth={1.8} />
             {exam.isFavorite ? typo("В избранном") : typo("В избранное")}
           </Button>
         </HStack>
@@ -228,6 +259,7 @@ function PublicExamPage() {
     }
     return (
       <Button
+        variant="brand"
         size="pill"
         onClick={() => {
           void navigate({ to: "/auth/signin" });
@@ -239,64 +271,138 @@ function PublicExamPage() {
   };
 
   return (
-    <main className="min-h-dvh overflow-y-auto">
-      <Container className="py-8">
-        <VStack gap="xl" className="mx-auto w-full max-w-2xl">
-          <VStack gap="sm">
-            <Text variant="mini" color="supplementary">
-              {typo("Домашник · экзамен по ссылке")}
-            </Text>
-            <Heading variant="h1" breakWords>
-              {typo(exam.title)}
-            </Heading>
-            <Text variant="small" color="supplementary">
-              {exam.authorName
-                ? typo(`Автор: ${exam.authorName} · вопросов: ${exam.totalQuestions} · карточек: ${exam.totalCards}`)
-                : typo(`Вопросов: ${exam.totalQuestions} · карточек: ${exam.totalCards}`)}
-            </Text>
-            {exam.description && <Text color="supplementary">{typo(exam.description)}</Text>}
-            {topics.length > 0 && (
-              <HStack gap="2xs" wrap>
-                {topics.map((topic) => (
-                  <Badge key={topic} variant="outline">
-                    {typo(topic)}
-                  </Badge>
-                ))}
-              </HStack>
-            )}
-            <HStack>{renderAction()}</HStack>
-            {!exam.isAuthenticated && (
-              <Text variant="mini" color="supplementary">
-                {typo(
-                  "После входа экзамен скопируется к тебе: свой план от своей даты и честная готовность по припоминанию.",
-                )}
-              </Text>
-            )}
-          </VStack>
+    <div className="min-h-dvh">
+      <SiteHeader containerClassName="max-w-3xl">
+        {!exam.isAuthenticated && (
+          <Button variant="outline" size="sm" onClick={() => void navigate({ to: "/auth/signin" })}>
+            {typo("Войти")}
+          </Button>
+        )}
+      </SiteHeader>
 
-          {exam.questions.length > 0 && (
-            <SimpleCard title={typo("Вопросы")}>
-              <VStack gap="2xs">
-                {exam.questions.map((question, indexNumber) => (
-                  <HStack key={question.id} gap="xs" wrap>
-                    <Text variant="small" color="supplementary">
-                      {indexNumber + 1}.
-                    </Text>
-                    <Text variant="small" breakWords>
-                      {typo(question.text)}
-                    </Text>
-                  </HStack>
-                ))}
-              </VStack>
-              {restCount > 0 && (
-                <Text variant="small" color="supplementary">
-                  {typo(`…и ещё ${restCount} вопросов — они откроются после копирования`)}
+      <main className="relative">
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 overflow-hidden">
+          <div className="absolute top-4 left-1/2 size-72 -translate-x-1/2 rounded-full bg-brand-gradient opacity-10 blur-3xl" />
+        </div>
+        <Container className="max-w-3xl py-10 md:py-14">
+          <VStack gap="2xl">
+            {/* Герой: чей экзамен и что внутри */}
+            <VStack gap="md" justify="center" className="rise text-center" style={riseDelay(0)}>
+              <Badge variant="outline" className="mx-auto gap-1.5 border-primary/25 bg-card/60 px-3 py-1 text-primary">
+                {typo("Экзамен по ссылке")}
+              </Badge>
+              <Heading variant="h1" breakWords align="center">
+                {typo(exam.title)}
+              </Heading>
+              {exam.authorName && (
+                <Text variant="small" color="supplementary" align="center">
+                  {typo(`Собрал и поделился: ${exam.authorName}`)}
                 </Text>
               )}
-            </SimpleCard>
-          )}
-        </VStack>
-      </Container>
+              {exam.description && (
+                <div className="mx-auto max-w-xl">
+                  <Text color="supplementary" align="center">
+                    {typo(exam.description)}
+                  </Text>
+                </div>
+              )}
+              <VStack gap="xs" justify="center">
+                {renderAction()}
+                {!exam.isAuthenticated && (
+                  <Text variant="mini" color="supplementary" align="center">
+                    {typo("После входа экзамен скопируется к тебе: свой план от своей даты и прогресс с нуля.")}
+                  </Text>
+                )}
+              </VStack>
+            </VStack>
+
+            {/* Цифры и кольцо тем — один ряд плиток по центру: без пустых хвостов на десктопе. */}
+            <AdaptiveGrid
+              cols={{ base: 2, md: topics.length ? 3 : 2 }}
+              gap="sm"
+              className="rise"
+              style={riseDelay(1)}
+            >
+              <Stat align="center" label={typo("Вопросов")} value={exam.totalQuestions} />
+              <Stat align="center" label={typo("Карточек")} value={exam.totalCards} />
+              {topics.length > 0 && (
+                <div className="col-span-2 flex items-center justify-center rounded-2xl bg-card p-4 shadow-card md:col-span-1">
+                  <TopicsRing count={topics.length} />
+                </div>
+              )}
+            </AdaptiveGrid>
+
+            {/* Темы: что придётся выучить */}
+            {topics.length > 0 && (
+              <SimpleCard title={typo("Темы экзамена")} className="rise" style={riseDelay(2)}>
+                <HStack gap="xs" wrap>
+                  {topics.slice(0, TOPIC_BADGES_LIMIT).map((topic) => (
+                    <Badge key={topic} variant="dot" dot="primary">
+                      {typo(topic)}
+                    </Badge>
+                  ))}
+                  {restTopics > 0 && <Badge variant="muted">{typo(`+${restTopics}`)}</Badge>}
+                </HStack>
+              </SimpleCard>
+            )}
+
+            {/* Вопросы без ответов: превью содержимого */}
+            {exam.questions.length > 0 && (
+              <SimpleCard title={typo("Вопросы")} className="rise" style={riseDelay(3)}>
+                <VStack gap="xs">
+                  {exam.questions.map((question, indexNumber) => (
+                    <HStack key={question.id} gap="sm" align="start">
+                      <span className="w-6 shrink-0 text-right font-semibold text-muted-foreground tabular-nums">
+                        <Text variant="small">{indexNumber + 1}</Text>
+                      </span>
+                      <Text variant="small" breakWords>
+                        {typo(question.text)}
+                      </Text>
+                    </HStack>
+                  ))}
+                </VStack>
+                {restCount > 0 && (
+                  <Text variant="small" color="supplementary">
+                    {typo(`…и ещё ${restCount} вопросов — они откроются после копирования`)}
+                  </Text>
+                )}
+              </SimpleCard>
+            )}
+
+            {/* Финальное приглашение: как работает копия */}
+            {!exam.isOwner && (
+              <SimpleCard size="lg" className="rise bg-accent/60" style={riseDelay(4)}>
+                <VStack gap="md" justify="center" className="text-center">
+                  <Heading variant="h3" asParagraph align="center">
+                    {typo("Карточки общие — план твой")}
+                  </Heading>
+                  <div className="mx-auto max-w-xl">
+                    <Text variant="small" color="supplementary" align="center">
+                      {typo(
+                        "Заберёшь копию — Домашник построит план повторений от твоей даты экзамена и будет считать честную готовность по твоему припоминанию.",
+                      )}
+                    </Text>
+                  </div>
+                  <div className="mx-auto">
+                    <Button
+                      size="pill"
+                      onClick={() => {
+                        if (!exam.isAuthenticated) {
+                          void navigate({ to: "/auth/signin" });
+                          return;
+                        }
+                        setForkOpen(true);
+                      }}
+                    >
+                      {typo("Забрать себе")}
+                    </Button>
+                  </div>
+                </VStack>
+              </SimpleCard>
+            )}
+          </VStack>
+        </Container>
+      </main>
       {forkOpen && (
         <ForkModal
           examId={examId}
@@ -305,6 +411,6 @@ function PublicExamPage() {
           }}
         />
       )}
-    </main>
+    </div>
   );
 }

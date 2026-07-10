@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { Ellipsis, Eye, EyeOff, Landmark, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -9,6 +9,7 @@ import {
   Button,
   ChatPanel,
   ConfirmDialog,
+  EmptyState,
   HStack,
   Input,
   PaywallCard,
@@ -267,6 +268,84 @@ function CardChatModal({ card, onClose }: { card: ExamCardItem; onClose: () => v
 // точечно для спотыкающихся карточек, спека «Мнемоники»).
 const STUBBORN_LAPSES = 3;
 
+// Частые действия — тихие ссылки: вторичное тише контента на два тона, primary остаётся hover'у.
+const quietActionClasses = "font-semibold text-muted-foreground hover:text-primary";
+
+// Редкие действия карточки прячутся в меню «⋯», чтобы список не превращался в стену ссылок.
+function CardRowMenu({
+  card,
+  suspendPending,
+  onToggleSuspend,
+  onPalace,
+  onDelete,
+}: {
+  card: ExamCardItem;
+  suspendPending: boolean;
+  onToggleSuspend: () => void;
+  onPalace: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const runAndClose = (action: () => void) => () => {
+    setOpen(false);
+    action();
+  };
+  const SuspendIcon = card.suspended ? Eye : EyeOff;
+
+  return (
+    <div className="relative">
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={typo("Ещё действия")}
+        aria-expanded={open}
+        onClick={() => {
+          setOpen((current) => !current);
+        }}
+      >
+        <Ellipsis className="size-5" strokeWidth={1.8} />
+      </Button>
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label={typo("Закрыть меню")}
+            className="fixed inset-0 z-10 cursor-default"
+            onClick={() => {
+              setOpen(false);
+            }}
+          />
+          <VStack gap="3xs" className="absolute top-11 right-0 z-20 w-56 rounded-xl bg-card p-1 shadow-card-hover">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              disabled={suspendPending}
+              onClick={runAndClose(onToggleSuspend)}
+            >
+              <SuspendIcon className="size-4" strokeWidth={1.8} />
+              {card.suspended ? typo("Включить в ротацию") : typo("Выключить из ротации")}
+            </Button>
+            <Button variant="ghost" size="sm" className="w-full justify-start" onClick={runAndClose(onPalace)}>
+              <Landmark className="size-4" strokeWidth={1.8} />
+              {typo("Дворец памяти")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={runAndClose(onDelete)}
+            >
+              <Trash2 className="size-4" strokeWidth={1.8} />
+              {typo("Удалить")}
+            </Button>
+          </VStack>
+        </>
+      )}
+    </div>
+  );
+}
+
 function CardRow({
   card,
   examId,
@@ -310,13 +389,25 @@ function CardRow({
     : typo("новая");
 
   return (
-    <VStack gap="2xs" className="rounded-2xl bg-card p-4">
+    <VStack gap="2xs" className="rounded-2xl bg-card p-4 shadow-card">
       <HStack gap="xs" align="center" wrap>
         <Badge variant="muted">{cardFormatLabel(card.format)}</Badge>
         {card.topic && <Badge variant="outline">{typo(card.topic)}</Badge>}
-        {card.flagged && <Badge variant="primary">{typo("проверить")}</Badge>}
-        {card.suspended && <Badge variant="outline">{typo("выключена")}</Badge>}
-        {card.progress?.priority && <Badge className="bg-warning/15 text-warning">{typo("приоритет")}</Badge>}
+        {card.flagged && (
+          <Badge variant="dot" dot="primary">
+            {typo("проверить")}
+          </Badge>
+        )}
+        {card.suspended && (
+          <Badge variant="dot" dot="muted">
+            {typo("выключена")}
+          </Badge>
+        )}
+        {card.progress?.priority && (
+          <Badge variant="dot" dot="warning">
+            {typo("приоритет")}
+          </Badge>
+        )}
       </HStack>
       <Text bold breakWords>
         {typo(card.prompt)}
@@ -329,56 +420,45 @@ function CardRow({
       </Text>
       {stubborn && !card.palace && (
         <HStack>
-          <Badge className="bg-warning/15 text-warning">{typo("упрямая карточка — попробуй дворец памяти")}</Badge>
+          <Badge variant="dot" dot="flame">
+            {typo("упрямая карточка — попробуй дворец памяти")}
+          </Badge>
         </HStack>
       )}
       {card.palace && <PalaceBlock title={card.palace.title} loci={card.palace.loci} />}
-      <HStack gap="sm" wrap>
-        <Button variant="link" size="inline" onClick={onEdit}>
-          {typo("Править")}
-        </Button>
-        <Button variant="link" size="inline" onClick={onChat}>
-          {typo("Спросить")}
-        </Button>
-        <Button
-          variant="link"
-          size="inline"
-          disabled={toggleFlag.isPending}
-          onClick={() => {
-            toggleFlag.mutate();
-          }}
-        >
-          {card.flagged ? typo("Снять флаг") : typo("Проверить")}
-        </Button>
-        <Button
-          variant="link"
-          size="inline"
-          disabled={toggleSuspend.isPending}
-          onClick={() => {
+      <HStack justify="between" align="center" gap="sm">
+        <HStack gap="sm" align="center" wrap>
+          <Button variant="link" size="inline" className={quietActionClasses} onClick={onEdit}>
+            {typo("Править")}
+          </Button>
+          <Button variant="link" size="inline" className={quietActionClasses} onClick={onChat}>
+            {typo("Спросить")}
+          </Button>
+          <Button
+            variant="link"
+            size="inline"
+            className={quietActionClasses}
+            disabled={toggleFlag.isPending}
+            onClick={() => {
+              toggleFlag.mutate();
+            }}
+          >
+            {card.flagged ? typo("Снять флаг") : typo("Проверить")}
+          </Button>
+        </HStack>
+        <CardRowMenu
+          card={card}
+          suspendPending={toggleSuspend.isPending}
+          onToggleSuspend={() => {
             toggleSuspend.mutate();
           }}
-        >
-          {card.suspended ? typo("Включить") : typo("Выключить")}
-        </Button>
-        <Button
-          variant="link"
-          size="inline"
-          onClick={() => {
+          onPalace={() => {
             void navigate({ to: "/app/exams/$examId/palace/$cardId", params: { examId, cardId: card.id } });
           }}
-        >
-          {card.palace ? typo("🏛️ Дворец") : typo("Дворец памяти")}
-        </Button>
-        <Button
-          variant="link"
-          size="inline"
-          disabled={remove.isPending}
-          onClick={() => {
+          onDelete={() => {
             setConfirmDelete(true);
           }}
-        >
-          {typo("Удалить")}
-        </Button>
+        />
       </HStack>
       <ConfirmDialog
         open={confirmDelete}
@@ -428,7 +508,11 @@ export function CardsSection({ examId }: { examId: string }) {
     if (!cards.length) {
       return (
         <SimpleCard>
-          <Text color="supplementary">{typo("Карточек пока нет — добавьте вручную или дождитесь генерации.")}</Text>
+          <EmptyState
+            illustration="cards"
+            title={typo("Карточек пока нет")}
+            text={typo("Добавьте карточку вручную или дождитесь генерации ответов.")}
+          />
         </SimpleCard>
       );
     }

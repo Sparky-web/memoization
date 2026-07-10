@@ -4,7 +4,7 @@ import { Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Badge, Button, Heading, HStack, PaywallCard, SimpleCard, Text, useTheme, VStack } from "~/components";
+import { Badge, Heading, HStack, PaywallCard, SimpleCard, Text, useTheme, VStack } from "~/components";
 import { isPaywallError, typo } from "~/lib";
 import { logEvent } from "~/server/fn/events";
 import { updateUserSettings } from "~/server/fn/settings";
@@ -164,26 +164,24 @@ function SettingsPage() {
 
       <SimpleCard title={typo("Тема")}>
         <HStack gap="2xs">
-          <Button
-            variant={isDark ? "ghost" : "secondary"}
-            size="sm"
+          <Chip
+            active={!isDark}
             onClick={() => {
               setDark(false);
             }}
           >
-            <Sun className="size-4" />
+            <Sun className="size-4" strokeWidth={1.8} />
             {typo("Светлая")}
-          </Button>
-          <Button
-            variant={isDark ? "secondary" : "ghost"}
-            size="sm"
+          </Chip>
+          <Chip
+            active={isDark}
             onClick={() => {
               setDark(true);
             }}
           >
-            <Moon className="size-4" />
+            <Moon className="size-4" strokeWidth={1.8} />
             {typo("Тёмная")}
-          </Button>
+          </Chip>
         </HStack>
       </SimpleCard>
 

@@ -51,15 +51,27 @@ function CountdownTimer() {
   const seconds = secondsLeft % 60;
   return (
     <HStack gap="sm" align="center">
-      <Text variant="large" bold>
+      {/* Таймер — цифра-герой: крупная, tabular, спокойная (без красных «дедлайнов»). */}
+      <p className="m-0 font-headings text-(length:--stat-value-font-size) leading-(--stat-value-line-height) font-extrabold tracking-tight tabular-nums">
         {`${minutes}:${String(seconds).padStart(2, "0")}`}
-      </Text>
+      </p>
       {!secondsLeft && (
         <Text variant="small" color="supplementary">
           {typo("Время вышло — спокойно закончи мысль.")}
         </Text>
       )}
     </HStack>
+  );
+}
+
+// Иконка-плитка чек-листа: мягкий акцентный квадрат, иконка тише текста.
+function TipIcon({ icon: Icon, tone }: { icon: typeof Moon; tone: "accent" | "warning" }) {
+  const toneClass =
+    tone === "warning" ? "bg-warning/15 text-warning" : "bg-accent/60 text-accent-foreground";
+  return (
+    <span aria-hidden className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${toneClass}`}>
+      <Icon className="size-5" strokeWidth={1.8} />
+    </span>
   );
 }
 
@@ -77,8 +89,9 @@ function AnxietyDumpRow({ dump }: { dump: AnxietyDumpItem }) {
   });
 
   return (
-    <HStack justify="between" align="center" gap="sm" wrap>
-      <VStack gap="3xs">
+    // Без wrap: урна остаётся в строке записи справа, а не сиротой под текстом.
+    <HStack justify="between" align="start" gap="sm">
+      <VStack gap="3xs" className="min-w-0 flex-1">
         <Text variant="small" color="supplementary">
           {formatDateRuMsk(new Date(dump.createdAt))}
         </Text>
@@ -90,6 +103,7 @@ function AnxietyDumpRow({ dump }: { dump: AnxietyDumpItem }) {
         variant="ghost"
         size="icon"
         aria-label={typo("Удалить запись")}
+        className="shrink-0"
         disabled={remove.isPending}
         onClick={() => {
           remove.mutate();
@@ -253,12 +267,13 @@ function ExamDayPage() {
       <SimpleCard title={typo("Короткое утреннее повторение")}>
         <HStack justify="between" align="center" gap="md" wrap>
           <HStack gap="sm" align="center">
-            <Sunrise className="size-5 text-warning" />
+            <TipIcon icon={Sunrise} tone="warning" />
             <Text variant="small" color="supplementary">
               {typo("10–15 минут по самым слабым карточкам — освежить, а не выучить заново. Без марафона.")}
             </Text>
           </HStack>
           <Button
+            variant="brand"
             onClick={() => {
               void navigate({ to: "/app/exams/$examId/session", params: { examId }, search: { kind: morningKind } });
             }}
@@ -271,10 +286,10 @@ function ExamDayPage() {
       <AnxietyDumpCard examId={examId} />
 
       <SimpleCard title={typo("Перед входом в аудиторию")}>
-        <VStack gap="sm">
+        <VStack gap="md">
           {CALM_TIPS.map((tip) => (
             <HStack key={tip.text} gap="sm" align="center">
-              <tip.icon className="size-5 shrink-0 text-muted-foreground" />
+              <TipIcon icon={tip.icon} tone="accent" />
               <Text variant="small" color="supplementary" breakWords>
                 {tip.text}
               </Text>

@@ -61,7 +61,7 @@ export function UserMenu({ user }: UserMenuProps) {
           setOpen((value) => !value);
         }}
       >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary font-semibold text-primary-foreground">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient font-semibold text-brand-foreground shadow-card">
           {initial}
         </span>
         <span className="hidden max-w-40 truncate sm:inline">{typo(user.name)}</span>
@@ -78,7 +78,7 @@ export function UserMenu({ user }: UserMenuProps) {
               setOpen(false);
             }}
           />
-          <div className="absolute top-full right-0 z-50 mt-2 w-64 rounded-2xl border border-border bg-card p-4 shadow-lg">
+          <div className="rise absolute top-full right-0 z-50 mt-2 w-64 rounded-2xl border border-border bg-card p-4 shadow-card-hover">
             <VStack gap="md">
               <VStack gap="3xs">
                 <Text bold maxLines={1}>

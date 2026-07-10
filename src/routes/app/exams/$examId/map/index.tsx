@@ -4,7 +4,7 @@ import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Button, Heading, HStack, PaywallCard, SimpleCard, Text, VStack } from "~/components";
+import { Button, EmptyState, Heading, HStack, PaywallCard, SimpleCard, Text, VStack } from "~/components";
 import { type PaywallReason, paywallReasonOf, typo } from "~/lib";
 
 import { Chip, examQueries } from "../../_lib";
@@ -133,11 +133,13 @@ function ConceptMapPage() {
 
       {!maps.isLoading && !mapList.length && (
         <SimpleCard>
-          <Text color="supplementary">
-            {typo(
-              "Карт пока нет. Набросайте черновик от ИИ и достройте его — или начните с чистого листа, сгенерировав скелет по любой теме.",
+          <EmptyState
+            illustration="map"
+            title={typo("Карт пока нет")}
+            text={typo(
+              "Набросайте черновик от ИИ и достройте его — или начните с чистого листа, сгенерировав скелет по любой теме.",
             )}
-          </Text>
+          />
         </SimpleCard>
       )}
 

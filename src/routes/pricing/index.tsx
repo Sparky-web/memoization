@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, BadgeCheck, BookOpen, Mail, Undo2, Zap } from "lucide-react";
+import { BadgeCheck, BookOpen, Mail, Undo2, Zap } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -20,6 +20,7 @@ import { getSession } from "~/server/fn/auth";
 import { createCheckout, getBillingStatus } from "~/server/fn/billing";
 import { logEvent } from "~/server/fn/events";
 
+import { SiteHeader } from "../_lib";
 import { PlanCard } from "./_lib/components/PlanCard";
 import { PricingFaq } from "./_lib/components/PricingFaq";
 import { buildPricingPlans } from "./_lib/model/planView";
@@ -91,40 +92,41 @@ function PricingPage() {
 
   return (
     <div className="min-h-dvh">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur-md">
-        <Container className="max-w-5xl">
-          <HStack align="center" justify="between" className="h-16">
-            <Link to="/">
-              <Text variant="large" bold>
-                {typo("Домашник")}
-              </Text>
-            </Link>
-            <Link to="/" variant="secondary">
-              <HStack gap="xs" align="center">
-                <ArrowLeft className="size-4" />
-                {typo("На главную")}
-              </HStack>
-            </Link>
-          </HStack>
-        </Container>
-      </header>
+      <SiteHeader containerClassName="max-w-5xl">
+        {authenticated ? (
+          <Button variant="outline" size="sm" onClick={() => void navigate({ to: "/app" })}>
+            {typo("К экзаменам")}
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => void navigate({ to: "/auth/signin" })}>
+            {typo("Войти")}
+          </Button>
+        )}
+      </SiteHeader>
 
-      <Container className="max-w-5xl">
-        <VStack gap="2xl" className="py-10 lg:py-14">
+      <Container className="relative max-w-5xl">
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 overflow-hidden">
+          <div className="absolute top-4 left-1/2 size-72 -translate-x-1/2 rounded-full bg-brand-gradient opacity-10 blur-3xl" />
+        </div>
+        <VStack gap="5xl" className="py-10 md:py-16">
           {/* Hero */}
-          <VStack gap="sm" justify="center" className="text-center">
+          <VStack gap="sm" justify="center" className="rise text-center">
             <Heading variant="h1" align="center">
-              {typo("Открой Pro на всю сессию")}
+              {typo("Открой ")}
+              <span className="text-brand-gradient">Pro</span>
+              {typo(" на всю сессию")}
             </Heading>
-            <Text variant="large" color="supplementary" align="center">
-              {typo(
-                "Pro открывает несколько экзаменов с одним планом, материалы с привязкой ответов, голосовой режим «объясни ученику», умную зубрёжку и ИИ-сверку ответов. Сессии, план к дате и честная готовность бесплатны для всех.",
-              )}
-            </Text>
+            <div className="mx-auto max-w-3xl">
+              <Text variant="large" color="supplementary" align="center">
+                {typo(
+                  "Pro открывает несколько экзаменов с одним планом, материалы с привязкой ответов, голосовой режим «объясни ученику», умную зубрёжку и ИИ-сверку ответов. Сессии, план к дате и честная готовность бесплатны для всех.",
+                )}
+              </Text>
+            </div>
           </VStack>
 
           {proActive ? (
-            <SimpleCard className="border border-primary/25 bg-primary/10" size="lg">
+            <SimpleCard className="rise bg-accent/60" size="lg">
               <VStack gap="sm" justify="center" className="text-center">
                 <Heading variant="h3" asParagraph align="center">
                   {proUntil ? typo(`Pro активен до ${formatDateRuMsk(proUntil)}`) : typo("Pro активен бессрочно")}
@@ -136,15 +138,15 @@ function PricingPage() {
                       )
                     : typo("Доступ выдан без ограничения по сроку — покупать ничего не нужно.")}
                 </Text>
-                <Button size="pill" className="mx-auto" onClick={() => void navigate({ to: "/app" })}>
-                  <BookOpen className="size-5" />
+                <Button variant="brand" size="pill" className="mx-auto" onClick={() => void navigate({ to: "/app" })}>
+                  <BookOpen className="size-5" strokeWidth={1.8} />
                   {typo("К экзаменам")}
                 </Button>
               </VStack>
             </SimpleCard>
           ) : (
             <VStack gap="md">
-              <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="md" align="stretch" className="pt-2">
+              <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="md" align="stretch" className="rise pt-3 md:pt-2">
                 {buildPricingPlans().map((plan) => (
                   <PlanCard
                     key={plan.id}
@@ -172,7 +174,9 @@ function PricingPage() {
           <AdaptiveGrid cols={{ base: 1, md: 2 }} gap="sm">
             {TRUST_BULLETS.map((bullet) => (
               <HStack key={bullet.text} gap="sm" align="center">
-                <bullet.icon className="size-5 shrink-0 text-primary" />
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+                  <bullet.icon className="size-5" strokeWidth={1.8} />
+                </span>
                 <Text variant="small">{bullet.text}</Text>
               </HStack>
             ))}

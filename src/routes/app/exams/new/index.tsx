@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Plus, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { Check, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Fragment, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -29,6 +29,7 @@ import {
   formatFileSize,
   MaterialDropzone,
   parseQuestionList,
+  pluralRu,
   questionsCountLabel,
   uploadExamMaterials,
 } from "../_lib";
@@ -91,28 +92,50 @@ function emptyDraft(key: number): DraftExam {
   return { key, title: "", date: "", noDate: false, format: null, questionsText: "", files: [] };
 }
 
-function WizardProgress({ step }: { step: WizardStep }) {
+// Кружок шага: пройденный — залит с галочкой, текущий — градиентный герой, будущий — тихий.
+function stepCircle(item: WizardStep, step: WizardStep) {
+  if (item < step) {
+    return (
+      <span className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
+        <Check className="size-4" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  if (item === step) {
+    return (
+      <span className="flex size-8 items-center justify-center rounded-full bg-brand-gradient text-xs font-bold text-brand-foreground shadow-card">
+        {item}
+      </span>
+    );
+  }
   return (
-    <VStack gap="xs">
-      <HStack gap="sm" align="center" wrap>
-        {WIZARD_STEPS.map((item) => {
-          const stateClass = item === step ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground";
-          return (
-            <HStack key={item} gap="2xs" align="center">
-              <span
-                className={`flex size-6 items-center justify-center rounded-full text-xs font-semibold ${stateClass}`}
-              >
-                {item}
-              </span>
-              <Text variant="mini" color={item === step ? "main" : "supplementary"}>
-                {STEP_TITLES[item]}
-              </Text>
-            </HStack>
-          );
-        })}
-      </HStack>
-      <ProgressBar value={step / WIZARD_STEPS.length} />
-    </VStack>
+    <span className="flex size-8 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+      {item}
+    </span>
+  );
+}
+
+// Степпер мастера: кружки с подписями, соединённые линиями; пройденная часть пути залита.
+function WizardStepper({ step }: { step: WizardStep }) {
+  return (
+    <div className="flex items-start gap-2 sm:gap-3">
+      {WIZARD_STEPS.map((item, stepIndex) => (
+        <Fragment key={item}>
+          {stepIndex > 0 && (
+            <span
+              aria-hidden
+              className={`mt-4 h-0.5 min-w-3 flex-1 rounded-full ${item <= step ? "bg-primary" : "bg-border"}`}
+            />
+          )}
+          <VStack gap="2xs" align="center">
+            {stepCircle(item, step)}
+            <Text variant="mini" color={item === step ? "main" : "supplementary"} bold={item === step}>
+              {STEP_TITLES[item]}
+            </Text>
+          </VStack>
+        </Fragment>
+      ))}
+    </div>
   );
 }
 
@@ -215,10 +238,18 @@ function QuestionsStep({
         }}
       />
       <VStack gap="2xs">
-        <HStack justify="between" align="center" gap="sm" wrap>
-          <Text variant="small" color={overLimit ? "destructive" : "supplementary"}>
-            {typo(`Распознано: ${questionsCountLabel(parsed.length)}`)}
-          </Text>
+        {/* Живой счётчик: цифра-герой растёт по мере вставки списка. */}
+        <HStack justify="between" align="end" gap="sm" wrap>
+          <HStack gap="xs" align="baseline">
+            <span
+              className={`font-headings text-(length:--stat-value-font-size) leading-(--stat-value-line-height) font-extrabold tracking-tight tabular-nums ${overLimit ? "text-destructive" : "text-primary"}`}
+            >
+              {parsed.length}
+            </span>
+            <Text variant="small" color="supplementary">
+              {typo(pluralRu(parsed.length, "вопрос распознан", "вопроса распознано", "вопросов распознано"))}
+            </Text>
+          </HStack>
           <Text variant="mini" color="supplementary">
             {typo(`лимит — ${questionLimit}`)}
           </Text>
@@ -244,7 +275,7 @@ function QuestionsStep({
         </Text>
       )}
       {parsed.length > 0 && (
-        <VStack gap="2xs" className="max-h-64 overflow-y-auto rounded-2xl bg-card p-4">
+        <VStack gap="2xs" className="max-h-64 overflow-y-auto rounded-xl bg-muted/40 p-4">
           {parsed.map((question, index) => (
             <HStack key={`${index}-${question.slice(0, 24)}`} gap="xs">
               <Text variant="small" color="supplementary">
@@ -564,7 +595,7 @@ function NewExamWizardPage() {
     }
     if (step === 2) {
       return (
-        <VStack gap="md">
+        <SimpleCard title={STEP_TITLES[2]} size="lg">
           {drafts.length > 1 && renderTabs()}
           {activeDraft && (
             <QuestionsStep
@@ -576,12 +607,12 @@ function NewExamWizardPage() {
               }}
             />
           )}
-        </VStack>
+        </SimpleCard>
       );
     }
     if (step === 3) {
       return (
-        <VStack gap="md">
+        <SimpleCard title={STEP_TITLES[3]} size="lg">
           {drafts.length > 1 && pro && renderTabs()}
           {activeDraft && (
             <MaterialsStep
@@ -592,11 +623,11 @@ function NewExamWizardPage() {
               }}
             />
           )}
-        </VStack>
+        </SimpleCard>
       );
     }
     return (
-      <VStack gap="lg">
+      <SimpleCard title={STEP_TITLES[4]} size="lg">
         <VStack gap="xs">
           <Text bold>{typo("Сколько минут в день готов заниматься?")}</Text>
           <HStack gap="2xs" wrap>
@@ -632,13 +663,13 @@ function NewExamWizardPage() {
             ))}
           </HStack>
         </VStack>
-        <SimpleCard>
+        <div className="rounded-xl bg-muted/40 p-4">
           <Text variant="small" color="supplementary">
             {typo(
               `Итого: ${drafts.length} ${pluralExams(drafts.length)} · ${questionsCountLabel(totalQuestions)}. ИИ ответит на каждый вопрос и соберёт атомарные карточки — это займёт несколько минут.`,
             )}
           </Text>
-        </SimpleCard>
+        </div>
         {showGenerationPaywall && (
           <VStack gap="sm">
             <PaywallCard
@@ -665,18 +696,15 @@ function NewExamWizardPage() {
             </HStack>
           </VStack>
         )}
-      </VStack>
+      </SimpleCard>
     );
   };
 
   return (
     <VStack gap="xl">
-      <VStack gap="sm">
+      <VStack gap="lg">
         <Heading variant="h1">{typo("Новый экзамен")}</Heading>
-        <WizardProgress step={step} />
-        <Heading variant="h3" asParagraph>
-          {STEP_TITLES[step]}
-        </Heading>
+        <WizardStepper step={step} />
       </VStack>
 
       {renderStep()}
@@ -705,12 +733,14 @@ function NewExamWizardPage() {
           </Button>
         ) : (
           <Button
+            variant="brand"
             size="pill"
             disabled={create.isPending || showGenerationPaywall}
             onClick={() => {
               create.mutate();
             }}
           >
+            <Sparkles className="size-5" strokeWidth={1.8} />
             {create.isPending ? typo("Создаём…") : typo("Создать и сгенерировать")}
           </Button>
         )}

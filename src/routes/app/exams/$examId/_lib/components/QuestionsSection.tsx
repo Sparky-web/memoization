@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   ConfirmDialog,
+  EmptyState,
   Heading,
   HStack,
   MarkdownView,
@@ -32,11 +33,20 @@ import {
 // Вопросы экзамена: покрытие материалами, страница вопроса (ответ + карточки + пересборка)
 // и правка списка целиком.
 
-function QuestionRow({ question, onOpen }: { question: ExamQuestionItem; onOpen: () => void }) {
+function QuestionRow({
+  question,
+  riseDelayMs,
+  onOpen,
+}: {
+  question: ExamQuestionItem;
+  riseDelayMs: number;
+  onOpen: () => void;
+}) {
   return (
     <button
       type="button"
-      className="cursor-pointer rounded-2xl bg-card p-4 text-left transition-colors hover:bg-accent/40"
+      className="lift press rise cursor-pointer rounded-2xl bg-card p-4 text-left shadow-card"
+      style={{ animationDelay: `${riseDelayMs}ms` }}
       onClick={onOpen}
     >
       <VStack gap="2xs">
@@ -53,7 +63,9 @@ function QuestionRow({ question, onOpen }: { question: ExamQuestionItem; onOpen:
           {question.hasAnswer ? (
             <CoverageBadge covered={question.covered} aiGenerated={question.aiGenerated} />
           ) : (
-            <Badge variant="muted">{typo("ответ ещё не сгенерирован")}</Badge>
+            <Badge variant="dot" dot="muted">
+              {typo("ответ ещё не сгенерирован")}
+            </Badge>
           )}
           {question.cardCount > 0 && (
             <Text variant="mini" color="supplementary">
@@ -133,8 +145,16 @@ function QuestionModal({ questionId, onClose }: { questionId: string; onClose: (
               <VStack key={card.id} gap="3xs" className="rounded-2xl bg-muted/40 p-3">
                 <HStack gap="xs" wrap>
                   <Badge variant="muted">{cardFormatLabel(card.format)}</Badge>
-                  {card.suspended && <Badge variant="outline">{typo("выключена")}</Badge>}
-                  {card.flagged && <Badge variant="primary">{typo("проверить")}</Badge>}
+                  {card.suspended && (
+                    <Badge variant="dot" dot="muted">
+                      {typo("выключена")}
+                    </Badge>
+                  )}
+                  {card.flagged && (
+                    <Badge variant="dot" dot="primary">
+                      {typo("проверить")}
+                    </Badge>
+                  )}
                 </HStack>
                 <Text variant="small" bold breakWords>
                   {typo(card.prompt)}
@@ -274,10 +294,11 @@ export function QuestionsSection({ exam }: { exam: ExamDetail }) {
       </HStack>
       {exam.questions.length ? (
         <VStack gap="sm">
-          {exam.questions.map((question) => (
+          {exam.questions.map((question, questionIndex) => (
             <QuestionRow
               key={question.id}
               question={question}
+              riseDelayMs={Math.min(questionIndex, 8) * 50}
               onOpen={() => {
                 setOpenQuestionId(question.id);
               }}
@@ -286,9 +307,11 @@ export function QuestionsSection({ exam }: { exam: ExamDetail }) {
         </VStack>
       ) : (
         <SimpleCard>
-          <Text color="supplementary">
-            {typo("Вопросов пока нет — добавьте список, и ИИ соберёт по нему карточки.")}
-          </Text>
+          <EmptyState
+            illustration="cards"
+            title={typo("Вопросов пока нет")}
+            text={typo("Добавьте список — ИИ ответит на каждый вопрос и соберёт по нему карточки.")}
+          />
         </SimpleCard>
       )}
       {openQuestionId && (

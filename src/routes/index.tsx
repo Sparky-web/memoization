@@ -1,6 +1,7 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { GraduationCap, Sparkles } from "lucide-react";
 
-import { AdaptiveGrid, Button, Container, Heading, HStack, Link, SimpleCard, Text, VStack } from "~/components";
+import { AdaptiveGrid, Badge, Button, Container, Heading, HStack, Link, SimpleCard, Text, VStack } from "~/components";
 import { BILLING_PLAN_IDS, BILLING_PLANS, type BillingPlanId, typo } from "~/lib";
 import { getSession } from "~/server/fn/auth";
 
@@ -10,7 +11,9 @@ import { LandingFaq } from "./_lib/components/LandingFaq";
 import { LandingFeatures } from "./_lib/components/LandingFeatures";
 import { LandingGroupCta } from "./_lib/components/LandingGroupCta";
 import { LandingScience } from "./_lib/components/LandingScience";
+import { SiteHeader } from "./_lib/components/SiteHeader";
 import { SELLER_REQUISITES, SITE_URL, SUPPORT_EMAIL } from "./_lib/lib/marketing";
+import { riseDelay } from "./_lib/lib/motion";
 
 const PAGE_TITLE = typo("Домашник — вставь вопросы к экзамену и дойди до сдачи");
 const PAGE_DESCRIPTION = typo(
@@ -68,6 +71,26 @@ const LANDING_PLANS: readonly LandingPlan[] = BILLING_PLAN_IDS.map((planId) => (
   hero: planId === "TERM",
 }));
 
+/** Внутренность карточки тарифа на витрине: цена — цифра-герой, подписи тихие. */
+function LandingPlanBody({ plan }: { plan: LandingPlan }) {
+  return (
+    <VStack gap="3xs">
+      <Text variant="small" bold>
+        {plan.title}
+      </Text>
+      <p className="m-0 font-headings text-(length:--stat-value-font-size) leading-(--stat-value-line-height) font-extrabold tracking-tight tabular-nums">
+        {plan.price}
+      </p>
+      <Text variant="mini" color="supplementary">
+        {plan.days}
+      </Text>
+      <Text variant="mini" color="supplementary">
+        {plan.note}
+      </Text>
+    </VStack>
+  );
+}
+
 function HomePage() {
   const navigate = useNavigate();
   const goSignup = () => void navigate({ to: "/auth/signup" });
@@ -76,135 +99,138 @@ function HomePage() {
 
   return (
     <div className="min-h-dvh">
-      <header className="border-b border-border/60">
-        <Container className="py-3">
-          <HStack justify="between" align="center" gap="md">
-            <Text bold>{typo("Домашник")}</Text>
-            <HStack gap="md" align="center">
-              <Link to="/pricing" variant="secondary">
-                {typo("Тарифы")}
-              </Link>
-              <Button variant="outline" size="sm" onClick={goSignin}>
-                {typo("Войти")}
-              </Button>
-            </HStack>
-          </HStack>
-        </Container>
-      </header>
+      <SiteHeader>
+        <HStack gap="sm" align="center">
+          <Link to="/pricing" variant="secondary" className="hidden sm:block">
+            {typo("Тарифы")}
+          </Link>
+          <Button variant="outline" size="sm" onClick={goSignin}>
+            {typo("Войти")}
+          </Button>
+          <Button size="sm" className="hidden md:inline-flex" onClick={goSignup}>
+            {typo("Начать бесплатно")}
+          </Button>
+        </HStack>
+      </SiteHeader>
 
       <main>
-        <Container className="page-enter py-12 md:py-16">
-          <VStack gap="5xl">
-            {/* 1. Hero */}
-            <section>
-              <VStack gap="lg" justify="center">
-                <VStack gap="md" justify="center">
-                  <div className="max-w-3xl">
-                    <Heading variant="h1" align="center">
-                      {typo("Вставь вопросы к экзамену — Домашник доведёт до сдачи")}
-                    </Heading>
-                  </div>
-                  <div className="max-w-2xl">
-                    <Text variant="large" color="supplementary" align="center">
-                      {typo(
-                        "ИИ ответит на каждый вопрос, разобьёт ответы на карточки и составит план повторений точно к дате экзамена. С Pro ответы строятся по твоим конспектам — с цитатой источника.",
-                      )}
-                    </Text>
-                  </div>
-                </VStack>
-                <VStack gap="xs" justify="center">
-                  <HStack gap="sm" justify="center" wrap>
-                    <Button size="pill" onClick={goSignup}>
-                      {typo("Начать бесплатно")}
-                    </Button>
-                    <Button variant="outline" size="pill" onClick={goSignin}>
-                      {typo("Войти")}
-                    </Button>
-                  </HStack>
-                  <Text variant="mini" color="supplementary" align="center">
-                    {typo("1 экзамен и генерация — бесплатно, без карты")}
-                  </Text>
-                </VStack>
-              </VStack>
-            </section>
-
-            {/* 2. Демка «вопросы → ответы с цитатой → карточки → план к дате» */}
-            <LandingDemo />
-
-            {/* 3. Ежедневный цикл: план → сессия → честная готовность */}
-            <LandingDailyLoop />
-
-            {/* 4. Наука кратко */}
-            <LandingScience />
-
-            {/* 5. Фичи поверх ядра */}
-            <LandingFeatures />
-
-            {/* 6. Для группы */}
-            <LandingGroupCta />
-
-            {/* 7. Тарифы */}
-            <section>
-              <VStack gap="lg">
-                <VStack gap="xs">
-                  <Heading variant="h2" align="center">
-                    {typo("Бесплатно — до экзамена. Pro — на сессию")}
-                  </Heading>
-                  <div className="mx-auto max-w-2xl">
-                    <Text color="supplementary" align="center">
-                      {typo(
-                        "Один экзамен с сессиями, планом к дате и честной готовностью — бесплатно. Pro добавляет несколько экзаменов с одним планом, материалы с цитатами, голосового ученика и умную зубрёжку. Разовый платёж без автосписаний — карта не привязывается.",
-                      )}
-                    </Text>
-                  </div>
-                </VStack>
-                <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="sm" align="stretch">
-                  {LANDING_PLANS.map((plan) => (
-                    <Link key={plan.id} to="/pricing" className="block h-full w-full">
-                      <SimpleCard
-                        className={
-                          plan.hero
-                            ? "relative h-full border-2 border-primary bg-primary/10"
-                            : "h-full border border-border transition-colors hover:bg-accent"
-                        }
-                      >
-                        {plan.hero && (
-                          <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 whitespace-nowrap text-primary-foreground">
-                            <Text variant="mini" bold>
-                              {typo("Выгоднее всего")}
-                            </Text>
-                          </span>
-                        )}
-                        <VStack gap="3xs">
-                          <Text variant="small" bold>
-                            {plan.title}
-                          </Text>
-                          <Heading variant="h3" asParagraph>
-                            {plan.price}
-                          </Heading>
-                          <Text variant="mini" color="supplementary">
-                            {plan.days}
-                          </Text>
-                          <Text variant="mini" color="supplementary">
-                            {plan.note}
-                          </Text>
-                        </VStack>
-                      </SimpleCard>
-                    </Link>
-                  ))}
-                </AdaptiveGrid>
-                <Button variant="outline" className="mx-auto" onClick={goPricing}>
-                  {typo("Подробнее о Pro")}
-                </Button>
-              </VStack>
-            </section>
-
-            {/* 8. FAQ */}
-            <LandingFaq />
-
-            {/* 9. Финальный CTA */}
-            <section>
+        {/* 1. Hero: градиентное слово-акцент + мягкие брендовые пятна на фоне */}
+        <section className="relative">
+          <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+            <div className="absolute top-6 left-1/4 size-72 -translate-x-1/2 rounded-full bg-brand-gradient opacity-15 blur-3xl" />
+            <div className="absolute top-32 right-1/4 size-64 translate-x-1/3 rounded-full bg-brand-gradient opacity-10 blur-3xl" />
+          </div>
+          <Container className="pt-14 pb-10 md:pt-24 md:pb-16">
+            <VStack gap="xl" justify="center">
               <VStack gap="md" justify="center">
+                <div className="rise" style={riseDelay(0)}>
+                  <Badge variant="outline" className="gap-1.5 border-primary/25 bg-card/60 px-3 py-1 text-primary">
+                    <Sparkles className="size-3.5" strokeWidth={1.8} />
+                    {typo("ИИ-подготовка к экзаменам")}
+                  </Badge>
+                </div>
+                <div className="max-w-3xl rise" style={riseDelay(1)}>
+                  <Heading variant="h1" align="center">
+                    {typo("Вставь вопросы к экзамену — ")}
+                    <span className="text-brand-gradient">{typo("Домашник доведёт до сдачи")}</span>
+                  </Heading>
+                </div>
+                <div className="max-w-2xl rise" style={riseDelay(2)}>
+                  <Text variant="large" color="supplementary" align="center">
+                    {typo(
+                      "ИИ ответит на каждый вопрос, разобьёт ответы на карточки и составит план повторений точно к дате экзамена. С Pro ответы строятся по твоим конспектам — с цитатой источника.",
+                    )}
+                  </Text>
+                </div>
+              </VStack>
+              <VStack gap="sm" justify="center" className="rise" style={riseDelay(3)}>
+                <HStack gap="sm" justify="center" wrap>
+                  <Button variant="brand" size="pill" onClick={goSignup}>
+                    {typo("Начать бесплатно")}
+                  </Button>
+                  <Button variant="outline" size="pill" onClick={goSignin}>
+                    {typo("Войти")}
+                  </Button>
+                </HStack>
+                <Text variant="mini" color="supplementary" align="center">
+                  {typo("1 экзамен и генерация — бесплатно, без карты")}
+                </Text>
+              </VStack>
+            </VStack>
+          </Container>
+        </section>
+
+        {/* 2. Демка «вопросы → ответы с цитатой → карточки → план к дате» */}
+        <LandingDemo />
+
+        {/* 3. Ежедневный цикл: план → сессия → честная готовность */}
+        <LandingDailyLoop />
+
+        {/* 4. Наука кратко */}
+        <LandingScience />
+
+        {/* 5. Фичи поверх ядра */}
+        <LandingFeatures />
+
+        {/* 6. Для группы */}
+        <LandingGroupCta />
+
+        {/* 7. Тарифы: компактная витрина, герой TERM — в градиентной рамке */}
+        <section>
+          <Container className="py-10 md:py-16">
+            <VStack gap="xl">
+              <VStack gap="sm">
+                <Heading variant="h2" align="center">
+                  {typo("Бесплатно — до экзамена. Pro — на сессию")}
+                </Heading>
+                <div className="mx-auto max-w-2xl">
+                  <Text color="supplementary" align="center">
+                    {typo(
+                      "Один экзамен с сессиями, планом к дате и честной готовностью — бесплатно. Pro добавляет несколько экзаменов с одним планом, материалы с цитатами, голосового ученика и умную зубрёжку. Разовый платёж без автосписаний — карта не привязывается.",
+                    )}
+                  </Text>
+                </div>
+              </VStack>
+              <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="md" align="stretch" className="pt-3 md:pt-2">
+                {LANDING_PLANS.map((plan, planIndex) => (
+                  <Link key={plan.id} to="/pricing" className="block h-full w-full rise" style={riseDelay(planIndex)}>
+                    {plan.hero ? (
+                      <div className="relative h-full rounded-3xl bg-brand-gradient p-0.5 shadow-card lift press">
+                        <span className="absolute -top-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-brand-gradient px-3 py-1 whitespace-nowrap text-brand-foreground shadow-card">
+                          <Text variant="mini" bold>
+                            {typo("Выгоднее всего")}
+                          </Text>
+                        </span>
+                        <SimpleCard className="h-full shadow-none">
+                          <LandingPlanBody plan={plan} />
+                        </SimpleCard>
+                      </div>
+                    ) : (
+                      <SimpleCard interactive className="h-full">
+                        <LandingPlanBody plan={plan} />
+                      </SimpleCard>
+                    )}
+                  </Link>
+                ))}
+              </AdaptiveGrid>
+              <Button variant="outline" className="mx-auto" onClick={goPricing}>
+                {typo("Подробнее о Pro")}
+              </Button>
+            </VStack>
+          </Container>
+        </section>
+
+        {/* 8. FAQ */}
+        <LandingFaq />
+
+        {/* 9. Финальный CTA */}
+        <section className="relative">
+          <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+            <div className="absolute bottom-0 left-1/2 size-72 -translate-x-1/2 rounded-full bg-brand-gradient opacity-10 blur-3xl" />
+          </div>
+          <Container className="py-14 md:py-24">
+            <VStack gap="lg" justify="center">
+              <VStack gap="sm" justify="center">
                 <Heading variant="h2" align="center">
                   {typo("Ближайший экзамен — хороший повод попробовать")}
                 </Heading>
@@ -215,20 +241,25 @@ function HomePage() {
                     )}
                   </Text>
                 </div>
-                <Button size="pill" onClick={goSignup}>
-                  {typo("Начать бесплатно")}
-                </Button>
               </VStack>
-            </section>
-          </VStack>
-        </Container>
+              <Button variant="brand" size="pill" onClick={goSignup}>
+                {typo("Начать бесплатно")}
+              </Button>
+            </VStack>
+          </Container>
+        </section>
       </main>
 
-      <footer className="border-t border-border/60">
+      <footer className="border-t border-border/60 bg-card/40">
         <Container>
-          <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="2xl" className="py-10">
+          <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="2xl" className="py-12">
             <VStack gap="sm">
-              <Text bold>{typo("Домашник")}</Text>
+              <HStack gap="xs" align="center">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-brand-gradient text-brand-foreground">
+                  <GraduationCap className="size-4" strokeWidth={1.8} />
+                </span>
+                <Text bold>{typo("Домашник")}</Text>
+              </HStack>
               <Text variant="small" color="supplementary">
                 {typo(
                   "Сервис подготовки к экзаменам: ИИ-ответы на вопросы (в Pro — по вашим конспектам), карточки, план повторений к дате и честная готовность.",
@@ -240,15 +271,17 @@ function HomePage() {
               <Heading variant="h4" asParagraph>
                 {typo("Документы")}
               </Heading>
-              <Link to="/offer" variant="underline">
-                <Text variant="small">{typo("Публичная оферта")}</Text>
-              </Link>
-              <Link to="/privacy" variant="underline">
-                <Text variant="small">{typo("Политика конфиденциальности")}</Text>
-              </Link>
-              <Link to="/pricing" variant="underline">
-                <Text variant="small">{typo("Тарифы")}</Text>
-              </Link>
+              <VStack gap="xs">
+                <Link to="/offer" variant="secondary">
+                  <Text variant="small">{typo("Публичная оферта")}</Text>
+                </Link>
+                <Link to="/privacy" variant="secondary">
+                  <Text variant="small">{typo("Политика конфиденциальности")}</Text>
+                </Link>
+                <Link to="/pricing" variant="secondary">
+                  <Text variant="small">{typo("Тарифы")}</Text>
+                </Link>
+              </VStack>
             </VStack>
 
             <VStack gap="sm">
@@ -263,7 +296,7 @@ function HomePage() {
                 ))}
                 <a
                   href={`mailto:${SUPPORT_EMAIL}`}
-                  className="text-primary underline underline-offset-2 hover:text-primary/80"
+                  className="text-sm text-primary underline underline-offset-2 hover:text-primary/80"
                 >
                   {SUPPORT_EMAIL}
                 </a>

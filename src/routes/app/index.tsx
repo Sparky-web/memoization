@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { CalendarCheck, Flame, Moon, Plus, Zap } from "lucide-react";
+import { CalendarCheck, Flame, Moon, Play, Plus, Zap } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -8,17 +8,19 @@ import {
   Badge,
   Button,
   ConfirmDialog,
+  EmptyState,
   Heading,
   HStack,
   Link,
   PaywallCard,
-  ProgressBar,
   ReadinessRing,
+  SegmentedProgress,
   SimpleCard,
   Text,
+  useMountEffect,
   VStack,
 } from "~/components";
-import { formatDateRuMsk, typo } from "~/lib";
+import { formatDateRuMsk, mskDayKey, typo } from "~/lib";
 import { logEvent } from "~/server/fn/events";
 import { archiveExam, deleteExam, updateExam } from "~/server/fn/exams";
 
@@ -50,58 +52,124 @@ export const Route = createFileRoute("/app/")({
 // Скорость из планировщика: ~2 карточки в минуту — для оценки «~N минут».
 const CARDS_PER_MINUTE = 2;
 
-function StreakLine({ plan }: { plan: TodayPlan }) {
-  const restNote = plan.restWeekdays.length
-    ? typo(`дней отдыха в неделю: ${plan.restWeekdays.length}`)
-    : typo("дни отдыха настраиваются");
+const CONFETTI_PARTICLE_COUNT = 12;
+const DAY_CONFETTI_STORAGE_KEY = "domashnik:day-done-confetti";
+
+// Конфетти «День засчитан»: одноразовый CSS-бёрст — не чаще раза в день (ключ дня в localStorage).
+function DayDoneConfetti() {
+  const [visible, setVisible] = useState(false);
+  useMountEffect(() => {
+    const dayKey = mskDayKey(new Date());
+    if (localStorage.getItem(DAY_CONFETTI_STORAGE_KEY) === dayKey) return;
+    localStorage.setItem(DAY_CONFETTI_STORAGE_KEY, dayKey);
+    setVisible(true);
+  });
+  if (!visible) return null;
   return (
-    <HStack gap="sm" align="center" wrap>
-      <HStack gap="2xs" align="center" className="rounded-full bg-card px-3 py-1">
-        <Flame className="size-4 text-warning" />
-        <Text variant="small" bold>
-          {typo(`${plan.streakDays} ${pluralRu(plan.streakDays, "день", "дня", "дней")}`)}
-        </Text>
-      </HStack>
-      <Text variant="mini" color="supplementary">
-        <span title={typo("Заморозка сама закрывает пропущенный день; 2 штуки на месяц. Дни отдыха серию не рвут.")}>
-          {typo(`заморозки: ${plan.freezesLeft} · `)}
-          <Link to="/app/settings" variant="underline">
-            {restNote}
-          </Link>
-        </span>
-      </Text>
-    </HStack>
+    <span aria-hidden className="confetti-burst">
+      {Array.from({ length: CONFETTI_PARTICLE_COUNT }, (_, particleIndex) => (
+        <span key={particleIndex} />
+      ))}
+    </span>
   );
 }
 
-// Блок плана по одному экзамену: готовность, счётчик и запуск сессии.
-function PlanBlockRow({
+// Эмоциональный верх «Сегодня»: колышущийся огонь серии и кольца готовности — герои экрана.
+function TodayHero({ plan }: { plan: TodayPlan }) {
+  const restNote = plan.restWeekdays.length
+    ? typo(`дней отдыха в неделю: ${plan.restWeekdays.length}`)
+    : typo("дни отдыха настраиваются");
+  // Кольца — герои: пока экзаменов мало, они крупные; при трёх и больше — компактнее.
+  const ringSize = plan.exams.length > 2 ? "md" : "lg";
+  return (
+    <SimpleCard size="lg">
+      <HStack gap="xl" align="center" wrap>
+        <HStack gap="md" align="center">
+          <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-flame/15">
+            <Flame className="flame-sway size-7 text-flame" strokeWidth={1.8} />
+          </span>
+          <VStack gap="3xs">
+            <p className="m-0 font-headings text-(length:--stat-value-font-size) leading-(--stat-value-line-height) font-extrabold tracking-tight tabular-nums">
+              {plan.streakDays}
+            </p>
+            <Text variant="small" color="supplementary">
+              {typo(`${pluralRu(plan.streakDays, "день", "дня", "дней")} серии подряд`)}
+            </Text>
+            <Text variant="mini" color="supplementary">
+              <span
+                title={typo(
+                  "Заморозка сама закрывает пропущенный день; 2 штуки на месяц. Дни отдыха серию не рвут.",
+                )}
+              >
+                {typo(`заморозки: ${plan.freezesLeft} · `)}
+                <Link to="/app/settings" variant="underline">
+                  {restNote}
+                </Link>
+              </span>
+            </Text>
+          </VStack>
+        </HStack>
+        {plan.exams.length > 0 && (
+          <>
+            <span aria-hidden className="hidden w-px self-stretch bg-border sm:block" />
+            <HStack gap="lg" align="start" justify="evenly" wrap className="min-w-0 flex-1">
+              {plan.exams.map((summary) => (
+                <VStack key={summary.examId} gap="2xs" align="center" className="max-w-28">
+                  <ReadinessRing value={summary.readiness} size={ringSize} />
+                  <Link to={`/app/exams/${summary.examId}`}>
+                    <Text variant="mini" color="supplementary" align="center" maxLines={2} breakWords>
+                      {typo(summary.title)}
+                    </Text>
+                  </Link>
+                </VStack>
+              ))}
+            </HStack>
+          </>
+        )}
+      </HStack>
+    </SimpleCard>
+  );
+}
+
+// Блок плана по одному экзамену: карточка с подъёмом, клик по ней запускает сессию.
+function PlanBlockCard({
   summary,
   cardCount,
+  riseDelayMs,
   onStart,
 }: {
   summary: TodayPlan["exams"][number];
   cardCount: number;
+  riseDelayMs: number;
   onStart: () => void;
 }) {
   const daysLabel = daysToExamLabel(summary.daysToExam);
   return (
-    <HStack justify="between" align="center" gap="md" className="rounded-2xl bg-card p-4" wrap>
-      <HStack gap="md" align="center">
-        <ReadinessRing value={summary.readiness} size="sm" />
-        <VStack gap="3xs">
-          <Link to={`/app/exams/${summary.examId}`} className="font-semibold">
-            {typo(summary.title)}
-          </Link>
-          <Text variant="mini" color="supplementary">
-            {[daysLabel, cardsCountLabel(cardCount)].filter(Boolean).join(" · ")}
-          </Text>
-        </VStack>
+    <SimpleCard interactive className="rise" style={{ animationDelay: `${riseDelayMs}ms` }} onClick={onStart}>
+      <HStack justify="between" align="center" gap="md" wrap>
+        <HStack gap="md" align="center">
+          <ReadinessRing value={summary.readiness} size="sm" />
+          <VStack gap="3xs">
+            <Link
+              to={`/app/exams/${summary.examId}`}
+              className="font-semibold"
+              onClick={(event) => {
+                event.stopPropagation();
+              }}
+            >
+              {typo(summary.title)}
+            </Link>
+            <Text variant="mini" color="supplementary">
+              {[daysLabel, cardsCountLabel(cardCount)].filter(Boolean).join(" · ")}
+            </Text>
+          </VStack>
+        </HStack>
+        <Button variant="outline" size="sm">
+          <Play className="size-4" strokeWidth={1.8} />
+          {typo("Начать")}
+        </Button>
       </HStack>
-      <Button variant="outline" size="sm" onClick={onStart}>
-        {typo("Начать")}
-      </Button>
-    </HStack>
+    </SimpleCard>
   );
 }
 
@@ -245,26 +313,23 @@ function OnboardingHero() {
   const navigate = useNavigate();
   return (
     <SimpleCard size="lg">
-      <VStack gap="md">
-        <Heading variant="h2" asParagraph>
-          {typo("Вставь вопросы — получи план подготовки")}
-        </Heading>
-        <Text color="supplementary">
-          {typo(
-            "Добавь список вопросов и дату экзамена: ИИ ответит на каждый вопрос, соберёт атомарные карточки, а план распределит повторения назад от даты. Готовность считается по реальному припоминанию — без самообмана.",
-          )}
-        </Text>
-        <HStack>
-          <Button
-            size="pill"
-            onClick={() => {
-              void navigate({ to: "/app/exams/new" });
-            }}
-          >
-            {typo("Создать экзамен")}
-          </Button>
-        </HStack>
-      </VStack>
+      <EmptyState
+        illustration="cards"
+        title={typo("Вставь вопросы — получи план подготовки")}
+        text={typo(
+          "ИИ ответит на каждый вопрос и соберёт атомарные карточки, а план распределит повторения назад от даты экзамена. Готовность считается по реальному припоминанию — без самообмана.",
+        )}
+      >
+        <Button
+          variant="brand"
+          size="pill"
+          onClick={() => {
+            void navigate({ to: "/app/exams/new" });
+          }}
+        >
+          {typo("Создать экзамен")}
+        </Button>
+      </EmptyState>
     </SimpleCard>
   );
 }
@@ -323,32 +388,39 @@ function TodayPage() {
     );
   }
 
-  const renderPlanBody = () => {
+  const renderPlanSection = () => {
     const firstBlock = blocks[0];
     if (plan.planTotal > 0) {
       return (
         <VStack gap="md">
           <VStack gap="2xs">
+            <Heading variant="h2" asParagraph>
+              {typo("План на сегодня")}
+            </Heading>
+            {/* «осталось …» против «за сегодня …» ниже: два счётчика без пояснений читались как ошибка. */}
             <Text variant="small" color="supplementary">
               {typo(
-                `${cardsCountLabel(plan.planTotal)} · около ${estimatedMinutes} ${pluralRu(estimatedMinutes, "минуты", "минут", "минут")}`,
+                `осталось ${cardsCountLabel(plan.planTotal)} · около ${estimatedMinutes} ${pluralRu(estimatedMinutes, "минуты", "минут", "минут")}`,
               )}
             </Text>
+          </VStack>
+          <VStack gap="3xs">
+            <SegmentedProgress total={planTarget} value={plan.cardsDoneToday} />
             {plan.cardsDoneToday > 0 && (
-              <VStack gap="3xs">
-                <ProgressBar value={planTarget ? plan.cardsDoneToday / planTarget : 0} tone="success" />
-                <Text variant="mini" color="supplementary">
-                  {typo(`сделано ${plan.cardsDoneToday} из ${planTarget}`)}
-                </Text>
-              </VStack>
+              <Text variant="mini" color="supplementary">
+                {typo(
+                  `за сегодня ${plan.cardsDoneToday} ${pluralRu(plan.cardsDoneToday, "ответ", "ответа", "ответов")} из ${planTarget}`,
+                )}
+              </Text>
             )}
           </VStack>
           <VStack gap="sm">
-            {blocks.map(({ block, summary }) => (
-              <PlanBlockRow
+            {blocks.map(({ block, summary }, blockIndex) => (
+              <PlanBlockCard
                 key={block.examId}
                 summary={summary}
                 cardCount={block.cardIds.length}
+                riseDelayMs={blockIndex * 70}
                 onStart={() => {
                   goSession(block.examId, "daily");
                 }}
@@ -358,11 +430,13 @@ function TodayPage() {
           {firstBlock && (
             <HStack>
               <Button
+                variant="brand"
                 size="pill"
                 onClick={() => {
                   goSession(firstBlock.block.examId, "daily");
                 }}
               >
+                <Play className="size-5" strokeWidth={1.8} />
                 {blocks.length > 1 ? typo("Пройти всё подряд") : typo("Начать сессию")}
               </Button>
             </HStack>
@@ -372,30 +446,33 @@ function TodayPage() {
     }
     if (plan.cardsDoneToday > 0) {
       return (
-        <VStack gap="sm">
-          <Heading variant="h3" asParagraph>
-            {typo(`День засчитан 🔥 Серия: ${plan.streakDays} ${pluralRu(plan.streakDays, "день", "дня", "дней")}`)}
-          </Heading>
-          <Text variant="small" color="supplementary">
-            {typo("План на сегодня выполнен. Завтра карточки подъедут по расписанию — загляни снова.")}
-          </Text>
-        </VStack>
+        <SimpleCard size="lg" className="relative">
+          <DayDoneConfetti />
+          <EmptyState
+            illustration="moon"
+            title={typo(
+              `День засчитан! Серия — ${plan.streakDays} ${pluralRu(plan.streakDays, "день", "дня", "дней")} 🔥`,
+            )}
+            text={typo("План на сегодня выполнен. Завтра карточки подъедут по расписанию — загляни снова.")}
+          />
+        </SimpleCard>
       );
     }
     return (
-      <Text variant="small" color="supplementary">
-        {typo("На сегодня карточек нет: если генерация ещё идёт — они появятся здесь, как только будут готовы.")}
-      </Text>
+      <SimpleCard>
+        <EmptyState
+          illustration="calendar"
+          title={typo("На сегодня карточек нет")}
+          text={typo("Если генерация ещё идёт — карточки появятся здесь сами, как только будут готовы.")}
+        />
+      </SimpleCard>
     );
   };
 
   return (
     <VStack gap="xl">
       <HStack justify="between" align="center" gap="md" wrap>
-        <VStack gap="2xs">
-          <Heading variant="h1">{typo("Сегодня")}</Heading>
-          <StreakLine plan={plan} />
-        </VStack>
+        <Heading variant="h1">{typo("Сегодня")}</Heading>
         <Button
           variant="outline"
           onClick={() => {
@@ -407,6 +484,8 @@ function TodayPage() {
         </Button>
       </HStack>
 
+      <TodayHero plan={plan} />
+
       {passedExams.map((exam) => (
         <ExamPassedCard key={exam.id} exam={exam} />
       ))}
@@ -415,7 +494,9 @@ function TodayPage() {
         <SimpleCard key={exam.id}>
           <HStack justify="between" align="center" gap="md" wrap>
             <HStack gap="sm" align="center">
-              <CalendarCheck className="size-5 text-primary" />
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+                <CalendarCheck className="size-5" strokeWidth={1.8} />
+              </span>
               <VStack gap="3xs">
                 <Text bold>
                   {typo(exam.daysToExam === 0 ? `Сегодня экзамен «${exam.title}»` : `Завтра экзамен «${exam.title}»`)}
@@ -504,15 +585,15 @@ function TodayPage() {
         </SimpleCard>
       ))}
 
-      <SimpleCard title={typo("План на сегодня")} size="lg">
-        {renderPlanBody()}
-      </SimpleCard>
+      {renderPlanSection()}
 
       {plan.suggestions.bedtime && bedtimeExamId && (
         <SimpleCard>
           <HStack justify="between" align="center" gap="md" wrap>
             <HStack gap="sm" align="center">
-              <Moon className="size-5 text-muted-foreground" />
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+                <Moon className="size-5" strokeWidth={1.8} />
+              </span>
               <VStack gap="3xs">
                 <Text bold>{typo("Лёгкое повторение перед сном")}</Text>
                 <Text variant="mini" color="supplementary">
@@ -537,7 +618,9 @@ function TodayPage() {
         <SimpleCard>
           <HStack justify="between" align="center" gap="md" wrap>
             <HStack gap="sm" align="center">
-              <Zap className="size-5 text-warning" />
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-warning/15 text-warning">
+                <Zap className="size-5" strokeWidth={1.8} />
+              </span>
               <VStack gap="3xs">
                 <HStack gap="xs" align="center">
                   <Text bold>{typo(`Скоро экзамен «${firstCram.title}»? Включи умную зубрёжку`)}</Text>

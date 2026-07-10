@@ -1,7 +1,9 @@
 import { Plus } from "lucide-react";
 
-import { Heading, Text, VStack } from "~/components";
+import { Container, Heading, Text, VStack } from "~/components";
 import { FREE_QUESTIONS_PER_EXAM, typo } from "~/lib";
+
+import { riseDelay } from "../lib/motion";
 
 interface QaItem {
   question: string;
@@ -39,28 +41,36 @@ const FAQ_ITEMS: readonly QaItem[] = [
 export function LandingFaq() {
   return (
     <section>
-      <VStack gap="md">
-        <Heading variant="h2" align="center">
-          {typo("Частые вопросы")}
-        </Heading>
-        <VStack gap="sm" className="mx-auto w-full max-w-3xl">
-          {FAQ_ITEMS.map((item) => (
-            <details key={item.question} className="group rounded-2xl border border-border bg-card p-5">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 [&::-webkit-details-marker]:hidden">
-                <Heading variant="h4" asParagraph>
-                  {item.question}
-                </Heading>
-                <Plus className="size-5 shrink-0 text-primary transition-transform group-open:rotate-45" />
-              </summary>
-              <div className="pt-3">
-                <Text variant="small" color="supplementary">
-                  {item.answer}
-                </Text>
-              </div>
-            </details>
-          ))}
+      <Container className="py-10 md:py-16">
+        <VStack gap="xl">
+          <Heading variant="h2" align="center">
+            {typo("Частые вопросы")}
+          </Heading>
+          <VStack gap="sm" className="mx-auto w-full max-w-3xl">
+            {FAQ_ITEMS.map((item, itemIndex) => (
+              <details
+                key={item.question}
+                className="group rounded-2xl bg-card p-5 shadow-card rise"
+                style={riseDelay(itemIndex)}
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 [&::-webkit-details-marker]:hidden">
+                  <Heading variant="h4" asParagraph>
+                    {item.question}
+                  </Heading>
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground transition-transform duration-200 group-open:rotate-45">
+                    <Plus className="size-5" strokeWidth={1.8} />
+                  </span>
+                </summary>
+                <div className="max-w-2xl pt-3">
+                  <Text variant="small" color="supplementary">
+                    {item.answer}
+                  </Text>
+                </div>
+              </details>
+            ))}
+          </VStack>
         </VStack>
-      </VStack>
+      </Container>
     </section>
   );
 }

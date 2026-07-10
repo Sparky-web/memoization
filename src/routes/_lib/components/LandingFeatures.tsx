@@ -1,7 +1,9 @@
 import { Layers, Mic, MoonStar, Network, Target, Users } from "lucide-react";
 
-import { AdaptiveGrid, Badge, Heading, HStack, SimpleCard, Text, VStack } from "~/components";
+import { AdaptiveGrid, Badge, Container, Heading, HStack, SimpleCard, Text, VStack } from "~/components";
 import { typo } from "~/lib";
+
+import { riseDelay } from "../lib/motion";
 
 interface LandingFeature {
   icon: typeof Mic;
@@ -63,36 +65,38 @@ const FEATURES: readonly LandingFeature[] = [
 export function LandingFeatures() {
   return (
     <section>
-      <VStack gap="lg">
-        <VStack gap="xs">
-          <Heading variant="h2" align="center">
-            {typo("Больше, чем карточки")}
-          </Heading>
-          <Text color="supplementary" align="center">
-            {typo("Всё, что помогает довести себя до усилия — и не обмануться по дороге.")}
-          </Text>
+      <Container className="py-10 md:py-16">
+        <VStack gap="xl">
+          <VStack gap="sm">
+            <Heading variant="h2" align="center">
+              {typo("Больше, чем карточки")}
+            </Heading>
+            <Text color="supplementary" align="center">
+              {typo("Всё, что помогает довести себя до усилия — и не обмануться по дороге.")}
+            </Text>
+          </VStack>
+          <AdaptiveGrid cols={{ base: 1, md: 2, lg: 3 }} gap="md" align="stretch">
+            {FEATURES.map((feature, featureIndex) => (
+              <SimpleCard key={feature.title} className="h-full lift rise" style={riseDelay(featureIndex)}>
+                <VStack gap="sm">
+                  <HStack justify="between" align="center" gap="sm">
+                    <span className="flex size-10 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+                      <feature.icon className="size-5" strokeWidth={1.8} />
+                    </span>
+                    {feature.pro && <Badge variant="primary">Pro</Badge>}
+                  </HStack>
+                  <Heading variant="h4" asParagraph>
+                    {feature.title}
+                  </Heading>
+                  <Text variant="small" color="supplementary">
+                    {feature.description}
+                  </Text>
+                </VStack>
+              </SimpleCard>
+            ))}
+          </AdaptiveGrid>
         </VStack>
-        <AdaptiveGrid cols={{ base: 1, md: 2, lg: 3 }} gap="md" align="stretch">
-          {FEATURES.map((feature) => (
-            <SimpleCard key={feature.title} className="h-full border border-border">
-              <VStack gap="sm">
-                <HStack justify="between" align="center" gap="sm">
-                  <span className="flex size-10 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-                    <feature.icon className="size-5" />
-                  </span>
-                  {feature.pro && <Badge variant="primary">Pro</Badge>}
-                </HStack>
-                <Heading variant="h4" asParagraph>
-                  {feature.title}
-                </Heading>
-                <Text variant="small" color="supplementary">
-                  {feature.description}
-                </Text>
-              </VStack>
-            </SimpleCard>
-          ))}
-        </AdaptiveGrid>
-      </VStack>
+      </Container>
     </section>
   );
 }

@@ -26,7 +26,7 @@ export function MaterialDropzone({ busy, onFiles }: MaterialDropzoneProps) {
 
   return (
     <div
-      className={`rounded-2xl border-2 border-dashed p-6 transition-colors ${dragOver ? "border-primary bg-primary/5" : "border-border"}`}
+      className={`rounded-2xl border-2 border-dashed p-6 transition-colors ${dragOver ? "border-primary bg-accent/40" : "border-border bg-muted/30"}`}
       onDragOver={(event) => {
         event.preventDefault();
         setDragOver(true);
@@ -36,8 +36,10 @@ export function MaterialDropzone({ busy, onFiles }: MaterialDropzoneProps) {
       }}
       onDrop={handleDrop}
     >
-      <VStack gap="xs" justify="center">
-        <FileUp className="size-6 text-muted-foreground" />
+      <VStack gap="sm" align="center" justify="center">
+        <span className="flex size-11 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+          <FileUp className="size-5" strokeWidth={1.8} />
+        </span>
         <Text variant="small" color="supplementary" align="center">
           {typo("Перетащите конспекты сюда или выберите файлы")}
         </Text>

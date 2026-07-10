@@ -2,11 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { authClient, Button, Container, Heading, Input, Label, Link, Text, VStack } from "~/components";
+import { authClient, Button, Input, Label, Link, Text, VStack } from "~/components";
 import { typo } from "~/lib";
 
+import { AuthShell } from "../_lib";
+
 export const Route = createFileRoute("/auth/signup/")({
-  head: () => ({ meta: [{ title: typo("Регистрация") }] }),
+  head: () => ({ meta: [{ title: typo("Регистрация — Домашник") }] }),
   component: SignUpPage,
 });
 
@@ -30,36 +32,37 @@ function SignUpPage() {
   };
 
   return (
-    <Container className="page-enter flex min-h-screen items-center justify-center">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm">
+    <AuthShell title={typo("Регистрация")} subtitle={typo("Минута — и появится первый экзамен с планом")}>
+      <form onSubmit={handleSubmit}>
         <VStack gap="md">
-          <Heading variant="h2">{typo("Регистрация")}</Heading>
-          <div>
+          <VStack gap="xs">
             <Label htmlFor="name">{typo("Имя")}</Label>
             <Input
               id="name"
               autoComplete="name"
               required
+              className="h-10 rounded-lg"
               value={name}
               onChange={(event) => {
                 setName(event.target.value);
               }}
             />
-          </div>
-          <div>
+          </VStack>
+          <VStack gap="xs">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
               type="email"
               autoComplete="email"
               required
+              className="h-10 rounded-lg"
               value={email}
               onChange={(event) => {
                 setEmail(event.target.value);
               }}
             />
-          </div>
-          <div>
+          </VStack>
+          <VStack gap="xs">
             <Label htmlFor="password">{typo("Пароль")}</Label>
             <Input
               id="password"
@@ -67,23 +70,35 @@ function SignUpPage() {
               autoComplete="new-password"
               required
               minLength={8}
+              className="h-10 rounded-lg"
               value={password}
               onChange={(event) => {
                 setPassword(event.target.value);
               }}
             />
-          </div>
-          <Button type="submit" disabled={isPending}>
+          </VStack>
+          <Button type="submit" variant="brand" size="pill" className="w-full" disabled={isPending}>
             {typo("Зарегистрироваться")}
           </Button>
-          <Text variant="small" color="supplementary">
+          <Text variant="small" color="supplementary" align="center">
             {typo("Уже есть аккаунт?")}{" "}
-            <Link to="/auth/signin" variant="underline">
+            <Link to="/auth/signin" variant="insideText">
               {typo("Войти")}
             </Link>
           </Text>
+          <Text variant="mini" color="supplementary" align="center">
+            {typo("Регистрируясь, ты соглашаешься с ")}
+            <Link to="/offer" variant="insideText">
+              {typo("офертой")}
+            </Link>
+            {typo(" и ")}
+            <Link to="/privacy" variant="insideText">
+              {typo("политикой конфиденциальности")}
+            </Link>
+            {typo(".")}
+          </Text>
         </VStack>
       </form>
-    </Container>
+    </AuthShell>
   );
 }

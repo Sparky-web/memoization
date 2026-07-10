@@ -1,7 +1,7 @@
 import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
-import { Plus, Sparkles, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Check, Landmark, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Fragment, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -57,6 +57,65 @@ const ROUTE_PRESETS: readonly string[] = [typo("Моя квартира"), typo(
 const MIN_PLACES = 4;
 const MAX_PLACES = 8;
 
+const WIZARD_STEPS: readonly string[] = [typo("Маршрут"), typo("Места"), typo("Образы")];
+
+// Шаги мастера: активный — брендовый кружок, пройденные — спокойная галочка, будущие — тише.
+function WizardSteps({ current }: { current: number }) {
+  const circleClass = (stepIndex: number): string => {
+    if (stepIndex < current) return "bg-primary/15 text-primary";
+    if (stepIndex === current) return "bg-brand-gradient text-brand-foreground shadow-card";
+    return "bg-muted text-muted-foreground";
+  };
+
+  return (
+    <HStack gap="xs" align="center" wrap>
+      {WIZARD_STEPS.map((label, stepIndex) => (
+        <Fragment key={label}>
+          {stepIndex > 0 && <span aria-hidden className="h-px w-4 shrink-0 bg-border" />}
+          <HStack gap="2xs" align="center">
+            <span
+              aria-hidden
+              className={`flex size-7 shrink-0 items-center justify-center rounded-full ${circleClass(stepIndex)}`}
+            >
+              {stepIndex < current ? (
+                <Check className="size-4" strokeWidth={2.5} />
+              ) : (
+                <Text variant="mini" bold>
+                  {String(stepIndex + 1)}
+                </Text>
+              )}
+            </span>
+            {/* На телефоне подпись только у активного шага — иначе лента не влезает в строку. */}
+            <span className={stepIndex === current ? "" : "hidden sm:block"}>
+              <Text
+                variant="small"
+                bold={stepIndex === current}
+                color={stepIndex === current ? "main" : "supplementary"}
+              >
+                {label}
+              </Text>
+            </span>
+          </HStack>
+        </Fragment>
+      ))}
+    </HStack>
+  );
+}
+
+// Номер места на маршруте: тёплый акцентный кружок — «крючок», на который вешается образ.
+function PlaceNumber({ value }: { value: number }) {
+  return (
+    <span
+      aria-hidden
+      className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground"
+    >
+      <Text variant="mini" bold>
+        {String(value)}
+      </Text>
+    </span>
+  );
+}
+
 // Шаг 1: знакомый маршрут. Знакомость мест — опора мнемоники, поэтому выбор из своих.
 function RouteStep({ onNext }: { onNext: (routeTitle: string) => void }) {
   const [preset, setPreset] = useState<string | null>(null);
@@ -66,8 +125,11 @@ function RouteStep({ onNext }: { onNext: (routeTitle: string) => void }) {
   return (
     <SimpleCard size="lg">
       <VStack gap="md">
+        <WizardSteps current={0} />
         <VStack gap="2xs">
-          <Text bold>{typo("Шаг 1 · Выберите знакомый маршрут")}</Text>
+          <Heading variant="h3" asParagraph>
+            {typo("Выберите знакомый маршрут")}
+          </Heading>
           <Text variant="small" color="supplementary">
             {typo("Место, которое вы знаете наизусть: по нему пойдёт воображаемая прогулка с пунктами списка.")}
           </Text>
@@ -97,6 +159,7 @@ function RouteStep({ onNext }: { onNext: (routeTitle: string) => void }) {
         <HStack>
           <Button
             size="pill"
+            variant="brand"
             disabled={!routeTitle}
             onClick={() => {
               onNext(routeTitle);
@@ -126,24 +189,29 @@ function PlacesStep({
   return (
     <SimpleCard size="lg">
       <VStack gap="md">
+        <WizardSteps current={1} />
         <VStack gap="2xs">
-          <Text bold>{typo(`Шаг 2 · Места маршрута «${routeTitle}»`)}</Text>
+          <Heading variant="h3" asParagraph breakWords>
+            {typo(`Места маршрута «${routeTitle}»`)}
+          </Heading>
           <Text variant="small" color="supplementary">
             {typo("Перечислите 4–8 мест строго по порядку, как идёте: прихожая → кухня → балкон…")}
           </Text>
         </VStack>
         <VStack gap="2xs">
           {places.map((place, index) => (
-            <Input
-              key={index}
-              value={place}
-              placeholder={typo(`Место ${index + 1}`)}
-              onChange={(event) => {
-                setPlaces((current) =>
-                  current.map((value, position) => (position === index ? event.target.value : value)),
-                );
-              }}
-            />
+            <HStack key={index} gap="sm" align="center">
+              <PlaceNumber value={index + 1} />
+              <Input
+                value={place}
+                placeholder={typo(`Место ${index + 1}`)}
+                onChange={(event) => {
+                  setPlaces((current) =>
+                    current.map((value, position) => (position === index ? event.target.value : value)),
+                  );
+                }}
+              />
+            </HStack>
           ))}
         </VStack>
         <HStack gap="sm" wrap>
@@ -161,6 +229,7 @@ function PlacesStep({
           )}
           <Button
             size="pill"
+            variant="brand"
             disabled={filled.length < MIN_PLACES}
             onClick={() => {
               onNext(filled);
@@ -183,16 +252,24 @@ function LociEditor({ loci, onChange }: { loci: PalaceLocus[]; onChange: (next: 
     onChange(loci.map((locus, position) => (position === index ? { ...locus, [field]: value } : locus)));
   };
 
+  // Поля внутри плашки локуса — без собственной рамки (bg-card, граница только фокус-кольцом):
+  // иначе выходит запрещённая манифестом «рамка-в-рамке-в-рамке».
+  const fieldClasses = "border-transparent bg-card shadow-none";
+
   return (
     <VStack gap="sm">
       {loci.map((locus, index) => (
-        <VStack key={index} gap="2xs" className="rounded-2xl border border-border p-3">
-          <Text variant="mini" color="supplementary">
-            {typo(`${index + 1} · ${locus.place}`)}
-          </Text>
+        <VStack key={index} gap="2xs" className="rounded-2xl bg-muted/50 p-3">
+          <HStack gap="sm" align="center">
+            <PlaceNumber value={index + 1} />
+            <Text variant="small" bold breakWords>
+              {typo(locus.place)}
+            </Text>
+          </HStack>
           <Input
             value={locus.item}
             placeholder={typo("Пункт списка")}
+            className={fieldClasses}
             onChange={(event) => {
               patch(index, "item", event.target.value);
             }}
@@ -201,6 +278,7 @@ function LociEditor({ loci, onChange }: { loci: PalaceLocus[]; onChange: (next: 
             value={locus.image}
             rows={2}
             placeholder={typo("Яркий абсурдный образ, связывающий пункт с местом")}
+            className={fieldClasses}
             onChange={(event) => {
               patch(index, "image", event.target.value);
             }}
@@ -264,8 +342,11 @@ function ImagesStep({
   return (
     <SimpleCard size="lg">
       <VStack gap="md">
+        <WizardSteps current={2} />
         <VStack gap="2xs">
-          <Text bold>{typo("Шаг 3 · Образы")}</Text>
+          <Heading variant="h3" asParagraph>
+            {typo("Яркие образы")}
+          </Heading>
           <Text variant="small" color="supplementary">
             {typo(
               "Чем страннее и конкретнее образ, тем крепче он держится. Правьте варианты ИИ под себя — свои образы работают лучше.",
@@ -276,6 +357,7 @@ function ImagesStep({
         {!loci.length && (
           <HStack gap="sm" wrap>
             <Button
+              variant="brand"
               disabled={generate.isPending}
               onClick={() => {
                 generate.mutate();
@@ -298,6 +380,7 @@ function ImagesStep({
             <HStack gap="sm" wrap>
               <Button
                 size="pill"
+                variant="brand"
                 disabled={!complete || save.isPending}
                 onClick={() => {
                   save.mutate();
@@ -459,7 +542,10 @@ function PalacePage() {
   return (
     <VStack gap="md" className="mx-auto w-full max-w-2xl">
       <VStack gap="2xs">
-        <Heading variant="h1">{typo("🏛️ Дворец памяти")}</Heading>
+        <HStack gap="sm" align="center">
+          <Landmark aria-hidden className="size-6 shrink-0 text-primary" strokeWidth={1.8} />
+          <Heading variant="h1">{typo("Дворец памяти")}</Heading>
+        </HStack>
         <Text variant="small" color="supplementary" breakWords>
           {typo(`Для карточки: ${context.card.prompt}`)}
         </Text>

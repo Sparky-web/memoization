@@ -7,9 +7,11 @@ import { Heading } from "./Heading";
 interface SimpleCardProps extends Omit<HTMLAttributes<HTMLDivElement>, "title"> {
   title?: string | ReactNode;
   size?: "md" | "lg";
+  /** Кликабельная карточка: hover-подъём с ростом тени и отклик нажатия. */
+  interactive?: boolean;
 }
 
-export const SimpleCard = ({ children, title, size = "md", ...props }: SimpleCardProps) => {
+export const SimpleCard = ({ children, title, size = "md", interactive, ...props }: SimpleCardProps) => {
   const titleComponent = useMemo(() => {
     if (!title) {
       return null;
@@ -24,8 +26,9 @@ export const SimpleCard = ({ children, title, size = "md", ...props }: SimpleCar
     <div
       {...props}
       className={cn(
-        "grid content-start gap-4 rounded-2xl bg-card p-4 shadow-none",
+        "grid content-start gap-4 rounded-2xl bg-card p-4 shadow-card",
         size === Size.lg && "gap-6 p-6",
+        interactive && "lift press cursor-pointer",
         props.className,
       )}
     >

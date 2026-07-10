@@ -60,14 +60,16 @@ export function PricingFaq() {
       </Heading>
       <VStack gap="sm">
         {FAQ_ITEMS.map((item) => (
-          <details key={item.question} className="group rounded-2xl border border-border bg-card p-5">
+          <details key={item.question} className="group rounded-2xl bg-card p-5 shadow-card">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 [&::-webkit-details-marker]:hidden">
               <Heading variant="h4" asParagraph>
                 {item.question}
               </Heading>
-              <Plus className="size-5 shrink-0 text-primary transition-transform group-open:rotate-45" />
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground transition-transform duration-200 group-open:rotate-45">
+                <Plus className="size-5" strokeWidth={1.8} />
+              </span>
             </summary>
-            <div className="pt-3">
+            <div className="max-w-2xl pt-3">
               <Text variant="small" color="supplementary">
                 {item.answer}
               </Text>

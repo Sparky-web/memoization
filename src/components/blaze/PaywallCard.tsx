@@ -105,10 +105,10 @@ export function PaywallCard({ reason, compact, onShown }: PaywallCardProps) {
   const Icon = content.icon;
 
   return (
-    <SimpleCard className="border border-primary/25 bg-primary/10" size={compact ? "md" : "lg"}>
+    <SimpleCard className="border border-primary/15 bg-primary/5" size={compact ? "md" : "lg"}>
       <VStack gap={compact ? "sm" : "md"}>
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/15">
-          <Icon className="size-6 text-primary" />
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent">
+          <Icon className="size-6 text-accent-foreground" strokeWidth={1.8} />
         </span>
         <VStack gap="2xs">
           <Heading variant={compact ? "h4" : "h3"} asParagraph>
@@ -119,7 +119,11 @@ export function PaywallCard({ reason, compact, onShown }: PaywallCardProps) {
           </Text>
         </VStack>
         <VStack gap="2xs">
-          <Button size={compact ? "default" : "pill"} onClick={() => void navigate({ to: "/pricing" })}>
+          <Button
+            variant="brand"
+            size={compact ? "default" : "pill"}
+            onClick={() => void navigate({ to: "/pricing" })}
+          >
             {typo("Открыть Pro")}
           </Button>
           <Text variant="mini" color="supplementary">

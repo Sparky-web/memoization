@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Save, Trash2, Waypoints } from "lucide-react";
-import { type PointerEvent as ReactPointerEvent, useRef, useState } from "react";
+import { type PointerEvent as ReactPointerEvent, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button, ConfirmDialog, HStack, Input, Text, VStack } from "~/components";
@@ -54,6 +54,8 @@ export function MapEditor({ map, examId }: { map: ConceptMapItem; examId: string
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  // Точечная сетка полотна: id паттерна уникален на случай двух карт на странице.
+  const gridPatternId = useId();
 
   const save = useMutation({
     mutationFn: () => updateConceptMap({ data: { id: map.id, nodes, edges } }),
@@ -167,15 +169,23 @@ export function MapEditor({ map, examId }: { map: ConceptMapItem; examId: string
     setDirty(true);
   };
 
+  // Узел-чип: тихая карточка с почти невидимым бордером; выбор — брендовый контур и акцентная
+  // заливка, первый узел связи — тёплый (янтарный) контур.
   const nodeStroke = (node: MapNode): string => {
     if (connectFrom === node.id) return "var(--warning)";
     if (selection?.kind === "node" && selection.id === node.id) return "var(--primary)";
-    return "var(--border)";
+    return "var(--input)";
+  };
+
+  const nodeFill = (node: MapNode): string => {
+    if (connectFrom === node.id || (selection?.kind === "node" && selection.id === node.id)) return "var(--accent)";
+    return "var(--card)";
   };
 
   return (
     <VStack gap="sm">
-      <HStack gap="2xs" align="center" wrap>
+      {/* Панель инструментов редактора — приподнятая плашка над полотном. */}
+      <HStack gap="2xs" align="center" wrap className="rounded-2xl bg-card p-2 shadow-card">
         <Input
           value={newNodeLabel}
           placeholder={typo("Новое понятие")}
@@ -278,7 +288,7 @@ export function MapEditor({ map, examId }: { map: ConceptMapItem; examId: string
       {/* На телефоне канвас не сжимается (нечитаемые узлы ~13 px), а рендерится в натуральную
           величину с горизонтальным скроллом. touch-action: none стоит только на узлах и рёбрах:
           перетаскивание работает, а свайп по пустому месту прокручивает канвас. */}
-      <div className="w-full overflow-x-auto rounded-2xl border border-border bg-card">
+      <div className="w-full overflow-x-auto rounded-2xl bg-card shadow-card">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${MAP_CANVAS.width} ${MAP_CANVAS.height}`}
@@ -292,6 +302,13 @@ export function MapEditor({ map, examId }: { map: ConceptMapItem; examId: string
             setSelection(null);
           }}
         >
+          {/* Точечная сетка — ощущение рабочего полотна, а не пустой карточки. */}
+          <defs>
+            <pattern id={gridPatternId} width={24} height={24} patternUnits="userSpaceOnUse">
+              <circle cx={2} cy={2} r={1.2} fill="var(--border)" />
+            </pattern>
+          </defs>
+          <rect width={MAP_CANVAS.width} height={MAP_CANVAS.height} fill={`url(#${gridPatternId})`} />
           {edges.map((edge, index) => {
             const from = nodeById.get(edge.from);
             const to = nodeById.get(edge.to);
@@ -343,7 +360,7 @@ export function MapEditor({ map, examId }: { map: ConceptMapItem; examId: string
               <g
                 key={node.id}
                 transform={`translate(${node.x}, ${node.y})`}
-                className={`touch-none ${connectMode ? "cursor-crosshair" : "cursor-grab"}`}
+                className={`map-node touch-none ${connectMode ? "cursor-crosshair" : "cursor-grab"}`}
                 onPointerDown={(event) => {
                   handleNodePointerDown(node, event);
                 }}
@@ -354,11 +371,18 @@ export function MapEditor({ map, examId }: { map: ConceptMapItem; examId: string
                   width={width}
                   height={NODE_HEIGHT}
                   rx={NODE_HEIGHT / 2}
-                  fill="var(--accent)"
+                  fill={nodeFill(node)}
                   stroke={nodeStroke(node)}
-                  strokeWidth={2}
+                  strokeWidth={1.5}
                 />
-                <text x={0} y={5} textAnchor="middle" fontSize={NODE_FONT_SIZE} fill="var(--accent-foreground)">
+                <text
+                  x={0}
+                  y={5}
+                  textAnchor="middle"
+                  fontSize={NODE_FONT_SIZE}
+                  fontWeight={600}
+                  fill="var(--foreground)"
+                >
                   {typo(node.label.length > 26 ? `${node.label.slice(0, 25)}…` : node.label)}
                 </text>
               </g>

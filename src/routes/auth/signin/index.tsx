@@ -2,11 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { authClient, Button, Container, Heading, Input, Label, Link, Text, VStack } from "~/components";
+import { authClient, Button, Input, Label, Link, Text, VStack } from "~/components";
 import { typo } from "~/lib";
 
+import { AuthShell } from "../_lib";
+
 export const Route = createFileRoute("/auth/signin/")({
-  head: () => ({ meta: [{ title: typo("Вход") }] }),
+  head: () => ({ meta: [{ title: typo("Вход — Домашник") }] }),
   component: SignInPage,
 });
 
@@ -29,47 +31,48 @@ function SignInPage() {
   };
 
   return (
-    <Container className="page-enter flex min-h-screen items-center justify-center">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm">
+    <AuthShell title={typo("С возвращением")} subtitle={typo("Войди — план и прогресс на месте")}>
+      <form onSubmit={handleSubmit}>
         <VStack gap="md">
-          <Heading variant="h2">{typo("Вход")}</Heading>
-          <div>
+          <VStack gap="xs">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
               type="email"
               autoComplete="email"
               required
+              className="h-10 rounded-lg"
               value={email}
               onChange={(event) => {
                 setEmail(event.target.value);
               }}
             />
-          </div>
-          <div>
+          </VStack>
+          <VStack gap="xs">
             <Label htmlFor="password">{typo("Пароль")}</Label>
             <Input
               id="password"
               type="password"
               autoComplete="current-password"
               required
+              className="h-10 rounded-lg"
               value={password}
               onChange={(event) => {
                 setPassword(event.target.value);
               }}
             />
-          </div>
-          <Button type="submit" disabled={isPending}>
+          </VStack>
+          <Button type="submit" variant="brand" size="pill" className="w-full" disabled={isPending}>
             {typo("Войти")}
           </Button>
-          <Text variant="small" color="supplementary">
+          <Text variant="small" color="supplementary" align="center">
             {typo("Нет аккаунта?")}{" "}
-            <Link to="/auth/signup" variant="underline">
+            <Link to="/auth/signup" variant="insideText">
               {typo("Зарегистрироваться")}
             </Link>
           </Text>
         </VStack>
       </form>
-    </Container>
+    </AuthShell>
   );
 }

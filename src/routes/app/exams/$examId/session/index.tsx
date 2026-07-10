@@ -1,19 +1,22 @@
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Coffee, Footprints, Moon, X, Zap } from "lucide-react";
-import { useState } from "react";
+import { Coffee, Footprints, Moon, MoveRight, X } from "lucide-react";
+import { type PropsWithChildren, useState } from "react";
 import { toast } from "sonner";
 
 import {
+  AdaptiveGrid,
   Badge,
   Button,
   ConfirmDialog,
+  EmptyState,
   Heading,
   HStack,
   Input,
   MarkdownView,
   PaywallCard,
-  ProgressBar,
+  ReadinessRing,
+  SegmentedProgress,
   SimpleCard,
   Text,
   Textarea,
@@ -25,6 +28,7 @@ import { explainWhy } from "~/server/fn/chat";
 import { answerCard, type AnswerResult, type SessionCard, submitOpenRating } from "~/server/fn/session";
 
 import {
+  cardFormatLabel,
   cardsCountLabel,
   createForecast,
   examQueries,
@@ -43,6 +47,7 @@ import {
 // Плеер сессии припоминания — ядро продукта. Принципы: «одно дело на экране»,
 // припоминание до показа ответа, немедленная обратная связь, нормализация ошибок претеста,
 // спокойная стилистика перед сном и защита сна в зубрёжке.
+// Раскладка: карточка-«сцена» по центру, панель действий снизу, переходы карточек slide+fade.
 
 const searchSchema = zodRussian.object({
   kind: zodRussian.enum(["daily", "pretest", "bedtime", "cram"]).catch("daily"),
@@ -65,6 +70,81 @@ interface CardOutcome {
 // («повторный показ ошибок в той же сессии через 5–10 карточек», дизайн-док, раздел 3).
 const CRAM_RETRY_GAP = 7;
 
+function reducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// Цифра-герой (счёт сессии, прогноз): очень крупная, tabular, 800 — фирменный «маяк» экрана.
+function HeroNumber({ value, label }: { value: string; label?: string }) {
+  return (
+    <VStack gap="3xs" align="center">
+      <p className="m-0 font-headings text-(length:--stat-value-font-size) leading-(--stat-value-line-height) font-extrabold tracking-tight tabular-nums">
+        {value}
+      </p>
+      {label && (
+        <Text variant="mini" color="supplementary">
+          {label}
+        </Text>
+      )}
+    </VStack>
+  );
+}
+
+// Центр ручки слайдера (28px) ходит с отступом 14px от краёв — заливка и засечки выровнены по нему.
+function thumbCenterOf(ratio: number): string {
+  return `calc(14px + (100% - 28px) * ${ratio})`;
+}
+
+interface BigSliderProps {
+  /** Доля заливки 0..1 (по центру ручки). */
+  ratio: number;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  disabled?: boolean;
+  ariaLabel: string;
+  onChange: (next: number) => void;
+  /** Позиции засечек долями 0..1 — точки на треке. */
+  tickRatios?: readonly number[];
+}
+
+// Крупный слайдер: прозрачный input рисует только ручку, трек/заливку/засечки — слои под ним
+// (у WebKit нет ::range-progress, иначе заливку слева от ручки не нарисовать).
+function BigSlider({ ratio, min, max, step, value, disabled, ariaLabel, onChange, tickRatios }: BigSliderProps) {
+  return (
+    <div className="relative">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-1/2 h-2.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted"
+      >
+        <div className="h-full rounded-full bg-primary" style={{ width: thumbCenterOf(ratio) }} />
+      </div>
+      {tickRatios?.map((tickRatio) => (
+        <span
+          key={tickRatio}
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-card/90"
+          style={{ left: thumbCenterOf(tickRatio) }}
+        />
+      ))}
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        className="confidence-slider relative w-full"
+        onChange={(event) => {
+          onChange(Number(event.target.value));
+        }}
+      />
+    </div>
+  );
+}
+
 // Ползунок уверенности: четыре шага до показа ответа — материал для калибровки метапознания.
 const CONFIDENCE_STOPS: readonly { value: number; label: string }[] = [
   { value: 0, label: typo("наугад") },
@@ -82,38 +162,64 @@ function ConfidencePicker({
   onChange: (next: number) => void;
   disabled?: boolean;
 }) {
+  const lastStop = CONFIDENCE_STOPS.length - 1;
   const index = Math.max(
     CONFIDENCE_STOPS.findIndex((stop) => stop.value === value),
     0,
   );
+
   return (
-    <VStack gap="2xs">
-      <input
-        type="range"
+    <VStack gap="3xs">
+      <Text variant="mini" color="supplementary">
+        {typo("Насколько уверен в ответе?")}
+      </Text>
+      <BigSlider
+        ratio={index / lastStop}
         min={0}
-        max={CONFIDENCE_STOPS.length - 1}
+        max={lastStop}
         step={1}
         value={index}
         disabled={disabled}
-        className="w-full accent-primary"
-        aria-label={typo("Уверенность в ответе")}
-        onChange={(event) => {
-          const stop = CONFIDENCE_STOPS[Number(event.target.value)];
+        ariaLabel={typo("Уверенность в ответе")}
+        tickRatios={CONFIDENCE_STOPS.map((_, stopIndex) => stopIndex / lastStop)}
+        onChange={(nextIndex) => {
+          const stop = CONFIDENCE_STOPS[nextIndex];
           if (stop) onChange(stop.value);
         }}
       />
-      <HStack justify="between" gap="2xs">
-        {CONFIDENCE_STOPS.map((stop) => (
-          <Text
-            key={stop.value}
-            variant="mini"
-            color={stop.value === value ? "primary" : "supplementary"}
-            bold={stop.value === value}
-          >
-            {stop.label}
-          </Text>
-        ))}
-      </HStack>
+      {/* Подписи засечек кликабельны; серединные — по центрам остановок ручки,
+          крайние прижаты к краям панели, иначе их центрирование подрезает текст. */}
+      <div className="relative h-5">
+        {CONFIDENCE_STOPS.map((stop, stopIndex) => {
+          const edgeClass = (): string => {
+            if (stopIndex === 0) return "left-0 text-left";
+            if (stopIndex === lastStop) return "right-0 text-right";
+            return "-translate-x-1/2";
+          };
+          const middleOffset =
+            stopIndex > 0 && stopIndex < lastStop ? { left: thumbCenterOf(stopIndex / lastStop) } : undefined;
+          return (
+            <button
+              key={stop.value}
+              type="button"
+              disabled={disabled}
+              className={`absolute top-0 whitespace-nowrap ${edgeClass()}`}
+              style={middleOffset}
+              onClick={() => {
+                onChange(stop.value);
+              }}
+            >
+              <Text
+                variant="mini"
+                bold={stop.value === value}
+                color={stop.value === value ? "primary" : "supplementary"}
+              >
+                {stop.label}
+              </Text>
+            </button>
+          );
+        })}
+      </div>
     </VStack>
   );
 }
@@ -159,11 +265,13 @@ interface AnswerInput {
 }
 
 // ИИ-сверка (Pro): вердикт haiku предзаполняет самооценку, человек может поправить.
-const AI_VERDICT_VIEW: Record<string, { label: string; className: string; suggestedRating: number }> = {
-  match: { label: typo("ИИ: совпадает по смыслу"), className: "bg-success/15 text-success", suggestedRating: 3 },
-  partial: { label: typo("ИИ: частично совпало"), className: "bg-warning/15 text-warning", suggestedRating: 2 },
-  miss: { label: typo("ИИ: не совпало"), className: "bg-destructive/15 text-destructive", suggestedRating: 1 },
-};
+// Тон вердикта — цветная точка (не заливка): спокойнее, «мимо» не кричит красным.
+const AI_VERDICT_VIEW: Record<string, { label: string; dot: "success" | "warning" | "muted"; suggestedRating: number }> =
+  {
+    match: { label: typo("ИИ: совпадает по смыслу"), dot: "success", suggestedRating: 3 },
+    partial: { label: typo("ИИ: частично совпало"), dot: "warning", suggestedRating: 2 },
+    miss: { label: typo("ИИ: не совпало"), dot: "muted", suggestedRating: 1 },
+  };
 
 // «Объясни почему» (elaborative interrogation): свёрнуто по умолчанию, ненавязчиво.
 // Показывается только с третьего показа карточки — гейт по repsBefore проверяет вызывающий.
@@ -197,7 +305,7 @@ function ExplainWhyBlock({ cardId }: { cardId: string }) {
   }
 
   return (
-    <VStack gap="2xs" className="rounded-2xl border border-border p-3">
+    <VStack gap="2xs" className="rounded-2xl bg-muted/50 p-3">
       <Text variant="mini" color="supplementary">
         {typo("Почему это так? Объясни своими словами — обоснование укрепляет память, а ИИ подсветит пробел.")}
       </Text>
@@ -234,6 +342,47 @@ function ExplainWhyBlock({ cardId }: { cardId: string }) {
   );
 }
 
+// Сцена карточки: тихие бейджи формата и темы + вопрос. Общая для припоминания и фидбека.
+function CardScene({ card, children }: PropsWithChildren<{ card: SessionCard }>) {
+  return (
+    <SimpleCard size="lg">
+      <VStack gap="lg">
+        <VStack gap="sm">
+          <HStack gap="sm" align="center" wrap>
+            <Badge variant="dot" dot="primary">
+              {cardFormatLabel(card.format)}
+            </Badge>
+            {card.topic && (
+              <Badge variant="dot" dot="muted">
+                {typo(card.topic)}
+              </Badge>
+            )}
+          </HStack>
+          {/* Все форматы держат один масштаб вопроса: cloze — Heading h3,
+              markdown-промпты — вариант «prompt» с типографикой h3 у первого абзаца. */}
+          {card.format === "cloze" ? (
+            <Heading variant="h3" asParagraph breakWords>
+              {typo(card.prompt)}
+            </Heading>
+          ) : (
+            <MarkdownView variant="prompt">{card.prompt}</MarkdownView>
+          )}
+        </VStack>
+        {children}
+      </VStack>
+    </SimpleCard>
+  );
+}
+
+// Панель действий снизу: липнет к нижнему краю на длинных карточках, приподнята тенью.
+function ActionPanel({ children }: PropsWithChildren) {
+  return (
+    <div className="sticky bottom-3 z-10 rounded-2xl bg-card p-4 shadow-card-hover sm:p-5">
+      <VStack gap="md">{children}</VStack>
+    </div>
+  );
+}
+
 function CardPlayer({
   card,
   kind,
@@ -248,6 +397,9 @@ function CardPlayer({
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [result, setResult] = useState<AnswerResult | null>(null);
   const [startedAt] = useState(() => Date.now());
+
+  // Перед сном — тихая тональность: главный CTA без градиентного «героя».
+  const mainCtaVariant = kind === "bedtime" ? "secondary" : "brand";
 
   // Очередь не двигается, пока сервер не подтвердил ответ: при ошибке сети — ретрай на месте.
   const answer = useMutation({
@@ -289,23 +441,103 @@ function CardPlayer({
     answer.mutate({ selectedOption: option });
   };
 
-  // Фаза припоминания: ответа на экране нет, ввод зависит от формата.
-  const renderRecall = () => (
-    <SimpleCard size="lg">
-      <VStack gap="lg">
+  // Контролы ответа для панели действий — по формату карточки.
+  const recallControls = () => {
+    if (card.format === "open") {
+      return (
+        <Button
+          size="pill"
+          variant={mainCtaVariant}
+          className="w-full"
+          disabled={answer.isPending}
+          onClick={() => {
+            answer.mutate({});
+          }}
+        >
+          {typo("Показать ответ")}
+        </Button>
+      );
+    }
+    if (card.format === "mcq" || (card.format === "cloze" && card.options.length > 0)) {
+      return (
         <VStack gap="2xs">
-          {card.topic && <Badge variant="outline">{typo(card.topic)}</Badge>}
-          {card.format === "cloze" ? (
-            <Heading variant="h3" asParagraph breakWords>
-              {typo(card.prompt)}
-            </Heading>
-          ) : (
-            <MarkdownView>{card.prompt}</MarkdownView>
-          )}
+          {card.options.map((option) => (
+            <Button
+              key={option}
+              variant="outline"
+              disabled={answer.isPending}
+              className="h-auto min-h-11 justify-start py-2.5 text-left whitespace-normal"
+              onClick={() => {
+                submitOption(option);
+              }}
+            >
+              {typo(option)}
+            </Button>
+          ))}
         </VStack>
+      );
+    }
+    if (card.format === "truefalse") {
+      return (
+        <AdaptiveGrid cols={{ base: 2 }} gap="sm">
+          <Button
+            size="lg"
+            variant="outline"
+            disabled={answer.isPending}
+            onClick={() => {
+              answer.mutate({ boolAnswer: true });
+            }}
+          >
+            {typo("Верно")}
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            disabled={answer.isPending}
+            onClick={() => {
+              answer.mutate({ boolAnswer: false });
+            }}
+          >
+            {typo("Неверно")}
+          </Button>
+        </AdaptiveGrid>
+      );
+    }
+    // Cloze без вариантов: ввод пропущенного слова.
+    return (
+      <HStack gap="sm" align="center" wrap>
+        <Input
+          value={typed}
+          placeholder={typo("Пропущенное слово")}
+          className="max-w-xs flex-1"
+          onChange={(event) => {
+            setTyped(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && typed.trim() && !answer.isPending) {
+              answer.mutate({ answerText: typed.trim() });
+            }
+          }}
+        />
+        <Button
+          variant={mainCtaVariant}
+          disabled={answer.isPending || !typed.trim()}
+          onClick={() => {
+            answer.mutate({ answerText: typed.trim() });
+          }}
+        >
+          {typo("Ответить")}
+        </Button>
+      </HStack>
+    );
+  };
 
+  // Фаза припоминания: ответа на экране нет, сцена сверху, действия — в панели снизу.
+  const renderRecall = () => (
+    <VStack gap="md">
+      <CardScene card={card}>
         {card.format === "open" && (
-          <VStack gap="md">
+          <VStack gap="sm">
             <Text variant="small" color="supplementary">
               {typo("Сначала вспомни ответ. Скажи его себе или запиши — усилие припоминания и есть запоминание.")}
             </Text>
@@ -317,92 +549,12 @@ function CardPlayer({
                 setTyped(event.target.value);
               }}
             />
-            <ConfidencePicker value={confidence} onChange={setConfidence} disabled={answer.isPending} />
-            <HStack>
-              <Button
-                size="pill"
-                disabled={answer.isPending}
-                onClick={() => {
-                  answer.mutate({});
-                }}
-              >
-                {typo("Показать ответ")}
-              </Button>
-            </HStack>
           </VStack>
         )}
-
-        {(card.format === "mcq" || (card.format === "cloze" && card.options.length > 0)) && (
-          <VStack gap="md">
-            <ConfidencePicker value={confidence} onChange={setConfidence} disabled={answer.isPending} />
-            <VStack gap="2xs">
-              {card.options.map((option) => (
-                <Button
-                  key={option}
-                  variant="outline"
-                  disabled={answer.isPending}
-                  className="h-auto justify-start py-2 text-left whitespace-normal"
-                  onClick={() => {
-                    submitOption(option);
-                  }}
-                >
-                  {typo(option)}
-                </Button>
-              ))}
-            </VStack>
-          </VStack>
-        )}
-
-        {card.format === "cloze" && !card.options.length && (
-          <VStack gap="md">
-            <ConfidencePicker value={confidence} onChange={setConfidence} disabled={answer.isPending} />
-            <HStack gap="sm" align="center" wrap>
-              <Input
-                value={typed}
-                placeholder={typo("Пропущенное слово")}
-                className="max-w-xs"
-                onChange={(event) => {
-                  setTyped(event.target.value);
-                }}
-              />
-              <Button
-                disabled={answer.isPending || !typed.trim()}
-                onClick={() => {
-                  answer.mutate({ answerText: typed.trim() });
-                }}
-              >
-                {typo("Ответить")}
-              </Button>
-            </HStack>
-          </VStack>
-        )}
-
-        {card.format === "truefalse" && (
-          <VStack gap="md">
-            <ConfidencePicker value={confidence} onChange={setConfidence} disabled={answer.isPending} />
-            <HStack gap="sm" wrap>
-              <Button
-                variant="outline"
-                disabled={answer.isPending}
-                onClick={() => {
-                  answer.mutate({ boolAnswer: true });
-                }}
-              >
-                {typo("Верно")}
-              </Button>
-              <Button
-                variant="outline"
-                disabled={answer.isPending}
-                onClick={() => {
-                  answer.mutate({ boolAnswer: false });
-                }}
-              >
-                {typo("Неверно")}
-              </Button>
-            </HStack>
-          </VStack>
-        )}
-
+      </CardScene>
+      <ActionPanel>
+        <ConfidencePicker value={confidence} onChange={setConfidence} disabled={answer.isPending} />
+        {recallControls()}
         {answer.isError && (
           <RetryBlock
             label={typo("Не получилось отправить ответ — проверь сеть.")}
@@ -411,14 +563,15 @@ function CardPlayer({
             }}
           />
         )}
-      </VStack>
-    </SimpleCard>
+      </ActionPanel>
+    </VStack>
   );
 
+  // Спокойный фидбек вариантов: верный — зелёный, свой промах — мягкий янтарный (не красный).
   const optionFeedbackClass = (option: string, graded: AnswerResult): string => {
-    if (option === graded.answer) return "border-success bg-success/10";
-    if (option === selectedOption) return "border-destructive bg-destructive/10";
-    return "opacity-60";
+    if (option === graded.answer) return "border-success/60 bg-success/10";
+    if (option === selectedOption) return "border-warning/60 bg-warning/10";
+    return "opacity-55";
   };
 
   // Фаза обратной связи: вердикт, эталон, «почему» и источник — сразу после ответа.
@@ -431,12 +584,21 @@ function CardPlayer({
       if (isOpenReveal) {
         // ИИ-сверка открытого ответа: вердикт вместо пустоты, самооценка остаётся за человеком.
         if (!aiView) return null;
-        return <Badge className={aiView.className}>{aiView.label}</Badge>;
+        return (
+          <Badge variant="dot" dot={aiView.dot}>
+            {aiView.label}
+          </Badge>
+        );
       }
       if (graded.correct) {
         return <Badge className="bg-success/15 text-success">{typo("Верно!")}</Badge>;
       }
-      return <Badge className="bg-destructive/15 text-destructive">{wrongVerdictText(kind)}</Badge>;
+      // Неверно — спокойная нейтральная точка вместо красной заливки: без «красного стыда».
+      return (
+        <Badge variant="dot" dot="warning">
+          {wrongVerdictText(kind)}
+        </Badge>
+      );
     };
 
     const ratings = kind === "bedtime" ? BEDTIME_RATINGS : OPEN_RATINGS;
@@ -444,28 +606,17 @@ function CardPlayer({
     const suggestedRating = kind === "bedtime" ? null : (aiView?.suggestedRating ?? null);
 
     return (
-      <SimpleCard size="lg">
+      <VStack gap="md">
         {showFlash && <div aria-hidden className="good-pulse pointer-events-none fixed inset-0 z-10 bg-success/15" />}
-        <VStack gap="lg">
-          <VStack gap="2xs">
-            {card.topic && <Badge variant="outline">{typo(card.topic)}</Badge>}
-            {card.format === "cloze" ? (
-              <Heading variant="h3" asParagraph breakWords>
-                {typo(card.prompt)}
-              </Heading>
-            ) : (
-              <MarkdownView>{card.prompt}</MarkdownView>
-            )}
-          </VStack>
-
-          {verdictBadge()}
+        <CardScene card={card}>
+          <HStack wrap>{verdictBadge()}</HStack>
 
           {card.format === "mcq" && card.options.length > 0 ? (
             <VStack gap="2xs">
               {card.options.map((option) => (
                 <div
                   key={option}
-                  className={`rounded-md border border-input px-4 py-2 ${optionFeedbackClass(option, graded)}`}
+                  className={`rounded-lg border border-input px-4 py-2.5 ${optionFeedbackClass(option, graded)}`}
                 >
                   <Text variant="small" breakWords>
                     {typo(option)}
@@ -485,16 +636,18 @@ function CardPlayer({
                   </Text>
                 </VStack>
               )}
-              <Text variant="mini" color="supplementary">
-                {typo("Эталонный ответ")}
-              </Text>
-              {card.format === "open" ? (
-                <MarkdownView>{graded.answer}</MarkdownView>
-              ) : (
-                <Text bold breakWords>
-                  {formatClosedAnswer(card.format, graded.answer)}
+              <VStack gap="3xs" className="rounded-2xl bg-muted/50 p-3">
+                <Text variant="mini" color="supplementary">
+                  {typo("Эталонный ответ")}
                 </Text>
-              )}
+                {card.format === "open" ? (
+                  <MarkdownView>{graded.answer}</MarkdownView>
+                ) : (
+                  <Text bold breakWords>
+                    {formatClosedAnswer(card.format, graded.answer)}
+                  </Text>
+                )}
+              </VStack>
             </VStack>
           )}
 
@@ -517,7 +670,9 @@ function CardPlayer({
           {graded.palace && <PalaceBlock title={graded.palace.title} loci={graded.palace.loci} />}
 
           {kind !== "bedtime" && graded.repsBefore >= EXPLAIN_WHY_MIN_REPS && <ExplainWhyBlock cardId={card.id} />}
+        </CardScene>
 
+        <ActionPanel>
           {isOpenReveal ? (
             <VStack gap="2xs">
               <Text variant="mini" color="supplementary">
@@ -525,11 +680,12 @@ function CardPlayer({
                   ? typo("ИИ предлагает оценку — поправь, если не согласен")
                   : typo("Насколько точно вспомнил?")}
               </Text>
-              <HStack gap="2xs" wrap>
+              <AdaptiveGrid cols={{ base: 2, md: ratings.length === 2 ? 2 : 4 }} gap="xs">
                 {ratings.map((option) => (
                   <Button
                     key={option.rating}
                     variant={option.rating === suggestedRating ? "secondary" : "outline"}
+                    size="lg"
                     disabled={rate.isPending}
                     onClick={() => {
                       rate.mutate(option.rating);
@@ -538,7 +694,7 @@ function CardPlayer({
                     {option.label}
                   </Button>
                 ))}
-              </HStack>
+              </AdaptiveGrid>
               {rate.isError && (
                 <RetryBlock
                   label={typo("Не получилось сохранить оценку — проверь сеть.")}
@@ -549,19 +705,19 @@ function CardPlayer({
               )}
             </VStack>
           ) : (
-            <HStack>
-              <Button
-                size="pill"
-                onClick={() => {
-                  onFinished({ cardId: card.id, correct: graded.correct, confidence });
-                }}
-              >
-                {typo("Дальше")}
-              </Button>
-            </HStack>
+            <Button
+              size="pill"
+              variant={mainCtaVariant}
+              className="w-full"
+              onClick={() => {
+                onFinished({ cardId: card.id, correct: graded.correct, confidence });
+              }}
+            >
+              {typo("Дальше")}
+            </Button>
           )}
-        </VStack>
-      </SimpleCard>
+        </ActionPanel>
+      </VStack>
     );
   };
 
@@ -577,21 +733,18 @@ function formatClosedAnswer(format: string, answer: string): string {
 function SleepGate({ onFinish, onMore }: { onFinish: () => void; onMore: () => void }) {
   return (
     <SimpleCard size="lg">
-      <VStack gap="md">
-        <Moon className="size-8 text-muted-foreground" />
-        <Heading variant="h3" asParagraph>
-          {typo("Пора спать")}
-        </Heading>
-        <Text color="supplementary">
-          {typo("Сон важнее ещё одного круга: во сне память закрепляет выученное. Утром будет короткое повторение.")}
-        </Text>
-        <HStack gap="sm" wrap>
+      <EmptyState
+        illustration="moon"
+        title={typo("Пора спать")}
+        text={typo("Сон важнее ещё одного круга: во сне память закрепляет выученное. Утром будет короткое повторение.")}
+      >
+        <HStack gap="sm" justify="center" wrap>
           <Button onClick={onFinish}>{typo("Завершить")}</Button>
           <Button variant="outline" onClick={onMore}>
             {typo("Ещё 5 карточек")}
           </Button>
         </HStack>
-      </VStack>
+      </EmptyState>
     </SimpleCard>
   );
 }
@@ -624,29 +777,27 @@ function ForecastGate({ examId, totalCards, onDone }: { examId: string; totalCar
           </Text>
         </VStack>
         <VStack gap="2xs">
-          <input
-            type="range"
+          <HStack justify="between" align="end" gap="md">
+            <HeroNumber value={`${percent}%`} />
+            <Text variant="small" color="supplementary">
+              {typo(`примерно ${expectedCards} из ${totalCards}`)}
+            </Text>
+          </HStack>
+          <BigSlider
+            ratio={percent / 100}
             min={0}
             max={100}
             step={5}
             value={percent}
             disabled={create.isPending}
-            className="w-full accent-primary"
-            aria-label={typo("Прогноз вспомненных карточек в процентах")}
-            onChange={(event) => {
-              setPercent(Number(event.target.value));
-            }}
+            ariaLabel={typo("Прогноз вспомненных карточек в процентах")}
+            onChange={setPercent}
           />
-          <HStack justify="between" align="center">
-            <Text bold>{`${percent}%`}</Text>
-            <Text variant="small" color="supplementary">
-              {typo(`примерно ${expectedCards} из ${totalCards}`)}
-            </Text>
-          </HStack>
         </VStack>
         <HStack gap="sm" wrap>
           <Button
             size="pill"
+            variant="brand"
             disabled={create.isPending}
             onClick={() => {
               create.mutate();
@@ -686,6 +837,14 @@ function emptyQueueText(kind: SessionKind): string {
   return texts[kind];
 }
 
+// Иллюстрация пустой очереди — по тональности режима.
+const EMPTY_QUEUE_ILLUSTRATIONS: Record<SessionKind, "cards" | "calendar" | "moon"> = {
+  daily: "calendar",
+  pretest: "cards",
+  bedtime: "moon",
+  cram: "cards",
+};
+
 function SessionSummary({
   examId,
   kind,
@@ -721,6 +880,25 @@ function SessionSummary({
     if (kind === "daily" && total) resolve.mutate();
   });
 
+  // Перед сном — не праздник, а тихое «до завтра»: луна и никаких салютов.
+  if (kind === "bedtime") {
+    return (
+      <SimpleCard size="lg">
+        <EmptyState
+          illustration="moon"
+          title={typo("Готово. Хороших снов")}
+          text={typo(
+            `Повторено ${cardsCountLabel(total)} — ночью память закрепит выученное, утром будет короткое повторение.`,
+          )}
+        >
+          <Button size="pill" variant="secondary" onClick={() => void navigate({ to: "/app" })}>
+            {typo("К плану")}
+          </Button>
+        </EmptyState>
+      </SimpleCard>
+    );
+  }
+
   const forecast = resolve.data;
 
   const planData = plan.data;
@@ -729,7 +907,6 @@ function SessionSummary({
   const nextTitle = nextBlock ? planData?.exams.find((summary) => summary.examId === nextBlock.examId)?.title : null;
 
   const heading = () => {
-    if (kind === "bedtime") return typo("Готово. Хороших снов — память закрепится ночью");
     if (planDone && planData) {
       return typo(
         `День засчитан 🔥 Серия: ${planData.streakDays} ${pluralRu(planData.streakDays, "день", "дня", "дней")}`,
@@ -740,14 +917,46 @@ function SessionSummary({
 
   return (
     <SimpleCard size="lg">
-      <VStack gap="lg">
-        <Heading variant="h2" asParagraph>
-          {heading()}
-        </Heading>
-        <VStack gap="2xs">
-          <Text>{typo(`Вспомнил ${correct} из ${total} · точность ${accuracy}%`)}</Text>
-          <Text variant="small" color="supplementary">
-            {typo(`Готовность экзамена: ${Math.round(readinessBefore * 100)}% → ${Math.round(exam.readiness * 100)}%`)}
+      <VStack gap="xl" align="center" className="py-2 text-center">
+        <div className="relative">
+          {/* Конфетти-бёрст при закрытом плане дня: одноразовый, в брендовых цветах. */}
+          {planDone && (
+            <div aria-hidden className="confetti-burst">
+              {Array.from({ length: 12 }, (_, particleIndex) => (
+                <span key={particleIndex} />
+              ))}
+            </div>
+          )}
+          <Heading variant="h2" asParagraph align="center">
+            {heading()}
+          </Heading>
+        </div>
+
+        <HStack gap="2xl" justify="center" align="start" wrap>
+          <HeroNumber value={typo(`${correct} из ${total}`)} label={typo("вспомнил")} />
+          <HeroNumber value={`${accuracy}%`} label={typo("точность")} />
+        </HStack>
+
+        {/* Группа колец центрируется явно (в VStack «justify» — поперечная ось);
+            текстовый дубль «было → стало» убран — цифры уже в кольцах. */}
+        <VStack gap="2xs" justify="center">
+          <HStack gap="md" align="center" justify="center">
+            <VStack gap="3xs" justify="center">
+              <ReadinessRing value={readinessBefore} size="sm" />
+              <Text variant="mini" color="supplementary">
+                {typo("было")}
+              </Text>
+            </VStack>
+            <MoveRight aria-hidden className="size-6 text-muted-foreground" strokeWidth={1.8} />
+            <VStack gap="3xs" justify="center">
+              <ReadinessRing value={exam.readiness} size="lg" />
+              <Text variant="mini" color="supplementary">
+                {typo("стало")}
+              </Text>
+            </VStack>
+          </HStack>
+          <Text variant="mini" color="supplementary">
+            {typo("готовность экзамена")}
           </Text>
           {confidentMisses > 0 && (
             <Text variant="small" color="supplementary">
@@ -755,25 +964,31 @@ function SessionSummary({
             </Text>
           )}
         </VStack>
+
         {forecast && (
-          <VStack gap="3xs" className="rounded-2xl border border-primary/25 bg-primary/5 p-4">
+          <VStack gap="3xs" align="center" className="w-full rounded-2xl bg-primary/5 p-4">
             <Text bold>{typo(`Ты ожидал ${forecast.predictedPercent}% — вспомнил ${forecast.actualPercent}%`)}</Text>
             <Text variant="small" color="supplementary">
               {forecastCommentOf(forecast.predictedPercent - forecast.actualPercent)}
             </Text>
           </VStack>
         )}
-        {kind !== "bedtime" && isWalkNudgeDay(mskDayKey(new Date())) && (
-          <HStack gap="2xs" align="center">
-            <Footprints className="size-4 text-muted-foreground" />
+
+        {isWalkNudgeDay(mskDayKey(new Date())) && (
+          <HStack gap="2xs" align="center" justify="center">
+            <Footprints aria-hidden className="size-4 text-muted-foreground" strokeWidth={1.8} />
             <Text variant="mini" color="supplementary">
               {typo("Короткая прогулка после занятия помогает закреплению.")}
             </Text>
           </HStack>
         )}
-        <HStack gap="sm" wrap>
-          {nextBlock && nextTitle && kind !== "bedtime" && (
+
+        <VStack gap="sm" align="center" className="w-full">
+          {nextBlock && nextTitle && (
             <Button
+              size="pill"
+              variant="brand"
+              className="w-full sm:w-auto"
               onClick={() => {
                 void navigate({
                   to: "/app/exams/$examId/session",
@@ -785,20 +1000,17 @@ function SessionSummary({
               {typo(`Дальше: ${nextTitle} (${cardsCountLabel(nextBlock.cardIds.length)})`)}
             </Button>
           )}
-          {kind !== "bedtime" && !nextBlock && (
-            <Button variant="outline" onClick={onRestart}>
-              {typo("Ещё сессия")}
+          <HStack gap="sm" justify="center" wrap>
+            {!nextBlock && (
+              <Button variant="outline" onClick={onRestart}>
+                {typo("Ещё сессия")}
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => void navigate({ to: "/app" })}>
+              {typo("К плану")}
             </Button>
-          )}
-          <Button
-            variant={kind === "bedtime" ? "default" : "outline"}
-            onClick={() => {
-              void navigate({ to: "/app" });
-            }}
-          >
-            {typo("К плану")}
-          </Button>
-        </HStack>
+          </HStack>
+        </VStack>
       </VStack>
     </SimpleCard>
   );
@@ -827,6 +1039,8 @@ function SessionPage() {
   const [forecastClosed, setForecastClosed] = useState(false);
   // Мягкое предложение перерыва после 40 минут занятий подряд.
   const [breakNudge, setBreakNudge] = useState(false);
+  // Исход карточки, играющей анимацию ухода: очередь двинется по animationend.
+  const [leavingOutcome, setLeavingOutcome] = useState<CardOutcome | null>(null);
 
   const exitToHub = () => {
     void navigate({ to: "/app/exams/$examId", params: { examId } });
@@ -839,11 +1053,12 @@ function SessionPage() {
     setExtendedCards(null);
     setForceFinished(false);
     setSleepGateThreshold(0);
+    setLeavingOutcome(null);
   };
 
   if (session.isLoading) {
     return (
-      <VStack gap="lg">
+      <VStack gap="lg" className="mx-auto w-full max-w-2xl">
         <div className="h-6 w-1/2 animate-pulse rounded-full bg-muted" />
         <div className="h-2 animate-pulse rounded-full bg-muted" />
         <div className="h-72 animate-pulse rounded-2xl bg-muted" />
@@ -853,7 +1068,7 @@ function SessionPage() {
   if (session.error) {
     if (isPaywallError(session.error, "CRAM")) return <PaywallCard reason="CRAM" />;
     return (
-      <VStack gap="md">
+      <VStack gap="md" className="mx-auto w-full max-w-2xl">
         <Text color="supplementary">{typo("Не удалось начать сессию — проверь сеть и попробуй ещё раз.")}</Text>
         <HStack gap="sm">
           <Button onClick={() => void session.refetch()}>{typo("Повторить")}</Button>
@@ -886,6 +1101,28 @@ function SessionPage() {
     });
   };
 
+  // Продвижение очереди: вызывается после анимации ухода карточки (или сразу без анимации).
+  const advanceQueue = (outcome: CardOutcome) => {
+    setOutcomes((current) => [...current, outcome]);
+    if (kind === "cram" && !outcome.correct) requeueCramMiss(index);
+    setIndex((current) => current + 1);
+    // Привычка «понемногу, но часто»: после 40 минут подряд — мягкое предложение паузы.
+    recordFocusActivity();
+    if (shouldSuggestFocusBreak()) {
+      markFocusBreakShown();
+      setBreakNudge(true);
+    }
+  };
+
+  // Смена карточек slide+fade. При reduced-motion animationend не придёт — двигаемся сразу.
+  const handleCardFinished = (outcome: CardOutcome) => {
+    if (reducedMotion()) {
+      advanceQueue(outcome);
+      return;
+    }
+    setLeavingOutcome(outcome);
+  };
+
   const handleExit = () => {
     if (finished || !answered) {
       exitToHub();
@@ -898,18 +1135,18 @@ function SessionPage() {
     if (!cards.length) {
       return (
         <SimpleCard size="lg">
-          <VStack gap="md">
-            <Heading variant="h3" asParagraph>
-              {typo("Сейчас повторять нечего")}
-            </Heading>
-            <Text color="supplementary">{emptyQueueText(kind)}</Text>
-            <HStack gap="sm" wrap>
+          <EmptyState
+            illustration={EMPTY_QUEUE_ILLUSTRATIONS[kind]}
+            title={typo("Сейчас повторять нечего")}
+            text={emptyQueueText(kind)}
+          >
+            <HStack gap="sm" justify="center" wrap>
               <Button onClick={() => void navigate({ to: "/app" })}>{typo("К плану")}</Button>
               <Button variant="outline" onClick={exitToHub}>
                 {typo("К экзамену")}
               </Button>
             </HStack>
-          </VStack>
+          </EmptyState>
         </SimpleCard>
       );
     }
@@ -951,22 +1188,17 @@ function SessionPage() {
     return (
       // Индекс в ключе обязателен: в cram повтор той же карточки может идти следом,
       // и без него React не размонтировал бы плеер с уже показанным ответом.
-      <div key={`${index}-${card.id}`} className="page-enter">
-        <CardPlayer
-          card={card}
-          kind={kind}
-          onFinished={(outcome) => {
-            setOutcomes((current) => [...current, outcome]);
-            if (kind === "cram" && !outcome.correct) requeueCramMiss(index);
-            setIndex((current) => current + 1);
-            // Привычка «понемногу, но часто»: после 40 минут подряд — мягкое предложение паузы.
-            recordFocusActivity();
-            if (shouldSuggestFocusBreak()) {
-              markFocusBreakShown();
-              setBreakNudge(true);
-            }
-          }}
-        />
+      <div
+        key={`${index}-${card.id}`}
+        className={leavingOutcome ? "card-leave pointer-events-none" : "card-enter"}
+        onAnimationEnd={(event) => {
+          if (event.animationName !== "card-leave" || !leavingOutcome) return;
+          const outcome = leavingOutcome;
+          setLeavingOutcome(null);
+          advanceQueue(outcome);
+        }}
+      >
+        <CardPlayer card={card} kind={kind} onFinished={handleCardFinished} />
       </div>
     );
   };
@@ -980,8 +1212,7 @@ function SessionPage() {
               {SESSION_KIND_TITLES[kind]}
             </Heading>
             {kind === "cram" && (
-              <Badge variant="primary">
-                <Zap className="size-3" />
+              <Badge variant="dot" dot="flame">
                 {typo("умная зубрёжка")}
               </Badge>
             )}
@@ -1002,10 +1233,10 @@ function SessionPage() {
         </HStack>
       </HStack>
 
-      {cards.length > 0 && <ProgressBar value={cards.length ? index / cards.length : 0} />}
+      {cards.length > 0 && <SegmentedProgress total={cards.length} value={index} />}
 
       {kind === "pretest" && !finished && cards.length > 0 && (
-        <SimpleCard className="border border-primary/25 bg-primary/5">
+        <SimpleCard className="border border-primary/20 bg-primary/5 shadow-none">
           <Text variant="small" color="supplementary">
             {typo(
               "Сначала бой: ты ещё не учил это — ошибаться сейчас нормально и полезно. Мозг запомнит ответ крепче.",
@@ -1016,7 +1247,7 @@ function SessionPage() {
 
       {kind === "bedtime" && !finished && cards.length > 0 && (
         <HStack gap="2xs" align="center">
-          <Moon className="size-4 text-muted-foreground" />
+          <Moon aria-hidden className="size-4 text-muted-foreground" strokeWidth={1.8} />
           <Text variant="mini" color="supplementary">
             {typo("Спокойный режим: без новых тем, только закрепление пройденного за день.")}
           </Text>
@@ -1027,7 +1258,7 @@ function SessionPage() {
         <SimpleCard>
           <HStack justify="between" align="center" gap="md" wrap>
             <HStack gap="sm" align="center">
-              <Coffee className="size-5 text-muted-foreground" />
+              <Coffee className="size-5 text-muted-foreground" strokeWidth={1.8} />
               <VStack gap="3xs">
                 <Text bold>{typo("Уже больше 40 минут подряд — пора сделать паузу")}</Text>
                 <Text variant="mini" color="supplementary">

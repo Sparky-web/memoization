@@ -51,20 +51,39 @@ function PaymentSuccessPage() {
   if (billing?.pro) {
     return (
       <Screen>
-        <PartyPopper className="size-12 text-primary" />
+        <div className="relative">
+          {/* Одноразовый конфетти-бёрст вокруг иконки: оплата — маленький праздник. */}
+          <span aria-hidden className="confetti-burst">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </span>
+          <span className="flex size-16 items-center justify-center rounded-2xl bg-brand-gradient text-brand-foreground shadow-card">
+            <PartyPopper className="size-8" strokeWidth={1.8} />
+          </span>
+        </div>
         <Heading variant="h1" align="center">
           {typo("Pro активен!")}
         </Heading>
         <Text variant="large" color="supplementary" align="center">
           {billing.currentPeriodEnd
             ? typo(
-                `Мультиэкзамены, материалы, голосовой ученик и умная зубрёжка открыты до ${formatDateRuMsk(billing.currentPeriodEnd)}. Платёж разовый — ничего не спишется автоматически.`,
+                `Мультиэкзамены, материалы, голосовой ученик и умная зубрёжка открыты до ${formatDateRuMsk(billing.currentPeriodEnd)} Платёж разовый — ничего не спишется автоматически.`,
               )
             : typo(
                 "Мультиэкзамены, материалы, голосовой ученик и умная зубрёжка открыты. Платёж разовый — ничего не спишется автоматически.",
               )}
         </Text>
-        <Button size="pill" onClick={goApp}>
+        <Button variant="brand" size="pill" onClick={goApp}>
           {typo("К экзаменам")}
         </Button>
       </Screen>
@@ -76,7 +95,9 @@ function PaymentSuccessPage() {
   if (timedOut) {
     return (
       <Screen>
-        <Clock className="size-12 text-muted-foreground" />
+        <span className="flex size-16 items-center justify-center rounded-2xl bg-muted text-muted-foreground shadow-card">
+          <Clock className="size-8" strokeWidth={1.8} />
+        </span>
         <Heading variant="h2" align="center">
           {typo("Мы пока не видим оплату")}
         </Heading>
@@ -113,7 +134,7 @@ function PaymentSuccessPage() {
 function Screen({ children }: PropsWithChildren) {
   return (
     <Container className="flex min-h-dvh max-w-xl items-center justify-center py-10">
-      <VStack gap="md" justify="center" className="text-center">
+      <VStack gap="md" justify="center" className="page-enter text-center">
         {children}
       </VStack>
     </Container>

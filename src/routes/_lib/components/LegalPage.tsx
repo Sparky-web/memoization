@@ -10,6 +10,7 @@ import {
   type LegalRun,
   type LegalSection,
 } from "../model/legalContent";
+import { SiteHeader } from "./SiteHeader";
 
 function LegalLinkView({ link }: { link: LegalLink }) {
   // Внутренние документы — через роутер; внешние (сайт) — в новой вкладке; mailto — обычная ссылка.
@@ -90,33 +91,27 @@ function LegalSectionView({ section }: { section: LegalSection }) {
 export function LegalPage({ doc }: { doc: LegalDoc }) {
   return (
     <div className="min-h-dvh">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur-md">
-        <Container className="max-w-3xl">
-          <HStack align="center" justify="between" className="h-16">
-            <Link to="/">
-              <Text variant="large" bold>
-                {typo("Домашник")}
-              </Text>
-            </Link>
-            <Link to="/" variant="secondary">
-              <HStack gap="xs" align="center">
-                <ArrowLeft className="size-4" />
-                {typo("На главную")}
-              </HStack>
-            </Link>
+      <SiteHeader containerClassName="max-w-3xl">
+        <Link to="/" variant="secondary">
+          <HStack gap="xs" align="center">
+            <ArrowLeft className="size-4" strokeWidth={1.8} />
+            {typo("На главную")}
           </HStack>
-        </Container>
-      </header>
+        </Link>
+      </SiteHeader>
 
       <Container className="max-w-3xl">
-        <VStack gap="lg" className="py-12 md:py-16">
-          <SimpleCard size="lg">
-            <VStack gap="2xl">
+        <VStack gap="lg" className="page-enter py-10 md:py-16">
+          <SimpleCard size="lg" className="rounded-3xl">
+            {/* min-w-0: иначе grid-трек карточки растягивается под min-content длинного слова заголовка. */}
+            <VStack gap="2xl" className="min-w-0">
               <VStack gap="xs">
                 <Text variant="small" color="supplementary">
                   <LegalRuns runs={doc.intro} />
                 </Text>
-                <Heading variant="h1">{doc.title}</Heading>
+                <Heading variant="h1" breakWords>
+                  {doc.title}
+                </Heading>
               </VStack>
               <VStack gap="2xl">
                 {doc.sections.map((section) => (

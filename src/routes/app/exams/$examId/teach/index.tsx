@@ -76,8 +76,8 @@ function voiceErrorText(code: string): string {
 
 function UserBubble({ content }: { content: string }) {
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-primary-foreground">
+    <div className="rise flex justify-end">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground shadow-card">
         <Text variant="small" breakWords>
           {content}
         </Text>
@@ -88,11 +88,11 @@ function UserBubble({ content }: { content: string }) {
 
 function StudentBubble({ content }: { content: string }) {
   return (
-    <div className="flex items-end justify-start gap-2">
+    <div className="rise flex items-end justify-start gap-2">
       <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-base" aria-hidden>
         🧑‍🎓
       </span>
-      <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2">
+      <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-muted px-4 py-2.5 shadow-card">
         <Text variant="small" breakWords>
           {content}
         </Text>
@@ -235,6 +235,7 @@ function SetupScreen({
           <HStack>
             <Button
               size="pill"
+              variant="brand"
               disabled={!topic || create.isPending}
               onClick={() => {
                 create.mutate();
@@ -511,6 +512,7 @@ function SummaryScreen({ examId, summaryMd, onRestart }: { examId: string; summa
       <HStack gap="sm" wrap>
         <Button
           size="pill"
+          variant="brand"
           onClick={() => {
             void navigate({ to: "/app/exams/$examId", params: { examId } });
           }}

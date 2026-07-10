@@ -1,8 +1,8 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 
-import { Badge, Button, Heading, HStack, Link, ReadinessRing, SimpleCard, Text, VStack } from "~/components";
+import { Badge, Button, EmptyState, Heading, HStack, Link, ReadinessRing, SimpleCard, Text, VStack } from "~/components";
 import { formatDateRuMsk, typo } from "~/lib";
 
 import { cardsCountLabel, daysToExamLabel, type ExamListItem, examQueries, questionsCountLabel } from "./_lib";
@@ -15,17 +15,29 @@ export const Route = createFileRoute("/app/exams/")({
   component: ExamsListPage,
 });
 
+// Статусы — «цветная точка + тихий текст», без залитых пилюль.
 function statusBadge(exam: ExamListItem) {
   if (exam.status === "processing") {
     return (
-      <Badge variant="muted">
+      <Badge variant="dot" dot="primary">
         {exam.queuePosition ? typo(`в очереди: ${exam.queuePosition}`) : typo("генерируется…")}
       </Badge>
     );
   }
-  if (exam.status === "failed")
-    return <Badge className="bg-destructive/15 text-destructive">{typo("ошибка генерации")}</Badge>;
-  if (exam.status === "draft") return <Badge variant="muted">{typo("черновик")}</Badge>;
+  if (exam.status === "failed") {
+    return (
+      <Badge variant="dot" dot="destructive">
+        {typo("ошибка генерации")}
+      </Badge>
+    );
+  }
+  if (exam.status === "draft") {
+    return (
+      <Badge variant="dot" dot="muted">
+        {typo("черновик")}
+      </Badge>
+    );
+  }
   return null;
 }
 
@@ -42,27 +54,39 @@ function examMetaLine(exam: ExamListItem): string {
   return parts.join(" · ");
 }
 
-function ExamRow({ exam }: { exam: ExamListItem }) {
+// Строка экзамена: вся карточка — ссылка на хаб, с подъёмом на hover.
+function ExamRow({ exam, riseDelayMs }: { exam: ExamListItem; riseDelayMs: number }) {
   return (
-    <SimpleCard>
-      <HStack justify="between" align="center" gap="md" wrap>
-        <HStack gap="md" align="center">
-          <ReadinessRing value={exam.readiness} size="sm" />
-          <VStack gap="3xs">
-            <HStack gap="xs" align="center" wrap>
-              <Link to={`/app/exams/${exam.id}`} className="font-semibold">
-                {typo(exam.title)}
-              </Link>
-              {statusBadge(exam)}
-              {exam.isPublic && <Badge variant="outline">{typo("по ссылке")}</Badge>}
-            </HStack>
-            <Text variant="mini" color="supplementary">
-              {examMetaLine(exam)}
-            </Text>
-          </VStack>
+    <Link
+      to={`/app/exams/${exam.id}`}
+      className="rise block w-full"
+      style={{ animationDelay: `${riseDelayMs}ms` }}
+    >
+      <SimpleCard interactive>
+        <HStack justify="between" align="center" gap="md">
+          <HStack gap="md" align="center" className="min-w-0">
+            <ReadinessRing value={exam.readiness} size="sm" />
+            <VStack gap="3xs" className="min-w-0">
+              <HStack gap="xs" align="center" wrap>
+                <Text bold breakWords>
+                  {typo(exam.title)}
+                </Text>
+                {statusBadge(exam)}
+                {exam.isPublic && (
+                  <Badge variant="dot" dot="success">
+                    {typo("по ссылке")}
+                  </Badge>
+                )}
+              </HStack>
+              <Text variant="mini" color="supplementary">
+                {examMetaLine(exam)}
+              </Text>
+            </VStack>
+          </HStack>
+          <ChevronRight className="size-5 shrink-0 text-muted-foreground" strokeWidth={1.8} />
         </HStack>
-      </HStack>
-    </SimpleCard>
+      </SimpleCard>
+    </Link>
   );
 }
 
@@ -89,15 +113,28 @@ function ExamsListPage() {
 
       {activeExams.length ? (
         <VStack gap="sm">
-          {activeExams.map((exam) => (
-            <ExamRow key={exam.id} exam={exam} />
+          {activeExams.map((exam, examIndex) => (
+            <ExamRow key={exam.id} exam={exam} riseDelayMs={Math.min(examIndex, 8) * 60} />
           ))}
         </VStack>
       ) : (
         <SimpleCard>
-          <Text color="supplementary">
-            {typo("Активных экзаменов нет. Создай первый — вставь список вопросов и получи план подготовки.")}
-          </Text>
+          <EmptyState
+            illustration="cards"
+            title={typo("Активных экзаменов нет")}
+            text={typo("Создай первый: вставь список вопросов — и получи план подготовки с карточками.")}
+          >
+            <Button
+              variant="brand"
+              size="pill"
+              onClick={() => {
+                void navigate({ to: "/app/exams/new" });
+              }}
+            >
+              <Plus className="size-5" strokeWidth={1.8} />
+              {typo("Создать экзамен")}
+            </Button>
+          </EmptyState>
         </SimpleCard>
       )}
 
@@ -106,8 +143,8 @@ function ExamsListPage() {
           <Heading variant="h3" asParagraph>
             {typo("Архив")}
           </Heading>
-          {archivedExams.map((exam) => (
-            <ExamRow key={exam.id} exam={exam} />
+          {archivedExams.map((exam, examIndex) => (
+            <ExamRow key={exam.id} exam={exam} riseDelayMs={Math.min(examIndex, 8) * 60} />
           ))}
         </VStack>
       )}

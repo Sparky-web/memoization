@@ -100,11 +100,13 @@ interface StudentAvatarProps {
   voiceAnalyserRef: RefObject<AnalyserNode | null>;
 }
 
-/** Аватар ученика: эмодзи-кружок + индикатор состояния под ним. */
+/** Сцена аватара: эмодзи-кружок в мягком градиентном ореоле + индикатор состояния под ним. */
 export function StudentAvatar({ state, voiceAnalyserRef }: StudentAvatarProps) {
   return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="relative flex size-14 items-center justify-center">
+    <div className="relative flex flex-col items-center gap-1 px-16 py-8">
+      {/* Ореол — тихое брендовое свечение сцены; лежит под аватаром и индикаторами. */}
+      <div aria-hidden className="teach-halo absolute inset-0" />
+      <div className="relative flex size-20 items-center justify-center">
         {state === "listening" && (
           <>
             <span className="teach-ring absolute inset-0 rounded-full border-2 border-primary" />
@@ -112,14 +114,14 @@ export function StudentAvatar({ state, voiceAnalyserRef }: StudentAvatarProps) {
           </>
         )}
         <span
-          className={`flex size-12 items-center justify-center rounded-full bg-accent text-2xl ${state === "idle" ? "teach-avatar-idle" : ""}`}
+          className={`flex size-17 items-center justify-center rounded-full bg-accent text-3xl shadow-card ${state === "idle" ? "teach-avatar-idle" : ""}`}
           role="img"
           aria-label={typo("Ученик")}
         >
           🧑‍🎓
         </span>
       </div>
-      <div className="flex h-5 items-center">{STATE_INDICATORS[state](voiceAnalyserRef)}</div>
+      <div className="relative flex h-5 items-center">{STATE_INDICATORS[state](voiceAnalyserRef)}</div>
     </div>
   );
 }

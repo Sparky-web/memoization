@@ -1,6 +1,7 @@
+// Success с прозрачностью: ряды зелёных баров (готовность тем) не сливаются в «стену зелёного».
 const toneClasses = {
   primary: "bg-primary",
-  success: "bg-success",
+  success: "bg-success/75",
   warning: "bg-warning",
 };
 

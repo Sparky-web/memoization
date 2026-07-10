@@ -84,7 +84,7 @@ export function MicButton({
         type="button"
         disabled={disabled}
         aria-label={recording ? typo("Отпустите, чтобы отправить") : typo("Зажмите и говорите")}
-        className={`relative flex size-16 touch-none items-center justify-center rounded-full text-primary-foreground transition-colors select-none disabled:opacity-50 ${recording ? "bg-destructive" : "bg-primary"}`}
+        className={`relative flex size-16 touch-none items-center justify-center rounded-full shadow-card transition-colors select-none disabled:opacity-50 ${recording ? "bg-destructive text-destructive-foreground" : "bg-brand-gradient text-brand-foreground"}`}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
           onPressStart();
