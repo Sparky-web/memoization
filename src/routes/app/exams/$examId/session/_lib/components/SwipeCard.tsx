@@ -7,6 +7,7 @@ import { typo } from "~/lib";
 import { type SessionCard, submitSwipe } from "~/server/fn/session";
 
 import { cardFormatLabel } from "../../../../_lib";
+import { TicketButton, TopicDigest } from "./QuestionTicket";
 
 // Свайп-плеер: карточка-сцена с 3D-переворотом (тап/Space), после — свайп вправо «вспомнил» /
 // влево «не вспомнил» с вылетом за экран. Самооценочный режим: ответ приходит с карточкой.
@@ -344,6 +345,26 @@ export function SwipeCardPlayer({ card, onFinished }: SwipeCardPlayerProps) {
                     <Text variant="small" color="supplementary" align="center" breakWords>
                       {typo(card.explanation)}
                     </Text>
+                  )}
+                  {/* Группа «повторить по теме»: выжимка из темы + билет по связанному вопросу.
+                      Текст выровнен по левому краю (ответ центрирован). Указатель гасим здесь,
+                      иначе тап по билету долетел бы до карточки и перевернул её вместо открытия.
+                      Только у карточек со связанным вопросом (ручные без него группу не рисуют). */}
+                  {card.questionAnswerMd && (
+                    <div
+                      className="flex flex-col gap-3 text-left"
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                      }}
+                      onPointerUp={(event) => {
+                        event.stopPropagation();
+                      }}
+                    >
+                      <TopicDigest questionAnswerMd={card.questionAnswerMd} questionTopic={card.topic} />
+                      <HStack justify="center">
+                        <TicketButton questionText={card.questionText} questionAnswerMd={card.questionAnswerMd} />
+                      </HStack>
+                    </div>
                   )}
                 </VStack>
               </div>

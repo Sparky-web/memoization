@@ -84,7 +84,11 @@ function TodayHero({ plan }: { plan: TodayPlan }) {
   const ringSize = plan.exams.length > 2 ? "md" : "lg";
   return (
     <SimpleCard size="lg">
-      <HStack gap="xl" align="center" wrap>
+      {/* На мобиле — колонка: серия сверху, кольца снизу во всю ширину и по центру.
+          С md — снова в ряд (серия слева, кольца справа), как на десктопе. Плоский div
+          с flex-col md:flex-row — единственный способ адаптивно сменить направление
+          (HStack всегда flex-row). Порог md: узкие планшеты/телефоны получают вертикаль. */}
+      <div className="flex flex-col gap-6 md:flex-row md:items-center">
         <HStack gap="md" align="center">
           <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-flame/15">
             <Flame className="flame-sway size-7 text-flame" strokeWidth={1.8} />
@@ -110,8 +114,10 @@ function TodayHero({ plan }: { plan: TodayPlan }) {
         </HStack>
         {plan.exams.length > 0 && (
           <>
-            <span aria-hidden className="hidden w-px self-stretch bg-border sm:block" />
-            <HStack gap="md" align="start" justify="evenly" wrap className="min-w-0 flex-1">
+            {/* Разделитель — только в горизонтальном режиме: в вертикальном кольца уже отделены переносом. */}
+            <span aria-hidden className="hidden w-px self-stretch bg-border md:block" />
+            {/* Кольца: на мобиле — блок во всю ширину, кольца равномерно по центру; с md — flex-1 в ряду. */}
+            <HStack gap="md" align="start" justify="evenly" wrap className="w-full min-w-0 md:flex-1">
               {plan.exams.map((summary) => (
                 <ReadinessRing
                   key={summary.examId}
@@ -129,7 +135,7 @@ function TodayHero({ plan }: { plan: TodayPlan }) {
             </HStack>
           </>
         )}
-      </HStack>
+      </div>
     </SimpleCard>
   );
 }

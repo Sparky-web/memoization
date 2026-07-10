@@ -52,6 +52,8 @@ interface QueueCard {
   topic: string | null;
   /** Текст исходного вопроса — тема для «объяснить ученику» из фидбека; null у ручных карточек. */
   questionText: string | null;
+  /** Полный ответ на вопрос (билет для повторения из фидбека); null у ручных карточек. */
+  questionAnswerMd: string | null;
   progress: {
     stability: number;
     difficulty: number;
@@ -113,7 +115,7 @@ export const startSession = createServerFn({ method: "POST" })
         answer: true,
         explanation: true,
         options: true,
-        question: { select: { topic: true, text: true } },
+        question: { select: { topic: true, text: true, answerMd: true } },
         progress: {
           where: { userId },
           select: {
@@ -139,6 +141,7 @@ export const startSession = createServerFn({ method: "POST" })
       options: row.options,
       topic: row.question?.topic ?? null,
       questionText: row.question?.text ?? null,
+      questionAnswerMd: row.question?.answerMd ?? null,
       progress: row.progress[0] ?? null,
     }));
 
@@ -211,8 +214,11 @@ export const startSession = createServerFn({ method: "POST" })
             options: optionsOf(card),
             // Ответ целиком уходит клиенту ТОЛЬКО в самооценочных свайпах (анти-чит остальных
             // режимов не трогаем): cloze-prompt остаётся с «___», answer — заполненное слово.
+            // Билет (полный ответ на вопрос) тоже вторичному экрану свайпа доступен сразу;
+            // в остальных режимах он приходит с фидбеком answerCard/submitOpenRating (после ответа).
             answer: data.kind === "swipe" ? card.answer : null,
             explanation: data.kind === "swipe" ? card.explanation : null,
+            questionAnswerMd: data.kind === "swipe" ? card.questionAnswerMd : null,
           },
         ];
       }),
@@ -458,6 +464,7 @@ export const answerCard = createServerFn({ method: "POST" })
         sourceRef: true,
         examId: true,
         exam: { select: { examDate: true } },
+        question: { select: { text: true, answerMd: true, topic: true } },
         progress: { where: { userId }, select: { reps: true } },
       },
     });
@@ -468,6 +475,11 @@ export const answerCard = createServerFn({ method: "POST" })
     // reps ДО этого ответа — гейт «объясни почему» (не на первых показах) и дворца.
     const repsBefore = card.progress[0]?.reps ?? 0;
     const palace = await palaceOf(context.db, userId, card.id);
+    // Билет для повторения: связанный вопрос + его полный ответ. Показывается только на фидбеке
+    // (после ответа) — анти-чит не нарушается, ответ уже раскрыт.
+    const questionText = card.question?.text ?? null;
+    const questionAnswerMd = card.question?.answerMd ?? null;
+    const questionTopic = card.question?.topic ?? null;
 
     // Открытая карточка: отдаём эталон для самооценки, Review/FSRS запишет submitOpenRating.
     // Pro с включённой ИИ-сверкой получает вердикт haiku; сбой сверки не блокирует reveal.
@@ -484,6 +496,9 @@ export const answerCard = createServerFn({ method: "POST" })
         sourceRef: card.sourceRef,
         aiVerdict: aiCheck?.aiVerdict ?? null,
         aiComment: aiCheck?.aiComment ?? null,
+        questionText,
+        questionAnswerMd,
+        questionTopic,
         repsBefore,
         palace,
       };
@@ -516,6 +531,9 @@ export const answerCard = createServerFn({ method: "POST" })
       sourceRef: card.sourceRef,
       aiVerdict: null,
       aiComment: null,
+      questionText,
+      questionAnswerMd,
+      questionTopic,
       repsBefore,
       palace,
     };

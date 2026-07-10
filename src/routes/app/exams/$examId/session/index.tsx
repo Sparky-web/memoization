@@ -43,6 +43,7 @@ import {
   type SessionKind,
   shouldSuggestFocusBreak,
 } from "../../_lib";
+import { TicketButton, TopicDigest } from "./_lib/components/QuestionTicket";
 import { SwipeCardPlayer } from "./_lib/components/SwipeCard";
 
 // Плеер сессии припоминания — ядро продукта. Принципы: «одно дело на экране»,
@@ -692,13 +693,35 @@ function CardPlayer({
     </Button>
   ) : null;
 
-  // Глубокая проработка после ответа: «объясни почему» (с гейтом по повторам) + переход к ученику.
+  // Глубокая проработка после ответа: «объясни почему» (с гейтом по повторам) + переход к ученику
+  // + билет по теме. Перед сном — спокойно: только билет, без разбора и ученика.
   const renderDeepWorkActions = (graded: AnswerResult) => {
-    if (graded.repsBefore >= EXPLAIN_WHY_MIN_REPS) {
-      return <ExplainWhyBlock cardId={card.id} extraAction={teachAction} />;
+    // Билет есть только у карточек со связанным вопросом и его полным ответом.
+    const hasTicket = Boolean(graded.questionText?.trim() && graded.questionAnswerMd?.trim());
+    const ticket = hasTicket ? (
+      <TicketButton questionText={graded.questionText} questionAnswerMd={graded.questionAnswerMd} />
+    ) : null;
+    if (kind === "bedtime") {
+      // Логичная группа «повторить по теме»: билет — тихо, без ярких деталей разбора.
+      if (!ticket) return null;
+      return <HStack>{ticket}</HStack>;
     }
-    if (teachAction) return <HStack>{teachAction}</HStack>;
-    return null;
+    // Соседние тихие действия к «объясни почему»: переход к ученику и билет по теме.
+    const extraActions = (
+      <>
+        {teachAction}
+        {ticket}
+      </>
+    );
+    if (graded.repsBefore >= EXPLAIN_WHY_MIN_REPS) {
+      return <ExplainWhyBlock cardId={card.id} extraAction={extraActions} />;
+    }
+    if (!teachAction && !ticket) return null;
+    return (
+      <HStack gap="md" align="center" wrap>
+        {extraActions}
+      </HStack>
+    );
   };
 
   // Спокойный фидбек вариантов: верный — зелёный, свой промах — мягкий янтарный (не красный).
@@ -795,6 +818,8 @@ function CardPlayer({
               {graded.explanation}
             </MarkdownView>
           )}
+          {/* Выжимка из темы связанного вопроса — тихий блок «повторить по теме» под пояснением. */}
+          <TopicDigest questionAnswerMd={graded.questionAnswerMd} questionTopic={graded.questionTopic} />
           {graded.deepMd && <DeepDiveBlock deepMd={graded.deepMd} />}
           {graded.sourceRef && (
             <Text variant="mini" color="supplementary" breakWords>
@@ -803,11 +828,12 @@ function CardPlayer({
           )}
 
           {graded.palace && <PalaceBlock title={graded.palace.title} loci={graded.palace.loci} />}
-
-          {kind !== "bedtime" && renderDeepWorkActions(graded)}
         </CardScene>
 
         <ActionPanel>
+          {/* Глубокая проработка и билет — в липкой панели, а не в хвосте карточки: на коротких
+              карточках хвост уходил бы под саму панель. Здесь они всегда на виду, рядом с CTA. */}
+          {renderDeepWorkActions(graded)}
           {isOpenReveal ? (
             <VStack gap="2xs">
               <Text variant="mini" color="supplementary">
