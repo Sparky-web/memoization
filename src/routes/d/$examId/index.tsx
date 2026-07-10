@@ -1,5 +1,6 @@
-import { queryOptions, useMutation, useSuspenseQuery } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
+import { Star } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -17,7 +18,7 @@ import {
   VStack,
 } from "~/components";
 import { isPaywallError, typo } from "~/lib";
-import { forkExam, getPublicExam } from "~/server/fn/exams";
+import { forkExam, getPublicExam, setExamFavorite } from "~/server/fn/exams";
 
 // Публичное превью экзамена: вопросы без ответов + «Забрать себе» — форк со своей датой
 // и прогрессом с нуля. Гостю предлагаем войти.
@@ -28,7 +29,9 @@ const publicExamQuery = (examId: string) =>
     queryFn: () => getPublicExam({ data: { id: examId } }),
   });
 
-function ogDescription(exam: { description: string | null; totalQuestions: number; totalCards: number } | undefined): string {
+function ogDescription(
+  exam: { description: string | null; totalQuestions: number; totalCards: number } | undefined,
+): string {
   if (!exam) return typo("Карточки и вопросы для подготовки к экзамену");
   if (exam.description) return typo(exam.description);
   return typo(`${exam.totalQuestions} вопросов и ${exam.totalCards} карточек для подготовки к экзамену`);
@@ -111,7 +114,9 @@ function ForkModal({ examId, onClose }: { examId: string; onClose: () => void })
     <ResponsiveModal open onOpenChange={onClose} title={typo("Забрать экзамен себе")}>
       <VStack gap="md">
         <Text variant="small" color="supplementary">
-          {typo("Когда у тебя экзамен? План повторений построится назад от этой даты, прогресс будет свой — с нуля.")}
+          {typo(
+            "Когда у тебя экзамен? План повторений построится назад от этой даты. Если ты уже учил эти карточки раньше — прогресс сохранится.",
+          )}
         </Text>
         <HStack gap="sm" align="center" wrap>
           <Input
@@ -160,10 +165,29 @@ function ForkModal({ examId, onClose }: { examId: string; onClose: () => void })
 function PublicExamPage() {
   const { examId } = Route.useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: exam } = useSuspenseQuery(publicExamQuery(examId));
   const [forkOpen, setForkOpen] = useState(false);
 
-  const topics = [...new Set(exam.questions.map((question) => question.topic).filter((topic): topic is string => Boolean(topic)))];
+  // Избранное: закладка на чужой публичный экзамен — список живёт на «Сегодня».
+  const favorite = useMutation({
+    mutationFn: () => setExamFavorite({ data: { examId, favorite: !exam.isFavorite } }),
+    onSuccess: (result) => {
+      toast.success(
+        result.favorite ? typo("Добавили в избранное — найдёшь его на «Сегодня»") : typo("Убрали из избранного"),
+      );
+      void queryClient.invalidateQueries({ queryKey: ["public-exam", examId] });
+      void queryClient.invalidateQueries({ queryKey: ["exams", "favorites"] });
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось обновить избранное"));
+    },
+  });
+
+  const topics = [
+    ...new Set(exam.questions.map((question) => question.topic).filter((topic): topic is string => Boolean(topic))),
+  ];
   const restCount = exam.totalQuestions - exam.questions.length;
 
   const renderAction = () => {
@@ -180,14 +204,26 @@ function PublicExamPage() {
     }
     if (exam.isAuthenticated) {
       return (
-        <Button
-          size="pill"
-          onClick={() => {
-            setForkOpen(true);
-          }}
-        >
-          {typo("Забрать себе")}
-        </Button>
+        <HStack gap="sm" wrap>
+          <Button
+            size="pill"
+            onClick={() => {
+              setForkOpen(true);
+            }}
+          >
+            {typo("Забрать себе")}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={favorite.isPending}
+            onClick={() => {
+              favorite.mutate();
+            }}
+          >
+            <Star className={exam.isFavorite ? "size-4 fill-current" : "size-4"} />
+            {exam.isFavorite ? typo("В избранном") : typo("В избранное")}
+          </Button>
+        </HStack>
       );
     }
     return (
@@ -231,7 +267,9 @@ function PublicExamPage() {
             <HStack>{renderAction()}</HStack>
             {!exam.isAuthenticated && (
               <Text variant="mini" color="supplementary">
-                {typo("После входа экзамен скопируется к тебе: свой план от своей даты и честная готовность по припоминанию.")}
+                {typo(
+                  "После входа экзамен скопируется к тебе: свой план от своей даты и честная готовность по припоминанию.",
+                )}
               </Text>
             )}
           </VStack>

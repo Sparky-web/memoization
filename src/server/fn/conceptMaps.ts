@@ -89,7 +89,9 @@ export const generateConceptMapDraft = createServerFn({ method: "POST" })
     const title = data.topic ?? exam.title;
     let draft: ReturnType<typeof parseConceptMapDraft>;
     try {
-      const raw = await runModelPrompt(buildDraftPrompt({ topic: title, questions: questions.map((question) => question.text) }));
+      const raw = await runModelPrompt(
+        buildDraftPrompt({ topic: title, questions: questions.map((question) => question.text) }),
+      );
       draft = parseConceptMapDraft(raw);
     } catch (error) {
       console.error(error);

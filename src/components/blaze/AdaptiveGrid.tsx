@@ -81,7 +81,12 @@ export interface AdaptiveGridCols {
   xl?: GridColumnCount;
 }
 
-interface ResolvedCols { base: GridColumnCount; md: GridColumnCount; lg: GridColumnCount; xl: GridColumnCount }
+interface ResolvedCols {
+  base: GridColumnCount;
+  md: GridColumnCount;
+  lg: GridColumnCount;
+  xl: GridColumnCount;
+}
 
 /** Отсутствующий брейкпоинт наследует ближайший слева (base → md → lg → xl). */
 function resolveCols(cols: AdaptiveGridCols): ResolvedCols {

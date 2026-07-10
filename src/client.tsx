@@ -1,7 +1,7 @@
 import "./instrument.client";
 
 import { StartClient } from "@tanstack/react-start/client";
-import { startTransition,StrictMode } from "react";
+import { startTransition, StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
 
 startTransition(() => {

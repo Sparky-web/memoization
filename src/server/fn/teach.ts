@@ -73,7 +73,12 @@ export const createTeachSession = createServerFn({ method: "POST" })
   });
 
 // Роль ученика: наивный доброжелательный первокурсник — переспрашивает, а не читает лекции.
-function buildStudentPrompt(input: { examTitle: string; topic: string; history: { role: string; content: string }[]; message: string }): string {
+function buildStudentPrompt(input: {
+  examTitle: string;
+  topic: string;
+  history: { role: string; content: string }[];
+  message: string;
+}): string {
   const historyText = input.history
     .map((turn) => `${turn.role === "student" ? typo("Ученик") : typo("Объясняющий")}: ${turn.content}`)
     .join("\n\n");

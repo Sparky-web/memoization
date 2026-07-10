@@ -53,7 +53,7 @@ function TypographyInlineCode({ children, className }: TextTagProps) {
   return (
     <code
       className={cn(
-        "bg-muted relative rounded px-[0.3rem] py-[0.2rem] font-mono text-(length:--monospaced-font-size) leading-(--monospaced-line-height) font-normal tracking-(--monospaced-letter-spacing)",
+        "relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-(length:--monospaced-font-size) leading-(--monospaced-line-height) font-normal tracking-(--monospaced-letter-spacing)",
         className,
       )}
     >
@@ -105,7 +105,7 @@ function TypographyMuted({ children, className }: TextTagProps) {
   return (
     <p
       className={cn(
-        "text-muted-foreground m-0 font-sans text-(length:--paragraph-small-font-size) leading-(--paragraph-small-line-height) font-normal tracking-(--paragraph-small-letter-spacing)",
+        "m-0 font-sans text-(length:--paragraph-small-font-size) leading-(--paragraph-small-line-height) font-normal tracking-(--paragraph-small-letter-spacing) text-muted-foreground",
         className,
       )}
     >
@@ -130,7 +130,15 @@ interface TextProps extends PropsWithChildren {
   breakWords?: boolean;
 }
 
-export const Text = ({ variant = "normal", children, align, color, bold, maxLines, breakWords: breakWordsProp }: TextProps) => {
+export const Text = ({
+  variant = "normal",
+  children,
+  align,
+  color,
+  bold,
+  maxLines,
+  breakWords: breakWordsProp,
+}: TextProps) => {
   const alignClass = align ? textAlignClasses[align] : undefined;
   const colorClass = color ? textColorClasses[color] : undefined;
   const maxLinesClass = maxLines !== undefined ? maxLinesClasses[maxLines] : undefined;

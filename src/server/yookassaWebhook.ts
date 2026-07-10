@@ -74,7 +74,9 @@ async function applySucceededPayment(payment: YookassaPayment): Promise<void> {
     // Безлимитный Pro (currentPeriodEnd = null, выдан админом) платёж не понижает до срочного:
     // Payment записан выше, подписку не трогаем. Warning — в Sentry на ручной разбор (вероятно, возврат).
     if (subscription && subscription.status !== "EXPIRED" && !subscription.currentPeriodEnd) {
-      console.warn(`ЮKassa: платёж ${payment.id} поверх безлимитного Pro пользователя ${userId} — подписка не изменена`);
+      console.warn(
+        `ЮKassa: платёж ${payment.id} поверх безлимитного Pro пользователя ${userId} — подписка не изменена`,
+      );
     } else {
       const paidUntil = subscription?.currentPeriodEnd;
       const extendFrom = paidUntil && paidUntil > now ? paidUntil : now;

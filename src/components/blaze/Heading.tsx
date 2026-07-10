@@ -101,7 +101,15 @@ interface HeadingProps extends PropsWithChildren {
   breakWords?: boolean;
 }
 
-export const Heading = ({ variant, children, align, color, asParagraph, maxLines, breakWords: breakWordsProp }: HeadingProps) => {
+export const Heading = ({
+  variant,
+  children,
+  align,
+  color,
+  asParagraph,
+  maxLines,
+  breakWords: breakWordsProp,
+}: HeadingProps) => {
   const alignClass = align ? headingAlignClasses[align] : undefined;
   const colorClass = color ? textColorClasses[color] : undefined;
   const maxLinesClass = maxLines !== undefined ? maxLinesClasses[maxLines] : undefined;

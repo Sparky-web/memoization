@@ -88,7 +88,9 @@ export function MaterialsSection({ exam }: { exam: ExamDetail }) {
           reason="MATERIALS"
           compact
           onShown={() => {
-            void logEvent({ data: { name: "paywall_shown", meta: { reason: "MATERIALS", place: "exam_hub" } } }).catch(() => undefined);
+            void logEvent({ data: { name: "paywall_shown", meta: { reason: "MATERIALS", place: "exam_hub" } } }).catch(
+              () => undefined,
+            );
           }}
         />
       </VStack>
@@ -105,7 +107,9 @@ export function MaterialsSection({ exam }: { exam: ExamDetail }) {
       />
       {materialsList && <SimpleCard title={typo("Загруженные материалы")}>{materialsList}</SimpleCard>}
       <Text variant="mini" color="supplementary">
-        {typo("Материалы участвуют в генерации: после загрузки новых файлов перегенерируйте экзамен во вкладке «Настройки».")}
+        {typo(
+          "Материалы участвуют в генерации: после загрузки новых файлов перегенерируйте экзамен во вкладке «Настройки».",
+        )}
       </Text>
     </VStack>
   );

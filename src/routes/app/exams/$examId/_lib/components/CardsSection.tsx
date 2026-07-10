@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   ChatPanel,
+  ConfirmDialog,
   HStack,
   Input,
   PaywallCard,
@@ -68,7 +69,15 @@ function toCardFormat(format: string): CardFormat {
 }
 
 // Правка и ручное добавление: полные поля карточки, инварианты форматов проверяет сервер.
-function CardEditorModal({ examId, card, onClose }: { examId: string; card: ExamCardItem | null; onClose: () => void }) {
+function CardEditorModal({
+  examId,
+  card,
+  onClose,
+}: {
+  examId: string;
+  card: ExamCardItem | null;
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
   const [format, setFormat] = useState<CardFormat>(() => toCardFormat(card?.format ?? "open"));
   const [prompt, setPrompt] = useState(card?.prompt ?? "");
@@ -168,7 +177,9 @@ function CardEditorModal({ examId, card, onClose }: { examId: string; card: Exam
         <Textarea
           value={prompt}
           rows={3}
-          placeholder={format === "cloze" ? typo("Текст с пропуском: место пропуска отметьте «___»") : typo("Вопрос карточки")}
+          placeholder={
+            format === "cloze" ? typo("Текст с пропуском: место пропуска отметьте «___»") : typo("Вопрос карточки")
+          }
           onChange={(event) => {
             setPrompt(event.target.value);
           }}
@@ -256,11 +267,23 @@ function CardChatModal({ card, onClose }: { card: ExamCardItem; onClose: () => v
 // точечно для спотыкающихся карточек, спека «Мнемоники»).
 const STUBBORN_LAPSES = 3;
 
-function CardRow({ card, examId, onEdit, onChat }: { card: ExamCardItem; examId: string; onEdit: () => void; onChat: () => void }) {
+function CardRow({
+  card,
+  examId,
+  onEdit,
+  onChat,
+}: {
+  card: ExamCardItem;
+  examId: string;
+  onEdit: () => void;
+  onChat: () => void;
+}) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["exams"] });
   const stubborn = (card.progress?.lapses ?? 0) >= STUBBORN_LAPSES;
+  // Удаление необратимо уносит FSRS-прогресс и историю ответов — только через подтверждение.
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const toggleFlag = useMutation({
     mutationFn: () => flagCard({ data: { id: card.id, flagged: !card.flagged } }),
@@ -272,7 +295,10 @@ function CardRow({ card, examId, onEdit, onChat }: { card: ExamCardItem; examId:
   });
   const remove = useMutation({
     mutationFn: () => deleteCard({ data: { id: card.id } }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setConfirmDelete(false);
+      invalidate();
+    },
     onError: (error) => {
       console.error(error);
       toast.error(typo("Не удалось удалить карточку"));
@@ -348,12 +374,23 @@ function CardRow({ card, examId, onEdit, onChat }: { card: ExamCardItem; examId:
           size="inline"
           disabled={remove.isPending}
           onClick={() => {
-            remove.mutate();
+            setConfirmDelete(true);
           }}
         >
           {typo("Удалить")}
         </Button>
       </HStack>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={typo("Удалить карточку?")}
+        description={typo("Вместе с карточкой безвозвратно удалятся её прогресс повторений и история ответов.")}
+        confirmLabel={typo("Удалить")}
+        confirmPending={remove.isPending}
+        onConfirm={() => {
+          remove.mutate();
+        }}
+      />
     </VStack>
   );
 }
@@ -373,7 +410,8 @@ export function CardsSection({ examId }: { examId: string }) {
     if (formatFilter !== "all" && card.format !== formatFilter) return false;
     if (stateFilter === "flagged" && !card.flagged) return false;
     if (stateFilter === "suspended" && !card.suspended) return false;
-    if (needle && !card.prompt.toLowerCase().includes(needle) && !card.answer.toLowerCase().includes(needle)) return false;
+    if (needle && !card.prompt.toLowerCase().includes(needle) && !card.answer.toLowerCase().includes(needle))
+      return false;
     return true;
   });
 

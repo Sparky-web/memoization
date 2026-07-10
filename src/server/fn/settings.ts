@@ -4,6 +4,7 @@ import { setResponseStatus } from "@tanstack/react-start/server";
 import { PAYWALL_ERRORS, zodRussian } from "~/lib";
 import { hasActivePro } from "~/server/entitlement";
 import { authMiddleware } from "~/server/middleware";
+import { freezesLeftOf, streakJournal } from "~/server/streak";
 import { DEFAULT_BEDTIME_HOUR, loadUserSettings } from "~/server/userSettings";
 
 // Настройки пользователя: дневной бюджет минут, дни отдыха, час предсонного напоминания,
@@ -12,11 +13,16 @@ import { DEFAULT_BEDTIME_HOUR, loadUserSettings } from "~/server/userSettings";
 export const getUserSettings = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
-    const settings = await loadUserSettings(context.db, context.session.user.id, new Date());
+    const userId = context.session.user.id;
+    const [settings, journal] = await Promise.all([
+      loadUserSettings(context.db, userId),
+      streakJournal(context.db, userId),
+    ]);
     return {
       dailyMinutesTotal: settings.dailyMinutesTotal,
       restWeekdays: settings.restWeekdays,
-      streakFreezesLeft: settings.streakFreezesLeft,
+      // Остаток заморозок — из журнала StreakDay: та же точка правды, что «Сегодня» и статистика.
+      freezesLeft: freezesLeftOf(journal.frozenDayKeys, new Date()),
       bedtimeHour: settings.bedtimeHour,
       aiCheckEnabled: settings.aiCheckEnabled,
     };

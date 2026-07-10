@@ -53,7 +53,12 @@ export const getAdminAccess = createServerFn({ method: "GET" })
     return { isAdmin: user?.role === "admin" };
   });
 
-const FUNNEL_EVENT_NAMES: readonly string[] = ["paywall_shown", "pricing_viewed", "checkout_started", "payment_succeeded"];
+const FUNNEL_EVENT_NAMES: readonly string[] = [
+  "paywall_shown",
+  "pricing_viewed",
+  "checkout_started",
+  "payment_succeeded",
+];
 
 /** Метрики дашборда: тоталы, графики по дням за 30 дней и воронка конверсии. */
 export const getAdminDashboard = createServerFn({ method: "GET" })
@@ -152,10 +157,7 @@ export const getAdminUsers = createServerFn({ method: "GET" })
     const query = data.query?.trim();
     const where: Prisma.UserWhereInput = query
       ? {
-          OR: [
-            { email: { contains: query, mode: "insensitive" } },
-            { name: { contains: query, mode: "insensitive" } },
-          ],
+          OR: [{ email: { contains: query, mode: "insensitive" } }, { name: { contains: query, mode: "insensitive" } }],
         }
       : {};
 
@@ -214,8 +216,8 @@ export const getAdminUsers = createServerFn({ method: "GET" })
         const subscription = user.subscription;
         const proActive = Boolean(
           subscription &&
-            subscription.status !== "EXPIRED" &&
-            (!subscription.currentPeriodEnd || subscription.currentPeriodEnd > now),
+          subscription.status !== "EXPIRED" &&
+          (!subscription.currentPeriodEnd || subscription.currentPeriodEnd > now),
         );
         return {
           id: user.id,
@@ -373,8 +375,7 @@ export const getAdminPayments = createServerFn({ method: "GET" })
         _count: { _all: true },
         _sum: { amount: true },
       });
-      const groupOf = (status: "SUCCEEDED" | "REFUNDED" | "PENDING") =>
-        groups.find((group) => group.status === status);
+      const groupOf = (status: "SUCCEEDED" | "REFUNDED" | "PENDING") => groups.find((group) => group.status === status);
       totals = {
         succeededCount: groupOf("SUCCEEDED")?._count._all ?? 0,
         succeededKopecks: groupOf("SUCCEEDED")?._sum.amount ?? 0,

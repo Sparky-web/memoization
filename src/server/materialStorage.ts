@@ -32,7 +32,5 @@ export async function deleteMaterialFile(storagePath: string): Promise<void> {
 
 /** Удаляет каталог материалов экзамена целиком — вместе с экзаменом файлы больше не нужны. */
 export function cleanupExamMaterials(examId: string): void {
-  void rm(path.resolve(process.cwd(), MATERIALS_ROOT, examId), { recursive: true, force: true }).catch(
-    () => undefined,
-  );
+  void rm(path.resolve(process.cwd(), MATERIALS_ROOT, examId), { recursive: true, force: true }).catch(() => undefined);
 }

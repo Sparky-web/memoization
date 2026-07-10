@@ -14,9 +14,9 @@ import { generateQuestionCards } from "~/server/generation";
 import { authMiddleware } from "~/server/middleware";
 import { refundUsage, tryChargeUsage } from "~/server/usage";
 
-// Вопросы экзамена: полная замена списка (мастер/textarea), страница вопроса
-// и точечная перегенерация его карточек (sonnet, без списания квоты генераций,
-// но с собственным мягким дневным лимитом — каждый вызов запускает claude).
+// Вопросы экзамена: замена списка (мастер/textarea) с сохранением неизменённых строк,
+// страница вопроса и точечная перегенерация его карточек (sonnet, без списания квоты
+// генераций, но с собственным мягким дневным лимитом — каждый вызов запускает claude).
 
 export const setExamQuestions = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
@@ -51,14 +51,41 @@ export const setExamQuestions = createServerFn({ method: "POST" })
       );
     }
 
-    // Полная позиционная замена: старые вопросы удаляются, карточки прошлых генераций
-    // теряют привязку (questionId → null) и будут заменены следующей генерацией.
-    await context.db.$transaction([
-      context.db.question.deleteMany({ where: { examId: exam.id } }),
-      context.db.question.createMany({
-        data: data.questions.map((text, index) => ({ examId: exam.id, position: index, text })),
-      }),
-    ]);
+    // Дифф по тексту, а не полная замена: неизменённые строки сохраняют вопрос целиком
+    // (сгенерированный ответ, тему, привязку карточек) — иначе правка одной строки стирала бы
+    // ответы всего экзамена, а Free (одна генерация) не смог бы их вернуть. Удаляются
+    // и создаются только реально изменившиеся строки; дубликаты сопоставляются по очереди.
+    const existing = await context.db.question.findMany({
+      where: { examId: exam.id },
+      orderBy: { position: "asc" },
+      select: { id: true, text: true, position: true },
+    });
+    const spareByText = new Map<string, { id: string; position: number }[]>();
+    for (const question of existing) {
+      const bucket = spareByText.get(question.text);
+      if (bucket) {
+        bucket.push(question);
+      } else {
+        spareByText.set(question.text, [question]);
+      }
+    }
+    const matched = data.questions.map((text) => spareByText.get(text)?.shift() ?? null);
+    const keptIds = new Set(matched.flatMap((question) => (question ? [question.id] : [])));
+    const removedIds = existing.filter((question) => !keptIds.has(question.id)).map((question) => question.id);
+
+    await context.db.$transaction(async (tx) => {
+      if (removedIds.length) await tx.question.deleteMany({ where: { id: { in: removedIds } } });
+      for (const [index, text] of data.questions.entries()) {
+        const kept = matched[index];
+        if (!kept) {
+          await tx.question.create({ data: { examId: exam.id, position: index, text } });
+          continue;
+        }
+        if (kept.position !== index) {
+          await tx.question.update({ where: { id: kept.id }, data: { position: index } });
+        }
+      }
+    });
     return { count: data.questions.length };
   });
 

@@ -251,7 +251,9 @@ SELECT
 FROM "_OldCard" c;
 
 -- FillTask → Card(cloze): варианты = дистракторы + правильный ответ (перемешиваются при выдаче);
--- позиции — в конец экзамена.
+-- позиции — в конец экзамена. Старый пайплайн допускал пустые дистракторы и дубли ответа —
+-- без осмысленных дистракторов options оставляем пустыми (плеер включит честный ввод слова),
+-- иначе карточка выродилась бы в единственную кнопку с правильным ответом.
 WITH card_tail AS (
     SELECT "examId", MAX("position") AS max_position FROM "Card" GROUP BY "examId"
 )
@@ -261,13 +263,21 @@ SELECT
     'cloze',
     f."prompt",
     f."answer",
-    array_append(f."distractors", f."answer"),
+    CASE
+        WHEN cardinality(clean.distractors) >= 1 THEN array_append(clean.distractors, f."answer")
+        ELSE ARRAY[]::TEXT[]
+    END,
     f."hidden",
     COALESCE(tail.max_position, -1) + ROW_NUMBER() OVER (PARTITION BY f."deckId" ORDER BY f."position", f."id"),
     f."createdAt",
     f."updatedAt",
     f."deckId"
 FROM "FillTask" f
+CROSS JOIN LATERAL (
+    SELECT COALESCE(array_agg(DISTINCT distractor.value), ARRAY[]::TEXT[]) AS distractors
+    FROM unnest(f."distractors") AS distractor(value)
+    WHERE btrim(distractor.value) <> '' AND distractor.value <> f."answer"
+) clean
 LEFT JOIN card_tail tail ON tail."examId" = f."deckId";
 
 -- QuizTask → Card(mcq): answer = текст правильного варианта (postgres-массивы 1-based: correctIndex + 1);

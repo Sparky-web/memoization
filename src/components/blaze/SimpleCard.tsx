@@ -24,7 +24,7 @@ export const SimpleCard = ({ children, title, size = "md", ...props }: SimpleCar
     <div
       {...props}
       className={cn(
-        "bg-card grid content-start gap-4 rounded-2xl p-4 shadow-none",
+        "grid content-start gap-4 rounded-2xl bg-card p-4 shadow-none",
         size === Size.lg && "gap-6 p-6",
         props.className,
       )}

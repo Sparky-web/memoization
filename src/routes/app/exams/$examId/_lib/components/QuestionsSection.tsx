@@ -2,7 +2,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Badge, Button, Heading, HStack, MarkdownView, ResponsiveModal, SimpleCard, Text, Textarea, VStack } from "~/components";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  Heading,
+  HStack,
+  MarkdownView,
+  ResponsiveModal,
+  SimpleCard,
+  Text,
+  Textarea,
+  VStack,
+} from "~/components";
 import { typo } from "~/lib";
 
 import {
@@ -22,7 +34,11 @@ import {
 
 function QuestionRow({ question, onOpen }: { question: ExamQuestionItem; onOpen: () => void }) {
   return (
-    <button type="button" className="cursor-pointer rounded-2xl bg-card p-4 text-left transition-colors hover:bg-accent/40" onClick={onOpen}>
+    <button
+      type="button"
+      className="cursor-pointer rounded-2xl bg-card p-4 text-left transition-colors hover:bg-accent/40"
+      onClick={onOpen}
+    >
       <VStack gap="2xs">
         <HStack gap="xs">
           <Text variant="small" color="supplementary">
@@ -140,11 +156,31 @@ function QuestionModal({ questionId, onClose }: { questionId: string; onClose: (
   );
 }
 
-// Полная замена списка вопросов: строка = вопрос, нумерация срезается.
+// Сколько вопросов с готовыми ответами пропадёт при сохранении: строки сопоставляются
+// со старым списком по тексту (мультимножество — так же дифф считает сервер).
+function removedAnsweredCountOf(questions: ExamDetail["questions"], parsed: readonly string[]): number {
+  const remaining = new Map<string, number>();
+  for (const line of parsed) remaining.set(line, (remaining.get(line) ?? 0) + 1);
+  let removedAnswered = 0;
+  for (const question of questions) {
+    const left = remaining.get(question.text) ?? 0;
+    if (left) {
+      remaining.set(question.text, left - 1);
+      continue;
+    }
+    if (question.hasAnswer) removedAnswered += 1;
+  }
+  return removedAnswered;
+}
+
+// Правка списка вопросов: строка = вопрос, нумерация срезается. Неизменённые строки сохраняют
+// ответы и карточки (дифф на сервере); удаление вопросов с ответами — через подтверждение.
 function EditQuestionsModal({ exam, onClose }: { exam: ExamDetail; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState(() => exam.questions.map((question) => question.text).join("\n"));
+  const [confirmSave, setConfirmSave] = useState(false);
   const parsed = parseQuestionList(text);
+  const removedAnswered = removedAnsweredCountOf(exam.questions, parsed);
 
   const save = useMutation({
     mutationFn: () => setExamQuestions({ data: { examId: exam.id, questions: parsed } }),
@@ -160,6 +196,14 @@ function EditQuestionsModal({ exam, onClose }: { exam: ExamDetail; onClose: () =
     },
   });
 
+  const submit = () => {
+    if (removedAnswered) {
+      setConfirmSave(true);
+      return;
+    }
+    save.mutate();
+  };
+
   return (
     <ResponsiveModal open onOpenChange={onClose} title={typo("Правка списка вопросов")}>
       <VStack gap="md">
@@ -172,24 +216,39 @@ function EditQuestionsModal({ exam, onClose }: { exam: ExamDetail; onClose: () =
           }}
         />
         <Text variant="mini" color="supplementary">
-          {typo(`Распознано: ${questionsCountLabel(parsed.length)}. Сохранение заменяет весь список: ответы и привязка карточек сбросятся — потом перегенерируйте экзамен.`)}
+          {typo(
+            `Распознано: ${questionsCountLabel(parsed.length)}. Неизменённые строки сохранят ответы и карточки; изменённые и удалённые потеряют сгенерированный ответ.`,
+          )}
         </Text>
         <HStack gap="sm">
-          <Button
-            disabled={save.isPending || !parsed.length}
-            onClick={() => {
-              save.mutate();
-            }}
-          >
+          <Button disabled={save.isPending || !parsed.length} onClick={submit}>
             {typo("Сохранить")}
           </Button>
           <Button variant="outline" onClick={onClose}>
             {typo("Отмена")}
           </Button>
         </HStack>
+        <ConfirmDialog
+          open={confirmSave}
+          onOpenChange={setConfirmSave}
+          title={typo("Заменить список вопросов?")}
+          description={typo(
+            `Сгенерированные ответы ${removedAnswered} ${pluralQuestions(removedAnswered)} будут удалены безвозвратно (вместе с привязкой карточек). Неизменённые строки останутся как есть.`,
+          )}
+          confirmLabel={typo("Заменить")}
+          confirmPending={save.isPending}
+          onConfirm={() => {
+            save.mutate();
+          }}
+        />
       </VStack>
     </ResponsiveModal>
   );
+}
+
+// Родительный падеж: «ответы 1 вопроса» / «ответы 5 вопросов».
+function pluralQuestions(count: number): string {
+  return count % 10 === 1 && count % 100 !== 11 ? typo("вопроса") : typo("вопросов");
 }
 
 export function QuestionsSection({ exam }: { exam: ExamDetail }) {
@@ -227,7 +286,9 @@ export function QuestionsSection({ exam }: { exam: ExamDetail }) {
         </VStack>
       ) : (
         <SimpleCard>
-          <Text color="supplementary">{typo("Вопросов пока нет — добавьте список, и ИИ соберёт по нему карточки.")}</Text>
+          <Text color="supplementary">
+            {typo("Вопросов пока нет — добавьте список, и ИИ соберёт по нему карточки.")}
+          </Text>
         </SimpleCard>
       )}
       {openQuestionId && (

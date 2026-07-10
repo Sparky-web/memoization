@@ -61,6 +61,10 @@ interface CardOutcome {
   confidence: number | null;
 }
 
+// Зубрёжка: неверно отвеченная карточка возвращается в очередь через несколько позиций
+// («повторный показ ошибок в той же сессии через 5–10 карточек», дизайн-док, раздел 3).
+const CRAM_RETRY_GAP = 7;
+
 // Ползунок уверенности: четыре шага до показа ответа — материал для калибровки метапознания.
 const CONFIDENCE_STOPS: readonly { value: number; label: string }[] = [
   { value: 0, label: typo("наугад") },
@@ -69,7 +73,15 @@ const CONFIDENCE_STOPS: readonly { value: number; label: string }[] = [
   { value: 100, label: typo("точно знаю") },
 ];
 
-function ConfidencePicker({ value, onChange, disabled }: { value: number; onChange: (next: number) => void; disabled?: boolean }) {
+function ConfidencePicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: number;
+  onChange: (next: number) => void;
+  disabled?: boolean;
+}) {
   const index = Math.max(
     CONFIDENCE_STOPS.findIndex((stop) => stop.value === value),
     0,
@@ -92,7 +104,12 @@ function ConfidencePicker({ value, onChange, disabled }: { value: number; onChan
       />
       <HStack justify="between" gap="2xs">
         {CONFIDENCE_STOPS.map((stop) => (
-          <Text key={stop.value} variant="mini" color={stop.value === value ? "primary" : "supplementary"} bold={stop.value === value}>
+          <Text
+            key={stop.value}
+            variant="mini"
+            color={stop.value === value ? "primary" : "supplementary"}
+            bold={stop.value === value}
+          >
             {stop.label}
           </Text>
         ))}
@@ -217,7 +234,15 @@ function ExplainWhyBlock({ cardId }: { cardId: string }) {
   );
 }
 
-function CardPlayer({ card, kind, onFinished }: { card: SessionCard; kind: SessionKind; onFinished: (outcome: CardOutcome) => void }) {
+function CardPlayer({
+  card,
+  kind,
+  onFinished,
+}: {
+  card: SessionCard;
+  kind: SessionKind;
+  onFinished: (outcome: CardOutcome) => void;
+}) {
   const [confidence, setConfidence] = useState(35);
   const [typed, setTyped] = useState("");
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
@@ -316,7 +341,7 @@ function CardPlayer({ card, kind, onFinished }: { card: SessionCard; kind: Sessi
                   key={option}
                   variant="outline"
                   disabled={answer.isPending}
-                  className="h-auto justify-start py-2 whitespace-normal text-left"
+                  className="h-auto justify-start py-2 text-left whitespace-normal"
                   onClick={() => {
                     submitOption(option);
                   }}
@@ -416,7 +441,7 @@ function CardPlayer({ card, kind, onFinished }: { card: SessionCard; kind: Sessi
 
     const ratings = kind === "bedtime" ? BEDTIME_RATINGS : OPEN_RATINGS;
     // Предзаполненная самооценка из вердикта ИИ — подсвечиваем предложенную кнопку.
-    const suggestedRating = kind === "bedtime" ? null : aiView?.suggestedRating ?? null;
+    const suggestedRating = kind === "bedtime" ? null : (aiView?.suggestedRating ?? null);
 
     return (
       <SimpleCard size="lg">
@@ -438,7 +463,10 @@ function CardPlayer({ card, kind, onFinished }: { card: SessionCard; kind: Sessi
           {card.format === "mcq" && card.options.length > 0 ? (
             <VStack gap="2xs">
               {card.options.map((option) => (
-                <div key={option} className={`rounded-md border border-input px-4 py-2 ${optionFeedbackClass(option, graded)}`}>
+                <div
+                  key={option}
+                  className={`rounded-md border border-input px-4 py-2 ${optionFeedbackClass(option, graded)}`}
+                >
                   <Text variant="small" breakWords>
                     {typo(option)}
                   </Text>
@@ -493,7 +521,9 @@ function CardPlayer({ card, kind, onFinished }: { card: SessionCard; kind: Sessi
           {isOpenReveal ? (
             <VStack gap="2xs">
               <Text variant="mini" color="supplementary">
-                {suggestedRating ? typo("ИИ предлагает оценку — поправь, если не согласен") : typo("Насколько точно вспомнил?")}
+                {suggestedRating
+                  ? typo("ИИ предлагает оценку — поправь, если не согласен")
+                  : typo("Насколько точно вспомнил?")}
               </Text>
               <HStack gap="2xs" wrap>
                 {ratings.map((option) => (
@@ -588,7 +618,9 @@ function ForecastGate({ examId, totalCards, onDone }: { examId: string; totalCar
             {typo(`Прогноз: сколько из ${totalCards} карточек ты сегодня вспомнишь?`)}
           </Heading>
           <Text variant="small" color="supplementary">
-            {typo("Предскажи результат до сессии — в конце сравним с фактом. Так самооценка учится не верить ощущению «я это знаю».")}
+            {typo(
+              "Предскажи результат до сессии — в конце сравним с фактом. Так самооценка учится не верить ощущению «я это знаю».",
+            )}
           </Text>
         </VStack>
         <VStack gap="2xs">
@@ -634,7 +666,9 @@ function ForecastGate({ examId, totalCards, onDone }: { examId: string; totalCar
 // Честный комментарий к разнице «прогноз − факт» (в процентных пунктах).
 function forecastCommentOf(deltaPp: number): string {
   if (deltaPp >= 10) {
-    return typo("Переоценка: материал казался знакомее, чем вспомнился. Это иллюзия беглости — продолжай сверять ощущения с фактом.");
+    return typo(
+      "Переоценка: материал казался знакомее, чем вспомнился. Это иллюзия беглости — продолжай сверять ощущения с фактом.",
+    );
   }
   if (deltaPp <= -10) {
     return typo("Недооценка: ты знаешь больше, чем ощущаешь. Можно доверять себе чуть смелее.");
@@ -697,7 +731,9 @@ function SessionSummary({
   const heading = () => {
     if (kind === "bedtime") return typo("Готово. Хороших снов — память закрепится ночью");
     if (planDone && planData) {
-      return typo(`День засчитан 🔥 Серия: ${planData.streakDays} ${pluralRu(planData.streakDays, "день", "дня", "дней")}`);
+      return typo(
+        `День засчитан 🔥 Серия: ${planData.streakDays} ${pluralRu(planData.streakDays, "день", "дня", "дней")}`,
+      );
     }
     return typo("Сессия завершена");
   };
@@ -709,25 +745,19 @@ function SessionSummary({
           {heading()}
         </Heading>
         <VStack gap="2xs">
-          <Text>
-            {typo(`Вспомнил ${correct} из ${total} · точность ${accuracy}%`)}
-          </Text>
+          <Text>{typo(`Вспомнил ${correct} из ${total} · точность ${accuracy}%`)}</Text>
           <Text variant="small" color="supplementary">
             {typo(`Готовность экзамена: ${Math.round(readinessBefore * 100)}% → ${Math.round(exam.readiness * 100)}%`)}
           </Text>
           {confidentMisses > 0 && (
             <Text variant="small" color="supplementary">
-              {typo(
-                `Уверенных промахов: ${confidentMisses} — эти карточки попадут в приоритет завтра.`,
-              )}
+              {typo(`Уверенных промахов: ${confidentMisses} — эти карточки попадут в приоритет завтра.`)}
             </Text>
           )}
         </VStack>
         {forecast && (
           <VStack gap="3xs" className="rounded-2xl border border-primary/25 bg-primary/5 p-4">
-            <Text bold>
-              {typo(`Ты ожидал ${forecast.predictedPercent}% — вспомнил ${forecast.actualPercent}%`)}
-            </Text>
+            <Text bold>{typo(`Ты ожидал ${forecast.predictedPercent}% — вспомнил ${forecast.actualPercent}%`)}</Text>
             <Text variant="small" color="supplementary">
               {forecastCommentOf(forecast.predictedPercent - forecast.actualPercent)}
             </Text>
@@ -786,6 +816,8 @@ function SessionPage() {
 
   const [index, setIndex] = useState(0);
   const [outcomes, setOutcomes] = useState<CardOutcome[]>([]);
+  // Живая очередь: в cram ошибки возвращаются в неё повторным показом; null — очередь сервера как есть.
+  const [extendedCards, setExtendedCards] = useState<SessionCard[] | null>(null);
   const [forceFinished, setForceFinished] = useState(false);
   const [exitConfirm, setExitConfirm] = useState(false);
   // Порог защиты сна: гейт показывается, когда отвечено ≥ порога (0 — сразу при входе ночью).
@@ -804,6 +836,7 @@ function SessionPage() {
     queryClient.removeQueries({ queryKey: ["session", examId, kind] });
     setIndex(0);
     setOutcomes([]);
+    setExtendedCards(null);
     setForceFinished(false);
     setSleepGateThreshold(0);
   };
@@ -834,10 +867,24 @@ function SessionPage() {
   const queue = session.data;
   if (!queue) return null;
 
-  const card = queue.cards[index];
+  const cards = extendedCards ?? queue.cards;
+  const card = cards[index];
   const finished = forceFinished || !card;
   const answered = outcomes.length;
   const showSleepGate = kind === "cram" && !finished && isSleepTimeMsk(new Date()) && answered >= sleepGateThreshold;
+
+  // Cram: ошибка возвращается в очередь через CRAM_RETRY_GAP позиций; пока повтор этой же
+  // карточки уже ждёт впереди, второй не добавляем (иначе очередь пухла бы дублями).
+  const requeueCramMiss = (missIndex: number) => {
+    setExtendedCards((current) => {
+      const base = current ?? queue.cards;
+      const missed = base[missIndex];
+      if (!missed) return current;
+      if (base.slice(missIndex + 1).some((pending) => pending.id === missed.id)) return current;
+      const insertAt = Math.min(missIndex + CRAM_RETRY_GAP, base.length);
+      return [...base.slice(0, insertAt), missed, ...base.slice(insertAt)];
+    });
+  };
 
   const handleExit = () => {
     if (finished || !answered) {
@@ -848,7 +895,7 @@ function SessionPage() {
   };
 
   const renderBody = () => {
-    if (!queue.cards.length) {
+    if (!cards.length) {
       return (
         <SimpleCard size="lg">
           <VStack gap="md">
@@ -867,7 +914,15 @@ function SessionPage() {
       );
     }
     if (finished) {
-      return <SessionSummary examId={examId} kind={kind} outcomes={outcomes} readinessBefore={readinessBefore} onRestart={restart} />;
+      return (
+        <SessionSummary
+          examId={examId}
+          kind={kind}
+          outcomes={outcomes}
+          readinessBefore={readinessBefore}
+          onRestart={restart}
+        />
+      );
     }
     if (kind === "daily" && !outcomes.length && !forecastClosed && forecastPrompt.data?.shouldPrompt) {
       return (
@@ -894,12 +949,15 @@ function SessionPage() {
     }
     if (!card) return null;
     return (
-      <div key={card.id} className="page-enter">
+      // Индекс в ключе обязателен: в cram повтор той же карточки может идти следом,
+      // и без него React не размонтировал бы плеер с уже показанным ответом.
+      <div key={`${index}-${card.id}`} className="page-enter">
         <CardPlayer
           card={card}
           kind={kind}
           onFinished={(outcome) => {
             setOutcomes((current) => [...current, outcome]);
+            if (kind === "cram" && !outcome.correct) requeueCramMiss(index);
             setIndex((current) => current + 1);
             // Привычка «понемногу, но часто»: после 40 минут подряд — мягкое предложение паузы.
             recordFocusActivity();
@@ -933,9 +991,9 @@ function SessionPage() {
           </Text>
         </VStack>
         <HStack gap="sm" align="center">
-          {queue.cards.length > 0 && !finished && (
+          {cards.length > 0 && !finished && (
             <Text variant="small" color="supplementary">
-              {typo(`${Math.min(index + 1, queue.cards.length)} из ${queue.cards.length}`)}
+              {typo(`${Math.min(index + 1, cards.length)} из ${cards.length}`)}
             </Text>
           )}
           <Button variant="ghost" size="icon" aria-label={typo("Выйти из сессии")} onClick={handleExit}>
@@ -944,17 +1002,19 @@ function SessionPage() {
         </HStack>
       </HStack>
 
-      {queue.cards.length > 0 && <ProgressBar value={queue.cards.length ? index / queue.cards.length : 0} />}
+      {cards.length > 0 && <ProgressBar value={cards.length ? index / cards.length : 0} />}
 
-      {kind === "pretest" && !finished && queue.cards.length > 0 && (
+      {kind === "pretest" && !finished && cards.length > 0 && (
         <SimpleCard className="border border-primary/25 bg-primary/5">
           <Text variant="small" color="supplementary">
-            {typo("Сначала бой: ты ещё не учил это — ошибаться сейчас нормально и полезно. Мозг запомнит ответ крепче.")}
+            {typo(
+              "Сначала бой: ты ещё не учил это — ошибаться сейчас нормально и полезно. Мозг запомнит ответ крепче.",
+            )}
           </Text>
         </SimpleCard>
       )}
 
-      {kind === "bedtime" && !finished && queue.cards.length > 0 && (
+      {kind === "bedtime" && !finished && cards.length > 0 && (
         <HStack gap="2xs" align="center">
           <Moon className="size-4 text-muted-foreground" />
           <Text variant="mini" color="supplementary">
@@ -971,7 +1031,9 @@ function SessionPage() {
               <VStack gap="3xs">
                 <Text bold>{typo("Уже больше 40 минут подряд — пора сделать паузу")}</Text>
                 <Text variant="mini" color="supplementary">
-                  {typo("25–50 минут фокуса + перерыв — так работает лучше. Пройди карточку и отвлекись на пару минут.")}
+                  {typo(
+                    "25–50 минут фокуса + перерыв — так работает лучше. Пройди карточку и отвлекись на пару минут.",
+                  )}
                 </Text>
               </VStack>
             </HStack>

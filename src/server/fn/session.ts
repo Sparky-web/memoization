@@ -3,14 +3,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { setResponseStatus } from "@tanstack/react-start/server";
 
 import {
-  buildDailyPlan,
   makeScheduler,
   mskCalendarDaysBetween,
   normalizeAnswer,
   palaceLociSchema,
   PAYWALL_ERRORS,
   PRO_AI_CHECKS_PER_DAY,
-  readiness,
   retrievability,
   reviewProgress,
   type ReviewRating,
@@ -20,9 +18,10 @@ import {
   zodRussian,
 } from "~/lib";
 import { runModelPrompt } from "~/server/chat";
+import { computeTodayState } from "~/server/dailyPlan";
 import { hasActivePro } from "~/server/entitlement";
 import { authMiddleware } from "~/server/middleware";
-import { tryChargeUsage } from "~/server/usage";
+import { refundUsage, tryChargeUsage } from "~/server/usage";
 import { loadUserSettings } from "~/server/userSettings";
 
 // Сессия припоминания: сервер строит очередь и проверяет ответы. Ответы и correct
@@ -55,36 +54,11 @@ interface QueueCard {
 }
 
 function daysToExamOf(examDate: Date | null, now: Date): number | null {
-  return examDate ? Math.max(mskCalendarDaysBetween(now, examDate), 0) : null;
-}
-
-// Очередь дневной сессии: приоритет → due (по просроченности) → новые (интерливинг тем).
-function dailyQueue(cards: QueueCard[], daysToExam: number | null, examId: string, capacity: number): string[] {
-  const priority = cards
-    .filter((card) => card.progress?.priority)
-    .sort((left, right) => (left.progress?.due.getTime() ?? 0) - (right.progress?.due.getTime() ?? 0));
-  const now = new Date();
-  const due = cards
-    .filter((card) => card.progress && !card.progress.priority && card.progress.due <= now)
-    .sort((left, right) => (left.progress?.due.getTime() ?? 0) - (right.progress?.due.getTime() ?? 0));
-  const fresh = cards.filter((card) => !card.progress);
-
-  const plan = buildDailyPlan({
-    exams: [
-      {
-        examId,
-        daysToExam,
-        readiness: readiness(
-          cards.map((card) => ({ retrievability: card.progress ? retrievability(card.progress, now) : 0 })),
-        ),
-        priorityCardIds: priority.map((card) => card.id),
-        dueCardIds: due.map((card) => card.id),
-        newCardIds: fresh.map((card) => ({ id: card.id, topic: card.topic })),
-      },
-    ],
-    capacityCards: capacity,
-  });
-  return plan[0]?.cardIds ?? [];
+  if (!examDate) return null;
+  const days = mskCalendarDaysBetween(now, examDate);
+  // Прошедший экзамен живёт в режиме поддержки: 0 дало бы maximum_interval = 1 день,
+  // и карточки переназначались бы на каждый следующий день — вечная беговая дорожка.
+  return days < 0 ? null : days;
 }
 
 // Cram: FSRS-интервалы игнорируются — приоритетные, затем самые слабые (retrievability asc).
@@ -151,12 +125,15 @@ export const startSession = createServerFn({ method: "POST" })
     }));
 
     const now = new Date();
+    // Ёмкость одноэкзаменных режимов (pretest/cram) — из настроек экзамена; daily — из плана дня.
     const capacity = Math.max(exam.dailyMinutes * CARDS_PER_MINUTE, 1);
-    const daysToExam = daysToExamOf(exam.examDate, now);
 
     let queueIds: string[] = [];
     if (data.kind === "daily") {
-      queueIds = dailyQueue(cards, daysToExam, exam.id, capacity);
+      // Очередь дневной сессии — ровно блок этого экзамена из общего плана дня: единая точка
+      // правды с экраном «Сегодня» (общий бюджет минут делится между экзаменами по весам).
+      const today = await computeTodayState(context.db, userId, now);
+      queueIds = today.plan.find((block) => block.examId === exam.id)?.cardIds ?? [];
     }
     if (data.kind === "pretest") {
       // «Сначала бой»: только новые карточки, до изучения; ошибки нормальны — UI объяснит.
@@ -166,18 +143,24 @@ export const startSession = createServerFn({ method: "POST" })
         .map((card) => card.id);
     }
     if (data.kind === "bedtime") {
-      // Лёгкий прогон уже виденных сегодня карточек, слабые — первыми; новых не даём.
+      // Лёгкий прогон уже виденных сегодня карточек: сначала сегодняшние ошибки, затем самые
+      // слабые по stability; новых не даём. retrievability здесь бесполезна — ts-fsrs считает
+      // elapsed целыми днями и всем карточкам, отвеченным < суток назад, даёт ровно 1.0.
       const reviewedToday = await context.db.review.findMany({
         where: { userId, examId: exam.id, reviewedAt: { gte: startOfDayMsk(now) } },
-        select: { cardId: true },
+        select: { cardId: true, correct: true },
       });
       const todayIds = new Set(reviewedToday.map((review) => review.cardId));
+      const missedToday = new Set(reviewedToday.filter((review) => !review.correct).map((review) => review.cardId));
       queueIds = cards
         .filter((card) => card.progress && todayIds.has(card.id))
-        .map((card) => ({ card, weak: card.progress ? retrievability(card.progress, now) : 0 }))
-        .sort((left, right) => left.weak - right.weak)
+        .sort((left, right) => {
+          const missFirst = Number(missedToday.has(right.id)) - Number(missedToday.has(left.id));
+          if (missFirst) return missFirst;
+          return (left.progress?.stability ?? 0) - (right.progress?.stability ?? 0);
+        })
         .slice(0, BEDTIME_CARDS)
-        .map((entry) => entry.card.id);
+        .map((card) => card.id);
     }
     if (data.kind === "cram") {
       queueIds = cramQueue(cards, capacity);
@@ -245,7 +228,12 @@ async function recordAnswer(db: PrismaClient, record: AnswerRecord): Promise<voi
     // Successive relearning: masteredDays растёт максимум раз в календарный день МСК.
     const correctTodayCount = record.correct
       ? await tx.review.count({
-          where: { userId: record.userId, cardId: record.cardId, correct: true, reviewedAt: { gte: startOfDayMsk(now) } },
+          where: {
+            userId: record.userId,
+            cardId: record.cardId,
+            correct: true,
+            reviewedAt: { gte: startOfDayMsk(now) },
+          },
         })
       : 1;
     const masteredIncrement = record.correct && !correctTodayCount ? 1 : 0;
@@ -341,7 +329,7 @@ async function maybeAiCheck(
   card: { id: string; answer: string },
   answerText: string,
 ): Promise<AiCheckResult | null> {
-  const [pro, settings] = await Promise.all([hasActivePro(db, userId), loadUserSettings(db, userId, new Date())]);
+  const [pro, settings] = await Promise.all([hasActivePro(db, userId), loadUserSettings(db, userId)]);
   if (!pro || !settings.aiCheckEnabled) return null;
 
   // Отдельная квота ai_check: сверки идут в каждой сессии и не должны съедать чат-лимит.
@@ -362,7 +350,14 @@ async function maybeAiCheck(
     return null;
   });
   const raw = await withDeadline(guarded, AI_CHECK_TIMEOUT_MS);
-  return raw ? parseAiCheckReply(raw) : null;
+  const verdict = raw ? parseAiCheckReply(raw) : null;
+  if (!verdict) {
+    // Вердикта нет (таймаут/сбой/непарсируемый ответ) — попытку возвращаем: на флаки-модели
+    // пользователь не должен выжигать дневной лимит, не получив ни одной сверки.
+    await refundUsage(db, "ai_check", [card.id]).catch(() => undefined);
+    return null;
+  }
+  return verdict;
 }
 
 // Дворец памяти карточки — показывается на экране обратной связи как подсказка-маршрут.

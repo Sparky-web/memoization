@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { PAYWALL_ERRORS, typo } from "~/lib";
+import { PAYWALL_ERRORS, PRO_SPEECH_PER_DAY, startOfDayMsk, typo } from "~/lib";
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 import { hasActivePro } from "~/server/entitlement";
 import { isSpeechConfigured, MAX_STT_BYTES, recognizeSpeech } from "~/server/speech";
+import { refundUsage, tryChargeUsage } from "~/server/usage";
 
 // Распознавание речи для голосового «объясни ученику»: тело запроса — сырое аудио
-// MediaRecorder (ogg/webm c opus), mime — в Content-Type. Pro-функция; без ключей — 503.
+// MediaRecorder (ogg/webm с opus или mp4/AAC из Safari — сервер перепакует в ogg/opus),
+// mime — в Content-Type. Pro-функция; без ключей — 503.
 
 export const Route = createFileRoute("/api/speech/stt")({
   server: {
@@ -31,6 +33,22 @@ export const Route = createFileRoute("/api/speech/stt")({
           return Response.json({ error: typo("Запись слишком длинная — до 30 секунд") }, { status: 400 });
         }
 
+        // Дневная квота на голосовые вызовы (fair-use): роут дёргается и мимо UI, без потолка
+        // это неограниченный платный трафик к SpeechKit. refId = userId — для компенсации при сбое.
+        const charged = await tryChargeUsage(db, {
+          userId: session.user.id,
+          kind: "speech",
+          refId: session.user.id,
+          limit: PRO_SPEECH_PER_DAY,
+          since: startOfDayMsk(new Date()),
+        });
+        if (!charged) {
+          return Response.json(
+            { error: typo("Дневной лимит голосовых запросов исчерпан — продолжите текстом") },
+            { status: 429 },
+          );
+        }
+
         try {
           const text = await recognizeSpeech(audio, request.headers.get("content-type") ?? "audio/ogg");
           if (!text) {
@@ -39,6 +57,8 @@ export const Route = createFileRoute("/api/speech/stt")({
           return Response.json({ text });
         } catch (error) {
           console.error(error);
+          // SpeechKit не ответил — попытку возвращаем: сбой провайдера не должен жечь квоту.
+          await refundUsage(db, "speech", [session.user.id]).catch(() => undefined);
           return Response.json({ error: typo("Не удалось распознать речь — попробуйте ещё раз") }, { status: 502 });
         }
       },

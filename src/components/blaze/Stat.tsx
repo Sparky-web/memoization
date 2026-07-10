@@ -14,7 +14,7 @@ interface StatProps {
 /** Плитка метрики для дашборда и статистики. */
 export function Stat({ label, value, hint }: StatProps) {
   return (
-    <VStack gap="2xs" className="bg-card rounded-2xl p-4">
+    <VStack gap="2xs" className="rounded-2xl bg-card p-4">
       <Text variant="small" color="supplementary">
         {label}
       </Text>

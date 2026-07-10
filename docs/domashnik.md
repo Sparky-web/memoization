@@ -106,8 +106,9 @@ model ConceptMap { id, userId, examId (Cascade), title, nodes Json /*[{id,label,
 model MemoryPalace { id, userId, cardId? (SetNull), examId (Cascade), title, loci Json /*[{place,item,image}]*/, createdAt/updatedAt }
 model AnxietyDump { id, userId (Cascade), examId String?, content String @db.Text, createdAt }
 
-model ExamFavorite { userId+examId @@unique }   // из DeckFavorite
-// UserSettings (новая): userId @unique, dailyMinutesTotal Int @default(25), restWeekdays Int[] (@default []), streakFreezesLeft Int @default(2), freezesRenewedAt DateTime?, bedtimeHour Int? — используется предсонным напоминанием
+model ExamFavorite { userId+examId @@unique }   // из DeckFavorite; читается списком «Избранное» на «Сегодня» и тогглом на /d/$examId
+model StreakDay { userId+dayKey @@unique, kind } // журнал серии: "done" — план дня закрыт (durable, день с < 10 ответами не забывается), "freeze" — пропуск закрыт заморозкой (durable-автосписание)
+// UserSettings (новая): userId @unique, dailyMinutesTotal Int @default(25), restWeekdays Int[] (@default []), bedtimeHour Int? — используется предсонным напоминанием. Заморозки живут в StreakDay (остаток = 2 − потраченные за скользящие 30 дней)
 // ChatMessage: сохраняется (cardId тот же) — теперь это «вопрос по карточке»/«объясни почему»
 ```
 
@@ -130,7 +131,7 @@ model ExamFavorite { userId+examId @@unique }   // из DeckFavorite
 - **Режим cram** (умная зубрёжка, Pro; предлагается при daysToExam ≤ 2): игнорирует FSRS-интервалы — спринты по слабым (retrievability asc) и приоритетным; повторный показ ошибок в той же сессии через 5-10 карточек; ЗАЩИТА СНА: после 23:00 по МСК плеер предлагает завершить и запланировать «утреннее повторение»; никогда не предлагать заниматься ночью. После даты экзамена — предложение «сохранить надолго» (перевод в режим без даты) или архив.
 - **Предсонное повторение (bedtime)**: лёгкий прогон ~10 самых важных карточек дня (уже виденных, без новых), mode="bedtime", не двигает FSRS сильно (rating не ниже Good не спрашиваем — только «вспомнил/не вспомнил», Again при провале).
 - **Претест «сначала бой» (pretest)**: сессия по новой теме ДО изучения; UI нормализует ошибки («так и задумано»); Review.mode="pretest"; для FSRS это первый обычный review.
-- **Серии**: день засчитан, если выполнен дневной план (cardsDone ≥ min(план, 10)). Заморозки: UserSettings.streakFreezesLeft (2/месяц, автосписание при пропуске), restWeekdays — запланированные дни отдыха не рвут серию.
+- **Серии**: день засчитан, если выполнен дневной план (cardsDone ≥ min(план, 10)): порог ≥ 10 ответов считается SQL по журналу Review, а закрытие плана меньше чем на 10 карточек фиксируется durable в StreakDay (kind="done") — иначе такой день забывался бы назавтра. Заморозки: 2 на скользящие 30 дней, автосписание при пропуске фиксируется в StreakDay (kind="freeze") и тратится только если разрыв закрываем целиком (иначе серия честно рвётся, заморозки не жгутся); restWeekdays — запланированные дни отдыха не рвут серию.
 
 ## 4. Пайплайн генерации (эволюция src/server/generation.ts)
 
@@ -156,7 +157,7 @@ model ExamFavorite { userId+examId @@unique }   // из DeckFavorite
 ## 6. Голос (Яндекс SpeechKit) — только «объясни ученику»
 
 - env (опциональные): `YANDEX_SPEECHKIT_API_KEY`, `YANDEX_SPEECHKIT_FOLDER_ID`. `isSpeechConfigured()`; без ключа UI прячет голосовой режим (кнопка с подсказкой «скоро»).
-- API-роуты (auth + Pro): `POST /api/speech/stt` — принимает audio/ogg;codecs=opus (MediaRecorder), ≤1 МБ/�30 сек, проксирует в `stt.api.cloud.yandex.net/speech/v1/recognize?lang=ru-RU` (Api-Key), возвращает текст. `POST /api/speech/tts` — text ≤ 500 симв → `tts.api.cloud.yandex.net/speech/v1/tts:synthesize` (voice=anton/alena, format=oggopus) → аудио (кэш в памяти по hash текста, LRU ~100).
+- API-роуты (auth + Pro): `POST /api/speech/stt` — принимает запись MediaRecorder ≤ 1 МБ/~30 сек в любом браузерном контейнере (ogg/webm с opus, mp4/AAC из Safari); не-ogg перепаковывается в ogg/opus через ffmpeg (обязателен в рантайм-образе) и уходит в SpeechKit **STT v3 REST** (`stt/v3/recognizeFileAsync` → поллинг операции → `getRecognition`; Api-Key) — синхронный v1 `/speech/v1/recognize` выведен из эксплуатации и отвечает 404 (проверено живыми запросами в В7). `POST /api/speech/tts` — text ≤ 500 симв → `tts.api.cloud.yandex.net/speech/v1/tts:synthesize` (voice=ermil — anton в v1 не поддерживается, проверено живым синтезом; format=oggopus) → аудио (кэш в памяти по hash текста, LRU ~100). Оба роута под дневной fair-use квотой UsageEvent kind="speech" (PRO_SPEECH_PER_DAY = 200 вызовов STT+TTS суммарно, компенсация при сбое SpeechKit) — иначе прямые вызовы мимо UI дают неограниченный платный трафик.
 - Клиент (`useVoice` в _lib страницы teach): запись MediaRecorder с VAD-таймаутом (стоп по кнопке), воспроизведение через Audio + WebAudio AnalyserNode → амплитуда для анимации. Состояния аватара-ученика: idle / listening (пульсирующие кольца вокруг аватара) / thinking (три прыгающие точки) / speaking (эквалайзер-волны по реальной амплитуде). prefers-reduced-motion уважается.
 - Диалог: пользователь объясняет (голосом→STT или текстом) → claude -p sonnet с ролью наивного ученика (переспрашивает «а почему?», «а это как?», 1-2 коротких вопроса за ход, в конце сессии — summaryMd «что осталось непонятным» + предложение карточек по пробелам) → ответ показывается и озвучивается TTS (Pro). Лимиты: переиспользуем chat_message квоту (Free 10/день текстом, Pro 50/день).
 
@@ -170,7 +171,7 @@ model ExamFavorite { userId+examId @@unique }   // из DeckFavorite
 | Материалы с привязкой | — (PAYWALL_MATERIALS) | да (5 файлов × 10 МБ) |
 | Сессии/FSRS/готовность/претест/серии | да | да |
 | «Объясни ученику» текст / «объясни почему» / чат | 10 сообщ/день (PAYWALL_CHAT) | 50/день |
-| Голосовой ученик | — (PAYWALL_VOICE) | да |
+| Голосовой ученик | — (PAYWALL_VOICE) | да (fair-use 200 голосовых вызовов/день) |
 | ИИ-сверка открытых ответов | — (PAYWALL_AI_CHECK), самооценка | да (переключатель) |
 | Умная зубрёжка (cram) | — (PAYWALL_CRAM) | да |
 | Карты связей / дворец памяти | 1 карта, дворцы да | безлимит |
@@ -187,7 +188,7 @@ model ExamFavorite { userId+examId @@unique }   // из DeckFavorite
 - `/app/exams/$examId/teach` — объясни ученику (текст/голос). `/app/exams/$examId/map` — карта связей. `/app/exams/$examId/palace/$cardId?` — мастер дворца.
 - `/app/stats` — аналитика: готовности, калибровка (прогноз vs факт, разница уверенность/результат), слабые темы, активность.
 - `/app/exam-day/$examId` — «день экзамена»: выгрузка тревог (таймер 10 мин), утреннее повторение, чек-лист.
-- `/d/$examId` — публичный экзамен: превью вопросов/карточек + «Забрать себе» (форк: копия Exam+Questions+Cards под своим userId со своей датой; Free-лимит 1 экзамен действует).
+- `/d/$examId` — публичный экзамен: превью вопросов/карточек, тоггл «В избранное» (список на «Сегодня») + «Забрать себе» (форк: копия Exam+Questions+Cards под своим userId со своей датой; CardProgress форкающего по исходным карточкам переезжает на копии — прогресс из старого приложения не теряется). На форк действуют Free-лимиты: 1 активный экзамен И лимит вопросов тарифа (60/300 — тот же, что в setExamQuestions и на запуске генерации).
 - `/app/decks/$deckId` → redirect `/app/exams/$examId`. Старые words/quiz/study — удаляются (форматы теперь в сессии).
 
 ## 9. Волны реализации (каждая: агенты → pnpm check+knip+build зелёные → коммит)

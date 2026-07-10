@@ -17,6 +17,8 @@ interface MicButtonProps {
   micAnalyserRef: RefObject<AnalyserNode | null>;
   onPressStart: () => void;
   onPressEnd: () => void;
+  /** Браузер отобрал указатель (pointercancel) — обрываем запись БЕЗ отправки огрызка в STT. */
+  onPressCancel: () => void;
   /**
    * Уход со страницы во время записи — глушим микрофон без отправки.
    * ВАЖНО: функция обязана быть стабильной (abortRecording из useVoiceRecorder такая),
@@ -25,7 +27,15 @@ interface MicButtonProps {
   onUnmount: () => void;
 }
 
-export function MicButton({ recording, disabled, micAnalyserRef, onPressStart, onPressEnd, onUnmount }: MicButtonProps) {
+export function MicButton({
+  recording,
+  disabled,
+  micAnalyserRef,
+  onPressStart,
+  onPressEnd,
+  onPressCancel,
+  onUnmount,
+}: MicButtonProps) {
   // Волна уровня микрофона: средний уровень спектра масштабирует кольцо позади кнопки.
   const attachWave = useCallback(
     (node: HTMLSpanElement | null) => {
@@ -63,8 +73,10 @@ export function MicButton({ recording, disabled, micAnalyserRef, onPressStart, o
     [onUnmount],
   );
 
+  // touch-none обязателен для жеста «зажми и говори»: без него лёгкий сдвиг пальца браузер
+  // трактует как начало скролла и шлёт pointercancel — запись обрывалась бы на полуслове.
   return (
-    <div ref={attachLifecycle} className="relative flex items-center justify-center">
+    <div ref={attachLifecycle} className="relative flex touch-none items-center justify-center">
       {recording && (
         <span ref={attachWave} className="teach-mic-wave absolute inset-0 rounded-full bg-primary/30" aria-hidden />
       )}
@@ -72,13 +84,13 @@ export function MicButton({ recording, disabled, micAnalyserRef, onPressStart, o
         type="button"
         disabled={disabled}
         aria-label={recording ? typo("Отпустите, чтобы отправить") : typo("Зажмите и говорите")}
-        className={`relative flex size-16 items-center justify-center rounded-full text-primary-foreground transition-colors select-none disabled:opacity-50 ${recording ? "bg-destructive" : "bg-primary"}`}
+        className={`relative flex size-16 touch-none items-center justify-center rounded-full text-primary-foreground transition-colors select-none disabled:opacity-50 ${recording ? "bg-destructive" : "bg-primary"}`}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
           onPressStart();
         }}
         onPointerUp={onPressEnd}
-        onPointerCancel={onPressEnd}
+        onPointerCancel={onPressCancel}
         onContextMenu={(event) => {
           event.preventDefault();
         }}

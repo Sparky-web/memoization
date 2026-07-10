@@ -117,7 +117,9 @@ export function LandingDailyLoop() {
                 {typo("Честная готовность")}
               </Heading>
               <Text variant="small" color="supplementary">
-                {typo("Готовность считается по реальному припоминанию: «вспомнил 12 из 20», а не «позанимался 40 минут».")}
+                {typo(
+                  "Готовность считается по реальному припоминанию: «вспомнил 12 из 20», а не «позанимался 40 минут».",
+                )}
               </Text>
               <div className="rounded-2xl bg-muted/60 p-3">
                 <HStack gap="md" align="center">

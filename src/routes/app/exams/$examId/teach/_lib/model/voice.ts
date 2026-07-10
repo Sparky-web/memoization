@@ -21,7 +21,8 @@ async function readErrorMessage(response: Response): Promise<string> {
 const MAX_RECORD_MS = 30_000;
 const MAX_STT_BYTES = 1024 * 1024;
 
-// Firefox/Safari умеют ogg-opus; Chrome пишет webm-opus — сервер передаст формат SpeechKit.
+// Firefox умеет ogg-opus, Chrome — webm-opus, Safari не поддерживает ни один кандидат и пишет
+// mp4/AAC дефолтным рекордером; сервер перепаковывает любой из контейнеров в ogg/opus для SpeechKit.
 function pickRecorderMime(): string {
   const candidates = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm"];
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "";
@@ -68,6 +69,11 @@ export function useVoiceRecorder(handlers: VoiceRecorderHandlers) {
 
     const start = async (onAudio: (blob: Blob) => void, onError: (code: string) => void) => {
       if (session) return;
+      // Совсем старые браузеры без MediaRecorder: честный отказ вместо падения после захвата микрофона.
+      if (typeof MediaRecorder === "undefined") {
+        onError("UNSUPPORTED");
+        return;
+      }
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });

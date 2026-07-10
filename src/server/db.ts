@@ -9,7 +9,7 @@ const createPrismaClient = () =>
 
 declare global {
   // Singleton переживает hot-reload в dev: клиент кладётся в globalThis
-   
+
   var prismaGlobal: ReturnType<typeof createPrismaClient> | undefined;
 }
 

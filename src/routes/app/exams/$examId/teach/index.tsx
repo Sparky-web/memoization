@@ -4,7 +4,19 @@ import { Lock, Mic, Send, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
-import { Badge, Button, Heading, HStack, Input, MarkdownView, PaywallCard, SimpleCard, Text, Textarea, VStack } from "~/components";
+import {
+  Badge,
+  Button,
+  Heading,
+  HStack,
+  Input,
+  MarkdownView,
+  PaywallCard,
+  SimpleCard,
+  Text,
+  Textarea,
+  VStack,
+} from "~/components";
 import { formatDateRuMsk, isPaywallError, typo } from "~/lib";
 
 import { Chip, examQueries } from "../../_lib";
@@ -49,6 +61,7 @@ interface ActiveSession {
 // Человеческие тексты для кодов голосовых ошибок клиента и сервера.
 const VOICE_ERROR_TEXTS: Record<string, string> = {
   MIC_DENIED: typo("Нет доступа к микрофону — разрешите запись в настройках браузера"),
+  UNSUPPORTED: typo("Браузер не поддерживает запись голоса — объясняйте текстом"),
   TOO_LONG: typo("Запись слишком длинная — говорите до 30 секунд"),
   NETWORK: typo("Не получилось отправить запись — проверьте сеть"),
   SPEECH_FAILED: typo("Речь не распозналась — попробуйте ещё раз"),
@@ -89,7 +102,13 @@ function StudentBubble({ content }: { content: string }) {
 }
 
 // Настройка сессии: тема (чипы из тем экзамена или свободное поле) и режим (текст/голос).
-function SetupScreen({ examId, onStarted }: { examId: string; onStarted: (session: ActiveSession, greeting: TeachTurnItem) => void }) {
+function SetupScreen({
+  examId,
+  onStarted,
+}: {
+  examId: string;
+  onStarted: (session: ActiveSession, greeting: TeachTurnItem) => void;
+}) {
   const queryClient = useQueryClient();
   const { data: exam } = useSuspenseQuery(examQueries.detail(examId));
   const speech = useQuery(teachQueries.speechStatus());
@@ -111,7 +130,10 @@ function SetupScreen({ examId, onStarted }: { examId: string; onStarted: (sessio
     mutationFn: () => createTeachSession({ data: { examId, topic, voice: voiceMode } }),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["teach"] });
-      onStarted({ id: result.session.id, topic: result.session.topic ?? topic, voice: result.session.voice }, result.greeting);
+      onStarted(
+        { id: result.session.id, topic: result.session.topic ?? topic, voice: result.session.voice },
+        result.greeting,
+      );
     },
     onError: (error) => {
       if (isPaywallError(error, "VOICE")) {
@@ -184,7 +206,12 @@ function SetupScreen({ examId, onStarted }: { examId: string; onStarted: (sessio
 
           <VStack gap="2xs">
             <HStack gap="2xs" align="center" wrap>
-              <Chip active={!voiceMode} onClick={() => { setVoiceMode(false); }}>
+              <Chip
+                active={!voiceMode}
+                onClick={() => {
+                  setVoiceMode(false);
+                }}
+              >
                 {typo("Текстом")}
               </Chip>
               <Button
@@ -247,7 +274,9 @@ function SetupScreen({ examId, onStarted }: { examId: string; onStarted: (sessio
                     {expandedSessionId === session.id ? typo("Скрыть итог") : typo("Показать итог")}
                   </Button>
                 )}
-                {expandedSessionId === session.id && session.summaryMd && <MarkdownView>{session.summaryMd}</MarkdownView>}
+                {expandedSessionId === session.id && session.summaryMd && (
+                  <MarkdownView>{session.summaryMd}</MarkdownView>
+                )}
               </VStack>
             </SimpleCard>
           ))}
@@ -356,12 +385,21 @@ function DialogScreen({
               {typo(session.topic)}
             </Heading>
             <Text variant="mini" color="supplementary">
-              {session.voice ? typo("Голосовой режим · ученик слушает") : typo("Объясняйте своими словами — ученик переспросит")}
+              {session.voice
+                ? typo("Голосовой режим · ученик слушает")
+                : typo("Объясняйте своими словами — ученик переспросит")}
             </Text>
           </VStack>
           <HStack gap="sm" align="center">
             {hasUserTurn && (
-              <Button variant="outline" size="sm" disabled={finish.isPending || send.isPending} onClick={() => { finish.mutate(); }}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={finish.isPending || send.isPending}
+                onClick={() => {
+                  finish.mutate();
+                }}
+              >
                 {finish.isPending ? typo("Подводим итог…") : typo("Завершить")}
               </Button>
             )}
@@ -378,7 +416,11 @@ function DialogScreen({
         <SimpleCard size="lg">
           <VStack gap="sm">
             {turns.map((turn) =>
-              turn.role === "user" ? <UserBubble key={turn.id} content={turn.content} /> : <StudentBubble key={turn.id} content={turn.content} />,
+              turn.role === "user" ? (
+                <UserBubble key={turn.id} content={turn.content} />
+              ) : (
+                <StudentBubble key={turn.id} content={turn.content} />
+              ),
             )}
             {send.isPending && send.variables !== undefined && <UserBubble content={send.variables} />}
             {(send.isPending || recorder.transcribing) && (
@@ -417,7 +459,12 @@ function DialogScreen({
                         }
                       }}
                     />
-                    <Button type="submit" size="icon" disabled={send.isPending || !text.trim()} aria-label={typo("Отправить")}>
+                    <Button
+                      type="submit"
+                      size="icon"
+                      disabled={send.isPending || !text.trim()}
+                      aria-label={typo("Отправить")}
+                    >
                       <Send className="size-4" />
                     </Button>
                   </HStack>
@@ -433,10 +480,13 @@ function DialogScreen({
                         void recorder.startRecording();
                       }}
                       onPressEnd={recorder.stopRecording}
+                      onPressCancel={recorder.abortRecording}
                       onUnmount={recorder.abortRecording}
                     />
                     <Text variant="mini" color="supplementary">
-                      {recorder.recording ? typo("Говорите… отпустите, чтобы отправить") : typo("Зажмите и объясняйте голосом")}
+                      {recorder.recording
+                        ? typo("Говорите… отпустите, чтобы отправить")
+                        : typo("Зажмите и объясняйте голосом")}
                     </Text>
                   </VStack>
                 )}

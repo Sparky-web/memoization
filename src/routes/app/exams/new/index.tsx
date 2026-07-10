@@ -4,10 +4,22 @@ import { Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { Button, Heading, HStack, Input, PaywallCard, ProgressBar, SimpleCard, Text, Textarea, VStack } from "~/components";
+import {
+  Button,
+  Heading,
+  HStack,
+  Input,
+  Link,
+  PaywallCard,
+  ProgressBar,
+  SimpleCard,
+  Text,
+  Textarea,
+  VStack,
+} from "~/components";
 import { FREE_QUESTIONS_PER_EXAM, isPaywallError, PRO_EXAMS, PRO_QUESTIONS_PER_EXAM, typo } from "~/lib";
 import { logEvent } from "~/server/fn/events";
-import { createExamsDraft, generateExam, updateExam } from "~/server/fn/exams";
+import { createExamsDraft, deleteExam, generateExam, updateExam } from "~/server/fn/exams";
 import { setExamQuestions } from "~/server/fn/questions";
 import { updateUserSettings } from "~/server/fn/settings";
 
@@ -87,7 +99,9 @@ function WizardProgress({ step }: { step: WizardStep }) {
           const stateClass = item === step ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground";
           return (
             <HStack key={item} gap="2xs" align="center">
-              <span className={`flex size-6 items-center justify-center rounded-full text-xs font-semibold ${stateClass}`}>
+              <span
+                className={`flex size-6 items-center justify-center rounded-full text-xs font-semibold ${stateClass}`}
+              >
                 {item}
               </span>
               <Text variant="mini" color={item === step ? "main" : "supplementary"}>
@@ -193,7 +207,9 @@ function QuestionsStep({
       <Textarea
         value={draft.questionsText}
         rows={10}
-        placeholder={typo("Вставьте список вопросов — по одному в строке:\n1. Причины Смутного времени\n2. Реформы Петра I\n…")}
+        placeholder={typo(
+          "Вставьте список вопросов — по одному в строке:\n1. Причины Смутного времени\n2. Реформы Петра I\n…",
+        )}
         onChange={(event) => {
           onChange({ questionsText: event.target.value });
         }}
@@ -214,15 +230,17 @@ function QuestionsStep({
           reason="MULTI_EXAM"
           compact
           onShown={() => {
-            void logEvent({ data: { name: "paywall_shown", meta: { reason: "MULTI_EXAM", place: "wizard_questions" } } }).catch(
-              () => undefined,
-            );
+            void logEvent({
+              data: { name: "paywall_shown", meta: { reason: "MULTI_EXAM", place: "wizard_questions" } },
+            }).catch(() => undefined);
           }}
         />
       )}
       {overLimit && pro && (
         <Text variant="small" color="destructive">
-          {typo(`В Pro на один экзамен помещается до ${PRO_QUESTIONS_PER_EXAM} вопросов — разделите список на два экзамена.`)}
+          {typo(
+            `В Pro на один экзамен помещается до ${PRO_QUESTIONS_PER_EXAM} вопросов — разделите список на два экзамена.`,
+          )}
         </Text>
       )}
       {parsed.length > 0 && (
@@ -244,7 +262,15 @@ function QuestionsStep({
 }
 
 // Шаг 3: материалы к экзамену — файлы копятся в стейте и загружаются после создания экзаменов.
-function MaterialsStep({ draft, pro, onChange }: { draft: DraftExam; pro: boolean; onChange: (patch: Partial<DraftExam>) => void }) {
+function MaterialsStep({
+  draft,
+  pro,
+  onChange,
+}: {
+  draft: DraftExam;
+  pro: boolean;
+  onChange: (patch: Partial<DraftExam>) => void;
+}) {
   if (!pro) {
     return (
       <VStack gap="md">
@@ -255,9 +281,9 @@ function MaterialsStep({ draft, pro, onChange }: { draft: DraftExam; pro: boolea
           reason="MATERIALS"
           compact
           onShown={() => {
-            void logEvent({ data: { name: "paywall_shown", meta: { reason: "MATERIALS", place: "wizard_materials" } } }).catch(
-              () => undefined,
-            );
+            void logEvent({
+              data: { name: "paywall_shown", meta: { reason: "MATERIALS", place: "wizard_materials" } },
+            }).catch(() => undefined);
           }}
         />
       </VStack>
@@ -327,18 +353,31 @@ function NewExamWizardPage() {
 
   const pro = billing.pro;
   const questionLimit = pro ? PRO_QUESTIONS_PER_EXAM : FREE_QUESTIONS_PER_EXAM;
-  const activeExamCount = existingExams.filter((exam) => !exam.archivedAt).length;
 
   const draftKeyRef = useRef(1);
   const [step, setStep] = useState<WizardStep>(1);
   const [drafts, setDrafts] = useState<DraftExam[]>([emptyDraft(0)]);
   const [activeTab, setActiveTab] = useState(0);
-  const [minutes, setMinutes] = useState(() => (MINUTES_OPTIONS.includes(settings.dailyMinutesTotal) ? settings.dailyMinutesTotal : 25));
+  const [minutes, setMinutes] = useState(() =>
+    MINUTES_OPTIONS.includes(settings.dailyMinutesTotal) ? settings.dailyMinutesTotal : 25,
+  );
   const [targetGrade, setTargetGrade] = useState<string | null>(null);
   const [showMultiExamPaywall, setShowMultiExamPaywall] = useState(false);
   const [showGenerationPaywall, setShowGenerationPaywall] = useState(false);
-  // Ретрай сабмита не создаёт дубликаты: уже созданные черновики переиспользуются.
-  const createdRef = useRef<{ id: string; title: string }[] | null>(null);
+  // Ретрай сабмита не создаёт дубликаты: соответствие «черновик → созданный экзамен» держим
+  // по draft.key (не по индексу!) — после «Назад», удаления и добавления черновиков вопросы,
+  // формат и файлы не уедут в чужой экзамен, а новые черновики честно создадутся.
+  const createdRef = useRef(new Map<number, { id: string; title: string }>());
+  // Экзамены, чья генерация уже запустилась: на ретрае их пропускаем целиком —
+  // setExamQuestions и generateExam ответили бы 409 «генерация уже идёт» и оборвали бы ретрай.
+  const generatedRef = useRef(new Set<number>());
+  // Зеркало id из createdRef для рендера (ref во время рендера читать нельзя): экзамены,
+  // созданные этим мастером при неудачном сабмите, соответствуют текущим черновикам (1:1 по key) —
+  // не считаем их «занятыми», иначе ретрай упирался бы в ложный «лимит активных экзаменов»
+  // из-за двойного счёта черновика и его экзамена-двойника.
+  const [wizardExamIds, setWizardExamIds] = useState<ReadonlySet<string>>(new Set());
+
+  const activeExamCount = existingExams.filter((exam) => !exam.archivedAt && !wizardExamIds.has(exam.id)).length;
 
   const activeDraft = drafts[Math.min(activeTab, drafts.length - 1)] ?? drafts[0];
 
@@ -361,35 +400,40 @@ function NewExamWizardPage() {
 
   const parsedByDraft = drafts.map((draft) => parseQuestionList(draft.questionsText));
   const totalQuestions = parsedByDraft.reduce((sum, questions) => sum + questions.length, 0);
-  const overCapacity = pro
-    ? drafts.length + activeExamCount > PRO_EXAMS
-    : drafts.length + activeExamCount > 1;
+  const overCapacity = pro ? drafts.length + activeExamCount > PRO_EXAMS : drafts.length + activeExamCount > 1;
 
   const stepReady = (): boolean => {
-    if (step === 1) return drafts.every((draft) => draft.title.trim().length > 0 && draftHasValidDate(draft)) && !overCapacity;
-    if (step === 2) return parsedByDraft.every((questions) => questions.length >= 1 && questions.length <= questionLimit);
+    if (step === 1)
+      return drafts.every((draft) => draft.title.trim().length > 0 && draftHasValidDate(draft)) && !overCapacity;
+    if (step === 2)
+      return parsedByDraft.every((questions) => questions.length >= 1 && questions.length <= questionLimit);
     return true;
   };
 
   const create = useMutation({
     mutationFn: async () => {
       await updateUserSettings({ data: { dailyMinutesTotal: minutes } });
-      if (!createdRef.current) {
-        createdRef.current = await createExamsDraft({
+      const createdByKey = createdRef.current;
+      const pendingDrafts = drafts.filter((draft) => !createdByKey.has(draft.key));
+      if (pendingDrafts.length) {
+        const created = await createExamsDraft({
           data: {
-            exams: drafts.map((draft) => ({
+            exams: pendingDrafts.map((draft) => ({
               title: draft.title.trim(),
               examDate: draft.noDate ? null : draft.date || null,
             })),
           },
         });
+        created.forEach((exam, index) => {
+          const draft = pendingDrafts[index];
+          if (draft) createdByKey.set(draft.key, exam);
+        });
+        setWizardExamIds(new Set([...createdByKey.values()].map((exam) => exam.id)));
       }
-      const created = createdRef.current;
       let generationPaywall = false;
-      for (let index = 0; index < created.length; index += 1) {
-        const exam = created[index];
-        const draft = drafts[index];
-        if (!exam || !draft) continue;
+      for (const [index, draft] of drafts.entries()) {
+        const exam = createdByKey.get(draft.key);
+        if (!exam || generatedRef.current.has(draft.key)) continue;
         await setExamQuestions({ data: { examId: exam.id, questions: parsedByDraft[index] ?? [] } });
         await updateExam({
           data: { id: exam.id, data: { examFormat: draft.format, targetGrade, dailyMinutes: minutes } },
@@ -399,11 +443,14 @@ function NewExamWizardPage() {
             await uploadExamMaterials(exam.id, draft.files);
           } catch (error) {
             console.error(error);
-            toast.error(typo(`Не удалось загрузить материалы «${draft.title.trim()}» — добавьте их на странице экзамена`));
+            toast.error(
+              typo(`Не удалось загрузить материалы «${draft.title.trim()}» — добавьте их на странице экзамена`),
+            );
           }
         }
         try {
           await generateExam({ data: { examId: exam.id } });
+          generatedRef.current.add(draft.key);
         } catch (error) {
           if (isPaywallError(error, "GENERATION")) {
             generationPaywall = true;
@@ -467,6 +514,17 @@ function NewExamWizardPage() {
                 patchDraft(draft.key, patch);
               }}
               onRemove={() => {
+                // Черновик мог уже материализоваться в экзамен при неудачном сабмите —
+                // подчищаем и запись соответствия, и сам экзамен-призрак (он ест лимит).
+                const created = createdRef.current.get(draft.key);
+                if (created) {
+                  createdRef.current.delete(draft.key);
+                  generatedRef.current.delete(draft.key);
+                  setWizardExamIds(new Set([...createdRef.current.values()].map((exam) => exam.id)));
+                  void deleteExam({ data: { id: created.id } })
+                    .then(() => queryClient.invalidateQueries({ queryKey: ["exams"] }))
+                    .catch(() => undefined);
+                }
                 setDrafts((current) => current.filter((existing) => existing.key !== draft.key));
               }}
             />
@@ -485,15 +543,20 @@ function NewExamWizardPage() {
               reason="MULTI_EXAM"
               compact
               onShown={() => {
-                void logEvent({ data: { name: "paywall_shown", meta: { reason: "MULTI_EXAM", place: "wizard_exams" } } }).catch(
-                  () => undefined,
-                );
+                void logEvent({
+                  data: { name: "paywall_shown", meta: { reason: "MULTI_EXAM", place: "wizard_exams" } },
+                }).catch(() => undefined);
               }}
             />
           )}
           {overCapacity && !showMultiExamPaywall && (
             <Text variant="small" color="destructive">
-              {typo("Лимит активных экзаменов уже занят — заархивируйте прошедший экзамен или уберите лишний черновик.")}
+              {typo(
+                "Лимит активных экзаменов уже занят — заархивируйте прошедший экзамен или уберите лишний черновик.",
+              )}{" "}
+              <Link to="/app/exams" variant="underline">
+                {typo("Посмотреть активные экзамены")}
+              </Link>
             </Text>
           )}
         </VStack>
@@ -582,9 +645,9 @@ function NewExamWizardPage() {
               reason="GENERATION"
               compact
               onShown={() => {
-                void logEvent({ data: { name: "paywall_shown", meta: { reason: "GENERATION", place: "wizard_create" } } }).catch(
-                  () => undefined,
-                );
+                void logEvent({
+                  data: { name: "paywall_shown", meta: { reason: "GENERATION", place: "wizard_create" } },
+                }).catch(() => undefined);
               }}
             />
             <Text variant="small" color="supplementary">

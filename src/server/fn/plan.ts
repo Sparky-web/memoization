@@ -1,6 +1,8 @@
+import { type PrismaClient } from "@prisma/client";
 import { createServerFn } from "@tanstack/react-start";
 
-import { computeTodayState } from "~/server/dailyPlan";
+import { startOfDayMsk } from "~/lib";
+import { computeTodayState, type TodayExamSummary } from "~/server/dailyPlan";
 import { hasActivePro } from "~/server/entitlement";
 import { authMiddleware } from "~/server/middleware";
 
@@ -12,6 +14,27 @@ const CRAM_SUGGEST_DAYS = 2;
 
 function mskHourOf(now: Date): number {
   return (now.getUTCHours() + 3) % 24;
+}
+
+// Предсонное повторение прогоняет карточки, пройденные СЕГОДНЯ по конкретному экзамену, —
+// поэтому CTA обязан вести на экзамен с сегодняшними ответами (самый занимавшийся),
+// а не на первый блок плана: иначе у Pro с несколькими экзаменами кнопка открывала бы пустую очередь.
+async function pickBedtimeExamId(
+  db: PrismaClient,
+  userId: string,
+  activeExams: readonly TodayExamSummary[],
+  now: Date,
+): Promise<string | null> {
+  const reviewedToday = await db.review.groupBy({
+    by: ["examId"],
+    where: { userId, reviewedAt: { gte: startOfDayMsk(now) } },
+    _count: { _all: true },
+  });
+  const activeIds = new Set(activeExams.map((exam) => exam.examId));
+  const mostReviewed = reviewedToday
+    .filter((row) => activeIds.has(row.examId))
+    .sort((left, right) => right._count._all - left._count._all)[0];
+  return mostReviewed?.examId ?? null;
 }
 
 export const getTodayPlan = createServerFn({ method: "GET" })
@@ -27,19 +50,22 @@ export const getTodayPlan = createServerFn({ method: "GET" })
       .map((exam) => exam.examId);
 
     const bedtimeHour = today.settings.bedtimeHour;
+    const bedtimeReady = bedtimeHour !== null && mskHourOf(now) >= bedtimeHour && today.cardsDoneToday > 0;
+    const bedtimeExamId = bedtimeReady ? await pickBedtimeExamId(context.db, userId, today.exams, now) : null;
     return {
       exams: today.exams,
       plan: today.plan,
       planTotal: today.planTotal,
       cardsDoneToday: today.cardsDoneToday,
       streakDays: today.streakDays,
-      freezesSpent: today.freezesSpent,
-      freezesLeft: today.settings.streakFreezesLeft,
+      freezesLeft: today.freezesLeft,
       restWeekdays: today.settings.restWeekdays,
       dailyMinutesTotal: today.settings.dailyMinutesTotal,
       suggestions: {
-        // Предсонное повторение — с настроенного часа (null — напоминание выключено).
-        bedtime: bedtimeHour !== null && mskHourOf(now) >= bedtimeHour && today.cardsDoneToday > 0,
+        // Предсонное повторение — с настроенного часа (null — напоминание выключено),
+        // и только если есть экзамен с сегодняшними ответами (иначе очередь была бы пустой).
+        bedtime: Boolean(bedtimeExamId),
+        bedtimeExamId,
         // Умная зубрёжка (Pro) — по экзаменам, до которых ≤ 2 дней.
         cramExamIds,
         pro,

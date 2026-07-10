@@ -288,7 +288,11 @@ async function runGenerationJob(examId: string): Promise<void> {
     await rm(jobDir, { recursive: true, force: true });
     await writeJobInputs(inputsDir, questions, materials);
 
-    const answersRaw = await runClaude(jobDir, buildAnswersPrompt(materials.length > 0, questions.length), "answers.json");
+    const answersRaw = await runClaude(
+      jobDir,
+      buildAnswersPrompt(materials.length > 0, questions.length),
+      "answers.json",
+    );
     const answers = parseGeneratedAnswers(answersRaw, questions.length);
 
     const cardsRaw = await runClaude(jobDir, buildCardsPrompt(exam.examFormat, questions.length), "cards.json");

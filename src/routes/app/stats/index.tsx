@@ -25,8 +25,10 @@ function percentLabel(correct: number, total: number): string {
 // Вывод калибровки прогнозов: средняя разница «прогноз − факт» в процентных пунктах.
 function forecastSummaryOf(averageDelta: number): string {
   const rounded = Math.round(Math.abs(averageDelta));
-  if (averageDelta >= 3) return typo(`В среднем ты переоцениваешь себя на ${rounded} п.п. — доверяй фактам, а не ощущению «знаю».`);
-  if (averageDelta <= -3) return typo(`В среднем ты недооцениваешь себя на ${rounded} п.п. — знаешь больше, чем кажется.`);
+  if (averageDelta >= 3)
+    return typo(`В среднем ты переоцениваешь себя на ${rounded} п.п. — доверяй фактам, а не ощущению «знаю».`);
+  if (averageDelta <= -3)
+    return typo(`В среднем ты недооцениваешь себя на ${rounded} п.п. — знаешь больше, чем кажется.`);
   return typo("В среднем твои прогнозы точны: расхождение с фактом меньше 3 п.п.");
 }
 
@@ -74,7 +76,9 @@ function ReadinessSection({ stats }: { stats: OverallStats }) {
     return (
       <SimpleCard title={typo("Готовность")}>
         <Text variant="small" color="supplementary">
-          {typo("Пока нет активных экзаменов. Создай экзамен — и здесь появится честная готовность по реальному припоминанию.")}
+          {typo(
+            "Пока нет активных экзаменов. Создай экзамен — и здесь появится честная готовность по реальному припоминанию.",
+          )}
         </Text>
       </SimpleCard>
     );
@@ -131,7 +135,9 @@ function CalibrationSection({ stats }: { stats: OverallStats }) {
   return (
     <SimpleCard title={typo("Калибровка")} size="lg">
       <Text variant="small" color="supplementary">
-        {typo("Главный враг подготовки — иллюзия беглости: знакомый текст кажется выученным. Здесь видно, где самооценка расходится с фактом.")}
+        {typo(
+          "Главный враг подготовки — иллюзия беглости: знакомый текст кажется выученным. Здесь видно, где самооценка расходится с фактом.",
+        )}
       </Text>
 
       <VStack gap="2xs">
@@ -156,7 +162,9 @@ function CalibrationSection({ stats }: { stats: OverallStats }) {
           </VStack>
         ) : (
           <Text variant="small" color="supplementary">
-            {typo("Прогнозов пока нет. Перед одной из ближайших сессий приложение предложит предсказать результат — соглашайся, это лучший тренажёр самооценки.")}
+            {typo(
+              "Прогнозов пока нет. Перед одной из ближайших сессий приложение предложит предсказать результат — соглашайся, это лучший тренажёр самооценки.",
+            )}
           </Text>
         )}
       </VStack>
@@ -176,7 +184,9 @@ function CalibrationSection({ stats }: { stats: OverallStats }) {
                   </Text>
                   <Text variant="small" bold>
                     {row.total
-                      ? typo(`точность ${percentLabel(row.correct, row.total)} · ${row.total} ${pluralRu(row.total, "ответ", "ответа", "ответов")}`)
+                      ? typo(
+                          `точность ${percentLabel(row.correct, row.total)} · ${row.total} ${pluralRu(row.total, "ответ", "ответа", "ответов")}`,
+                        )
                       : typo("нет ответов")}
                   </Text>
                 </HStack>
@@ -190,7 +200,9 @@ function CalibrationSection({ stats }: { stats: OverallStats }) {
           </VStack>
         ) : (
           <Text variant="small" color="supplementary">
-            {typo("Отмечай уверенность ползунком перед ответом — здесь появится честное сравнение «кажется, знаю» с реальностью.")}
+            {typo(
+              "Отмечай уверенность ползунком перед ответом — здесь появится честное сравнение «кажется, знаю» с реальностью.",
+            )}
           </Text>
         )}
       </VStack>
@@ -217,7 +229,9 @@ function FormatsSection({ stats }: { stats: OverallStats }) {
               {cardFormatLabel(format.format)}
             </Text>
             <Text variant="small" bold>
-              {typo(`точность ${percentLabel(format.correct, format.total)} · ${format.total} ${pluralRu(format.total, "ответ", "ответа", "ответов")}`)}
+              {typo(
+                `точность ${percentLabel(format.correct, format.total)} · ${format.total} ${pluralRu(format.total, "ответ", "ответа", "ответов")}`,
+              )}
             </Text>
           </HStack>
         ))}
@@ -240,7 +254,7 @@ function StatsPage() {
           <Stat label={typo("Серия")} value={stats.streakDays} hint={typo("дней подряд")} />
           <Stat label={typo("Лучшая серия")} value={stats.bestStreak} hint={typo("дней")} />
           <Stat label={typo("Сегодня")} value={stats.reviewsToday} hint={typo("ответов")} />
-          <Stat label={typo("Заморозки")} value={stats.freezesLeft} hint={typo("на этот месяц")} />
+          <Stat label={typo("Заморозки")} value={stats.freezesLeft} hint={typo("из 2 в месяц")} />
         </AdaptiveGrid>
         {stats.totalReviews ? (
           <ActivityBars activity={stats.activity} />

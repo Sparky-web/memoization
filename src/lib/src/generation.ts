@@ -31,7 +31,10 @@ const generatedCardSchema = zodRussian
       ctx.addIssue({ code: "custom", message: typo(`у теста должно быть ровно ${MCQ_OPTIONS_COUNT} варианта`) });
     }
     if (card.format === "mcq" && card.options.length === MCQ_OPTIONS_COUNT && !card.options.includes(card.answer)) {
-      ctx.addIssue({ code: "custom", message: typo("правильный ответ теста должен дословно совпадать с одним из вариантов") });
+      ctx.addIssue({
+        code: "custom",
+        message: typo("правильный ответ теста должен дословно совпадать с одним из вариантов"),
+      });
     }
     if (card.format === "cloze" && !card.prompt.includes("___")) {
       ctx.addIssue({ code: "custom", message: typo("в тексте с пропуском нет «___»") });

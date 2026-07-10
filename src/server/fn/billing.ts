@@ -28,8 +28,8 @@ export const getBillingStatus = createServerFn({ method: "GET" })
     const now = new Date();
     const active = Boolean(
       subscription &&
-        subscription.status !== "EXPIRED" &&
-        (!subscription.currentPeriodEnd || subscription.currentPeriodEnd > now),
+      subscription.status !== "EXPIRED" &&
+      (!subscription.currentPeriodEnd || subscription.currentPeriodEnd > now),
     );
     return {
       pro: active,

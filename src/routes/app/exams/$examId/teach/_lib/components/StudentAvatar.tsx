@@ -77,7 +77,11 @@ function Equalizer({ analyserRef }: { analyserRef: RefObject<AnalyserNode | null
   return (
     <div ref={attach} className="teach-state-enter flex h-5 items-end gap-0.5" aria-label={typo("Ученик говорит")}>
       {Array.from({ length: EQUALIZER_BARS }, (_, index) => (
-        <span key={index} className="teach-bar h-full w-1 rounded-full bg-primary" style={{ transform: "scaleY(0.25)" }} />
+        <span
+          key={index}
+          className="teach-bar h-full w-1 rounded-full bg-primary"
+          style={{ transform: "scaleY(0.25)" }}
+        />
       ))}
     </div>
   );

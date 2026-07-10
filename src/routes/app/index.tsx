@@ -4,12 +4,34 @@ import { CalendarCheck, Flame, Moon, Plus, Zap } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Badge, Button, ConfirmDialog, Heading, HStack, Link, PaywallCard, ProgressBar, ReadinessRing, SimpleCard, Text, VStack } from "~/components";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  Heading,
+  HStack,
+  Link,
+  PaywallCard,
+  ProgressBar,
+  ReadinessRing,
+  SimpleCard,
+  Text,
+  VStack,
+} from "~/components";
 import { formatDateRuMsk, typo } from "~/lib";
 import { logEvent } from "~/server/fn/events";
 import { archiveExam, deleteExam, updateExam } from "~/server/fn/exams";
 
-import { cardsCountLabel, daysToExamLabel, type ExamListItem, examQueries, pluralRu, type TodayPlan } from "./exams/_lib";
+import {
+  cardsCountLabel,
+  daysToExamLabel,
+  type ExamListItem,
+  examQueries,
+  type FavoriteExamItem,
+  pluralRu,
+  questionsCountLabel,
+  type TodayPlan,
+} from "./exams/_lib";
 
 // «Сегодня» — главный экран: серия, план дня по экзаменам, предложения режимов
 // и карточки состояний (генерация, ошибка, прошедший экзамен).
@@ -19,6 +41,7 @@ export const Route = createFileRoute("/app/")({
     Promise.all([
       context.queryClient.ensureQueryData(examQueries.list()),
       context.queryClient.ensureQueryData(examQueries.todayPlan()),
+      context.queryClient.ensureQueryData(examQueries.favorites()),
     ]),
   head: () => ({ meta: [{ title: typo("Сегодня") }] }),
   component: TodayPage,
@@ -28,8 +51,6 @@ export const Route = createFileRoute("/app/")({
 const CARDS_PER_MINUTE = 2;
 
 function StreakLine({ plan }: { plan: TodayPlan }) {
-  // Заморозки, уже виртуально потраченные на пропуски внутри серии, показываем как израсходованные.
-  const freezesAvailable = Math.max(plan.freezesLeft - plan.freezesSpent, 0);
   const restNote = plan.restWeekdays.length
     ? typo(`дней отдыха в неделю: ${plan.restWeekdays.length}`)
     : typo("дни отдыха настраиваются");
@@ -42,8 +63,8 @@ function StreakLine({ plan }: { plan: TodayPlan }) {
         </Text>
       </HStack>
       <Text variant="mini" color="supplementary">
-        <span title={typo("Заморозка сама закрывает пропущенный день; 2 штуки в месяц. Дни отдыха серию не рвут.")}>
-          {typo(`заморозки: ${freezesAvailable} · `)}
+        <span title={typo("Заморозка сама закрывает пропущенный день; 2 штуки на месяц. Дни отдыха серию не рвут.")}>
+          {typo(`заморозки: ${plan.freezesLeft} · `)}
           <Link to="/app/settings" variant="underline">
             {restNote}
           </Link>
@@ -130,7 +151,9 @@ function ExamPassedCard({ exam }: { exam: ExamListItem }) {
   return (
     <SimpleCard title={typo(`«${exam.title}» прошёл. Как всё прошло?`)}>
       <Text variant="small" color="supplementary">
-        {typo("Подготовка завершена. Можно сохранить знания надолго — карточки продолжат повторяться в спокойном ритме.")}
+        {typo(
+          "Подготовка завершена. Можно сохранить знания надолго — карточки продолжат повторяться в спокойном ритме.",
+        )}
       </Text>
       <HStack gap="sm" wrap>
         <Button
@@ -178,6 +201,46 @@ function ExamPassedCard({ exam }: { exam: ExamListItem }) {
   );
 }
 
+// Избранные чужие публичные экзамены (мигрированы из старых колод и добавленные на /d/…):
+// отсюда их можно открыть по ссылке и забрать себе форком.
+function FavoritesCard({ favorites }: { favorites: readonly FavoriteExamItem[] }) {
+  const navigate = useNavigate();
+  if (!favorites.length) return null;
+  return (
+    <SimpleCard title={typo("Избранное")}>
+      <VStack gap="2xs">
+        {favorites.map((favorite) => (
+          <HStack key={favorite.examId} justify="between" align="center" gap="sm" wrap>
+            <VStack gap="3xs">
+              <Link to={`/d/${favorite.examId}`}>{typo(favorite.title)}</Link>
+              <Text variant="mini" color="supplementary">
+                {typo(
+                  [
+                    favorite.authorName ? `автор: ${favorite.authorName}` : "",
+                    questionsCountLabel(favorite.totalQuestions),
+                    cardsCountLabel(favorite.totalCards),
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                )}
+              </Text>
+            </VStack>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void navigate({ to: "/d/$examId", params: { examId: favorite.examId } });
+              }}
+            >
+              {typo("Забрать себе")}
+            </Button>
+          </HStack>
+        ))}
+      </VStack>
+    </SimpleCard>
+  );
+}
+
 function OnboardingHero() {
   const navigate = useNavigate();
   return (
@@ -215,6 +278,7 @@ function TodayPage() {
   const navigate = useNavigate();
   const { data: exams } = useSuspenseQuery(examQueries.list());
   const { data: plan } = useSuspenseQuery(examQueries.todayPlan());
+  const { data: favoriteExams } = useSuspenseQuery(examQueries.favorites());
   const [showCramPaywall, setShowCramPaywall] = useState(false);
 
   const activeExams = exams.filter((exam) => !exam.archivedAt);
@@ -225,8 +289,10 @@ function TodayPage() {
   const examDayExams = activeExams.filter(
     (exam) => exam.daysToExam !== null && exam.daysToExam >= 0 && exam.daysToExam <= 1 && exam.totalCards > 0,
   );
+  // Черновики без карточек — включая совсем пустые (без вопросов): такие остаются после сбоя
+  // мастера, занимают лимит активных экзаменов и без этой карточки были бы невидимы.
   const draftExams = activeExams.filter(
-    (exam) => exam.status !== "processing" && exam.status !== "failed" && !exam.totalCards && exam.totalQuestions > 0,
+    (exam) => exam.status !== "processing" && exam.status !== "failed" && !exam.totalCards,
   );
 
   const summaryByExam = new Map(plan.exams.map((summary) => [summary.examId, summary]));
@@ -242,7 +308,8 @@ function TodayPage() {
     void navigate({ to: "/app/exams/$examId/session", params: { examId }, search: { kind } });
   };
 
-  const bedtimeExamId = plan.plan[0]?.examId ?? plan.exams[0]?.examId;
+  // Сервер выбирает экзамен с сегодняшними ответами — именно из них строится предсонная очередь.
+  const bedtimeExamId = plan.suggestions.bedtimeExamId;
   const cramSummaries = plan.exams.filter((summary) => plan.suggestions.cramExamIds.includes(summary.examId));
   const firstCram = cramSummaries[0];
 
@@ -251,6 +318,7 @@ function TodayPage() {
       <VStack gap="xl">
         <Heading variant="h1">{typo("Сегодня")}</Heading>
         <OnboardingHero />
+        <FavoritesCard favorites={favoriteExams} />
       </VStack>
     );
   }
@@ -262,7 +330,9 @@ function TodayPage() {
         <VStack gap="md">
           <VStack gap="2xs">
             <Text variant="small" color="supplementary">
-              {typo(`${cardsCountLabel(plan.planTotal)} · около ${estimatedMinutes} ${pluralRu(estimatedMinutes, "минуты", "минут", "минут")}`)}
+              {typo(
+                `${cardsCountLabel(plan.planTotal)} · около ${estimatedMinutes} ${pluralRu(estimatedMinutes, "минуты", "минут", "минут")}`,
+              )}
             </Text>
             {plan.cardsDoneToday > 0 && (
               <VStack gap="3xs">
@@ -373,9 +443,7 @@ function TodayPage() {
           <VStack gap="2xs">
             {processingExams.map((exam) => (
               <HStack key={exam.id} justify="between" align="center" gap="sm" wrap>
-                <Link to={`/app/exams/${exam.id}`}>
-                  {typo(exam.title)}
-                </Link>
+                <Link to={`/app/exams/${exam.id}`}>{typo(exam.title)}</Link>
                 <Badge variant="muted">{processingLine(exam)}</Badge>
               </HStack>
             ))}
@@ -416,7 +484,11 @@ function TodayPage() {
             <VStack gap="3xs">
               <Text bold>{typo(exam.title)}</Text>
               <Text variant="mini" color="supplementary">
-                {typo("Вопросы добавлены, карточек ещё нет — запусти генерацию на странице экзамена.")}
+                {typo(
+                  exam.totalQuestions > 0
+                    ? "Вопросы добавлены, карточек ещё нет — запусти генерацию на странице экзамена."
+                    : "Пустой черновик занимает лимит активных экзаменов — добавь вопросы на странице экзамена или удали его.",
+                )}
               </Text>
             </VStack>
             <Button
@@ -495,12 +567,16 @@ function TodayPage() {
               reason="CRAM"
               compact
               onShown={() => {
-                void logEvent({ data: { name: "paywall_shown", meta: { reason: "CRAM", place: "today" } } }).catch(() => undefined);
+                void logEvent({ data: { name: "paywall_shown", meta: { reason: "CRAM", place: "today" } } }).catch(
+                  () => undefined,
+                );
               }}
             />
           )}
         </SimpleCard>
       )}
+
+      <FavoritesCard favorites={favoriteExams} />
 
       {activeExams.some((exam) => exam.examDate && exam.daysToExam !== null && exam.daysToExam >= 0) && (
         <Text variant="mini" color="supplementary">

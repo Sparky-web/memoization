@@ -4,7 +4,18 @@ import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Button, Heading, HStack, Input, PaywallCard, SimpleCard, Text, Textarea, VStack } from "~/components";
+import {
+  Button,
+  ConfirmDialog,
+  Heading,
+  HStack,
+  Input,
+  PaywallCard,
+  SimpleCard,
+  Text,
+  Textarea,
+  VStack,
+} from "~/components";
 import { isPaywallError, type PalaceLocus, typo } from "~/lib";
 import {
   createMemoryPalace,
@@ -84,7 +95,13 @@ function RouteStep({ onNext }: { onNext: (routeTitle: string) => void }) {
           }}
         />
         <HStack>
-          <Button size="pill" disabled={!routeTitle} onClick={() => { onNext(routeTitle); }}>
+          <Button
+            size="pill"
+            disabled={!routeTitle}
+            onClick={() => {
+              onNext(routeTitle);
+            }}
+          >
             {typo("Дальше")}
           </Button>
         </HStack>
@@ -94,7 +111,15 @@ function RouteStep({ onNext }: { onNext: (routeTitle: string) => void }) {
 }
 
 // Шаг 2: места маршрута по порядку — будущие «крючки» для пунктов списка.
-function PlacesStep({ routeTitle, onNext, onBack }: { routeTitle: string; onNext: (places: string[]) => void; onBack: () => void }) {
+function PlacesStep({
+  routeTitle,
+  onNext,
+  onBack,
+}: {
+  routeTitle: string;
+  onNext: (places: string[]) => void;
+  onBack: () => void;
+}) {
   const [places, setPlaces] = useState<string[]>(["", "", "", ""]);
   const filled = places.map((place) => place.trim()).filter(Boolean);
 
@@ -114,7 +139,9 @@ function PlacesStep({ routeTitle, onNext, onBack }: { routeTitle: string; onNext
               value={place}
               placeholder={typo(`Место ${index + 1}`)}
               onChange={(event) => {
-                setPlaces((current) => current.map((value, position) => (position === index ? event.target.value : value)));
+                setPlaces((current) =>
+                  current.map((value, position) => (position === index ? event.target.value : value)),
+                );
               }}
             />
           ))}
@@ -132,7 +159,13 @@ function PlacesStep({ routeTitle, onNext, onBack }: { routeTitle: string; onNext
               {typo("Ещё место")}
             </Button>
           )}
-          <Button size="pill" disabled={filled.length < MIN_PLACES} onClick={() => { onNext(filled); }}>
+          <Button
+            size="pill"
+            disabled={filled.length < MIN_PLACES}
+            onClick={() => {
+              onNext(filled);
+            }}
+          >
             {typo("Дальше")}
           </Button>
           <Button variant="ghost" onClick={onBack}>
@@ -234,7 +267,9 @@ function ImagesStep({
         <VStack gap="2xs">
           <Text bold>{typo("Шаг 3 · Образы")}</Text>
           <Text variant="small" color="supplementary">
-            {typo("Чем страннее и конкретнее образ, тем крепче он держится. Правьте варианты ИИ под себя — свои образы работают лучше.")}
+            {typo(
+              "Чем страннее и конкретнее образ, тем крепче он держится. Правьте варианты ИИ под себя — свои образы работают лучше.",
+            )}
           </Text>
         </VStack>
 
@@ -261,7 +296,13 @@ function ImagesStep({
           <VStack gap="md">
             <LociEditor loci={loci} onChange={setLoci} />
             <HStack gap="sm" wrap>
-              <Button size="pill" disabled={!complete || save.isPending} onClick={() => { save.mutate(); }}>
+              <Button
+                size="pill"
+                disabled={!complete || save.isPending}
+                onClick={() => {
+                  save.mutate();
+                }}
+              >
                 {typo("Сохранить дворец")}
               </Button>
               <Button
@@ -299,6 +340,8 @@ function EditPalace({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [loci, setLoci] = useState<PalaceLocus[]>(palace.loci);
+  // Дворец строится вручную и стоит усилий — удаление только через подтверждение.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const complete = loci.length > 0 && loci.every((locus) => locus.item.trim() && locus.image.trim());
 
   const exitToHub = () => {
@@ -334,14 +377,37 @@ function EditPalace({
         <Text bold>{typo(`Маршрут «${palace.title}»`)}</Text>
         <LociEditor loci={loci} onChange={setLoci} />
         <HStack gap="sm" wrap>
-          <Button disabled={!complete || save.isPending} onClick={() => { save.mutate(); }}>
+          <Button
+            disabled={!complete || save.isPending}
+            onClick={() => {
+              save.mutate();
+            }}
+          >
             {typo("Сохранить")}
           </Button>
-          <Button variant="outline" size="sm" disabled={remove.isPending} onClick={() => { remove.mutate(); }}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={remove.isPending}
+            onClick={() => {
+              setConfirmDelete(true);
+            }}
+          >
             <Trash2 className="size-4" />
             {typo("Удалить дворец")}
           </Button>
         </HStack>
+        <ConfirmDialog
+          open={confirmDelete}
+          onOpenChange={setConfirmDelete}
+          title={typo("Удалить дворец памяти?")}
+          description={typo("Маршрут и придуманные образы будут удалены безвозвратно.")}
+          confirmLabel={typo("Удалить")}
+          confirmPending={remove.isPending}
+          onConfirm={() => {
+            remove.mutate();
+          }}
+        />
       </VStack>
     </SimpleCard>
   );

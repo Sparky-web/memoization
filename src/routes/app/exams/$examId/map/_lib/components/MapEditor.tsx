@@ -3,7 +3,7 @@ import { Plus, Save, Trash2, Waypoints } from "lucide-react";
 import { type PointerEvent as ReactPointerEvent, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { Button, HStack, Input, Text, VStack } from "~/components";
+import { Button, ConfirmDialog, HStack, Input, Text, VStack } from "~/components";
 import { MAP_CANVAS, type MapEdge, type MapNode, typo } from "~/lib";
 
 import { type ConceptMapItem, deleteConceptMap, updateConceptMap } from "../model/mapModel";
@@ -21,10 +21,16 @@ interface DragState {
   moved: boolean;
 }
 
-const NODE_HEIGHT = 32;
+// Узлы под палец: на телефоне канвас рендерится в натуральную величину (горизонтальный скролл),
+// поэтому высота узла — это и есть размер цели касания.
+const NODE_HEIGHT = 40;
+const NODE_FONT_SIZE = 14;
+const EDGE_LABEL_FONT_SIZE = 12;
+// Невидимая широкая линия поверх ребра — цель касания для выбора связи.
+const EDGE_HIT_WIDTH = 16;
 
 function nodeWidthOf(label: string): number {
-  return Math.min(Math.max(label.length * 8.2 + 26, 64), 240);
+  return Math.min(Math.max(label.length * 8.8 + 30, 72), 260);
 }
 
 function clampToCanvas(x: number, y: number): { x: number; y: number } {
@@ -61,9 +67,12 @@ export function MapEditor({ map, examId }: { map: ConceptMapItem; examId: string
     },
   });
 
+  // Удаление карты уносит и ручные правки — только через подтверждение.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const remove = useMutation({
     mutationFn: () => deleteConceptMap({ data: { id: map.id } }),
     onSuccess: () => {
+      setConfirmDelete(false);
       void queryClient.invalidateQueries({ queryKey: ["conceptMaps", examId] });
     },
     onError: (error) => {
@@ -198,7 +207,13 @@ export function MapEditor({ map, examId }: { map: ConceptMapItem; examId: string
           <Trash2 className="size-4" />
           {typo("Удалить")}
         </Button>
-        <Button size="sm" disabled={!dirty || save.isPending} onClick={() => { save.mutate(); }}>
+        <Button
+          size="sm"
+          disabled={!dirty || save.isPending}
+          onClick={() => {
+            save.mutate();
+          }}
+        >
           <Save className="size-4" />
           {dirty ? typo("Сохранить") : typo("Сохранено")}
         </Button>
@@ -207,12 +222,24 @@ export function MapEditor({ map, examId }: { map: ConceptMapItem; examId: string
           size="sm"
           disabled={remove.isPending}
           onClick={() => {
-            remove.mutate();
+            setConfirmDelete(true);
           }}
         >
           {typo("Удалить карту")}
         </Button>
       </HStack>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={typo("Удалить карту связей?")}
+        description={typo("Карта вместе со всеми ручными правками будет удалена безвозвратно.")}
+        confirmLabel={typo("Удалить")}
+        confirmPending={remove.isPending}
+        onConfirm={() => {
+          remove.mutate();
+        }}
+      />
 
       {connectMode && (
         <Text variant="mini" color="supplementary">
@@ -248,92 +275,102 @@ export function MapEditor({ map, examId }: { map: ConceptMapItem; examId: string
         </HStack>
       )}
 
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${MAP_CANVAS.width} ${MAP_CANVAS.height}`}
-        className="w-full touch-none rounded-2xl border border-border bg-card select-none"
-        role="application"
-        aria-label={typo("Редактор карты связей")}
-        onPointerMove={handleSvgPointerMove}
-        onPointerUp={handleSvgPointerUp}
-        onPointerDown={() => {
-          setSelection(null);
-        }}
-      >
-        {edges.map((edge, index) => {
-          const from = nodeById.get(edge.from);
-          const to = nodeById.get(edge.to);
-          if (!from || !to) return null;
-          const selected = selection?.kind === "edge" && selection.index === index;
-          const midX = (from.x + to.x) / 2;
-          const midY = (from.y + to.y) / 2;
-          return (
-            <g
-              key={`${edge.from}-${edge.to}-${index}`}
-              className="cursor-pointer"
-              onPointerDown={(event) => {
-                event.stopPropagation();
-                setSelection({ kind: "edge", index });
-              }}
-            >
-              <line
-                x1={from.x}
-                y1={from.y}
-                x2={to.x}
-                y2={to.y}
-                stroke={selected ? "var(--primary)" : "var(--muted-foreground)"}
-                strokeWidth={selected ? 3 : 1.5}
-                opacity={0.7}
-              />
-              {edge.label && (
-                <text
-                  x={midX}
-                  y={midY - 4}
-                  textAnchor="middle"
-                  fontSize={11}
-                  fill="var(--muted-foreground)"
-                  stroke="var(--card)"
-                  strokeWidth={3}
-                  paintOrder="stroke"
-                >
-                  {typo(edge.label)}
-                </text>
-              )}
-            </g>
-          );
-        })}
+      {/* На телефоне канвас не сжимается (нечитаемые узлы ~13 px), а рендерится в натуральную
+          величину с горизонтальным скроллом. touch-action: none стоит только на узлах и рёбрах:
+          перетаскивание работает, а свайп по пустому месту прокручивает канвас. */}
+      <div className="w-full overflow-x-auto rounded-2xl border border-border bg-card">
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${MAP_CANVAS.width} ${MAP_CANVAS.height}`}
+          className="w-full select-none"
+          style={{ minWidth: MAP_CANVAS.width }}
+          role="application"
+          aria-label={typo("Редактор карты связей")}
+          onPointerMove={handleSvgPointerMove}
+          onPointerUp={handleSvgPointerUp}
+          onPointerDown={() => {
+            setSelection(null);
+          }}
+        >
+          {edges.map((edge, index) => {
+            const from = nodeById.get(edge.from);
+            const to = nodeById.get(edge.to);
+            if (!from || !to) return null;
+            const selected = selection?.kind === "edge" && selection.index === index;
+            const midX = (from.x + to.x) / 2;
+            const midY = (from.y + to.y) / 2;
+            return (
+              <g
+                key={`${edge.from}-${edge.to}-${index}`}
+                className="cursor-pointer touch-none"
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  setSelection({ kind: "edge", index });
+                }}
+              >
+                {/* Прозрачная широкая линия — цель касания: тонкое ребро пальцем не поймать. */}
+                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="transparent" strokeWidth={EDGE_HIT_WIDTH} />
+                <line
+                  x1={from.x}
+                  y1={from.y}
+                  x2={to.x}
+                  y2={to.y}
+                  stroke={selected ? "var(--primary)" : "var(--muted-foreground)"}
+                  strokeWidth={selected ? 3 : 1.5}
+                  opacity={0.7}
+                />
+                {edge.label && (
+                  <text
+                    x={midX}
+                    y={midY - 4}
+                    textAnchor="middle"
+                    fontSize={EDGE_LABEL_FONT_SIZE}
+                    fill="var(--muted-foreground)"
+                    stroke="var(--card)"
+                    strokeWidth={3}
+                    paintOrder="stroke"
+                  >
+                    {typo(edge.label)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
 
-        {nodes.map((node) => {
-          const width = nodeWidthOf(node.label);
-          return (
-            <g
-              key={node.id}
-              transform={`translate(${node.x}, ${node.y})`}
-              className={connectMode ? "cursor-crosshair" : "cursor-grab"}
-              onPointerDown={(event) => {
-                handleNodePointerDown(node, event);
-              }}
-            >
-              <rect
-                x={-width / 2}
-                y={-NODE_HEIGHT / 2}
-                width={width}
-                height={NODE_HEIGHT}
-                rx={NODE_HEIGHT / 2}
-                fill="var(--accent)"
-                stroke={nodeStroke(node)}
-                strokeWidth={2}
-              />
-              <text x={0} y={4} textAnchor="middle" fontSize={13} fill="var(--accent-foreground)">
-                {typo(node.label.length > 26 ? `${node.label.slice(0, 25)}…` : node.label)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+          {nodes.map((node) => {
+            const width = nodeWidthOf(node.label);
+            return (
+              <g
+                key={node.id}
+                transform={`translate(${node.x}, ${node.y})`}
+                className={`touch-none ${connectMode ? "cursor-crosshair" : "cursor-grab"}`}
+                onPointerDown={(event) => {
+                  handleNodePointerDown(node, event);
+                }}
+              >
+                <rect
+                  x={-width / 2}
+                  y={-NODE_HEIGHT / 2}
+                  width={width}
+                  height={NODE_HEIGHT}
+                  rx={NODE_HEIGHT / 2}
+                  fill="var(--accent)"
+                  stroke={nodeStroke(node)}
+                  strokeWidth={2}
+                />
+                <text x={0} y={5} textAnchor="middle" fontSize={NODE_FONT_SIZE} fill="var(--accent-foreground)">
+                  {typo(node.label.length > 26 ? `${node.label.slice(0, 25)}…` : node.label)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
 
       <Text variant="mini" color="supplementary">
-        {typo("Тяните узлы, соединяйте понятия и подписывайте связи. Выделите узел или связь и нажмите «Удалить», чтобы убрать лишнее.")}
+        {typo(
+          "Тяните узлы, соединяйте понятия и подписывайте связи; на телефоне канвас прокручивается вбок. Выделите узел или связь и нажмите «Удалить», чтобы убрать лишнее.",
+        )}
       </Text>
     </VStack>
   );

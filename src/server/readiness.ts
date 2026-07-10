@@ -20,7 +20,16 @@ export async function examReadinessMap(
   });
   const progressRows = await db.cardProgress.findMany({
     where: { userId, cardId: { in: cards.map((card) => card.id) } },
-    select: { cardId: true, stability: true, difficulty: true, due: true, state: true, reps: true, lapses: true, lastReviewedAt: true },
+    select: {
+      cardId: true,
+      stability: true,
+      difficulty: true,
+      due: true,
+      state: true,
+      reps: true,
+      lapses: true,
+      lastReviewedAt: true,
+    },
   });
   const progressByCard = new Map(progressRows.map((row) => [row.cardId, row]));
 

@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 
 import { getBillingStatus } from "~/server/fn/billing";
 import { getExamCards } from "~/server/fn/cards";
-import { getExamById, getExams } from "~/server/fn/exams";
+import { getExamById, getExams, getFavoriteExams } from "~/server/fn/exams";
 import { maybeGetForecastPrompt } from "~/server/fn/forecast";
 import { getTodayPlan } from "~/server/fn/plan";
 import { getQuestionById } from "~/server/fn/questions";
@@ -17,6 +17,7 @@ export type { ExamListItem } from "~/server/fn/exams";
 export type ExamDetail = Awaited<ReturnType<typeof getExamById>>;
 export type ExamQuestionItem = ExamDetail["questions"][number];
 export type TodayPlan = Awaited<ReturnType<typeof getTodayPlan>>;
+export type FavoriteExamItem = Awaited<ReturnType<typeof getFavoriteExams>>[number];
 
 // Единые queryOptions экзаменного домена: ключи согласованы так, что invalidateQueries
 // по префиксу ["exams"] обновляет и список, и детали, и библиотеку карточек.
@@ -39,6 +40,11 @@ export const examQueries = {
       queryKey: ["exams", "cards", examId],
       queryFn: () => getExamCards({ data: { examId } }),
     }),
+  favorites: () =>
+    queryOptions({
+      queryKey: ["exams", "favorites"],
+      queryFn: () => getFavoriteExams(),
+    }),
   question: (questionId: string) =>
     queryOptions({
       queryKey: ["questions", "detail", questionId],
@@ -48,6 +54,9 @@ export const examQueries = {
     queryOptions({
       queryKey: ["plan", "today"],
       queryFn: () => getTodayPlan(),
+      // Пока идёт генерация хотя бы одного экзамена — поллим план вместе со списком:
+      // как только карточки готовы, CTA «Начать сессию» появляется без смены фокуса и страницы.
+      refetchInterval: (query) => (query.state.data?.exams.some((exam) => exam.status === "processing") ? 4000 : false),
     }),
   settings: () =>
     queryOptions({

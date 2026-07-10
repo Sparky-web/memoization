@@ -125,6 +125,8 @@ const retrievabilityScheduler = fsrs();
 
 /** Вероятность припоминания 0..1 сейчас; новая карточка (не было повторений) = 0. */
 export function retrievability(progress: ProgressLike, now: Date): number {
-  if (toFsrsState(progress.state) === State.New || !progress.reps) return 0;
+  // Гард на lastReviewedAt обязателен: ts-fsrs кидает FSRSValidationError на last_review =
+  // undefined при state ≠ New, а битая строка (reps > 0 без даты) не должна валить расчёты.
+  if (toFsrsState(progress.state) === State.New || !progress.reps || !progress.lastReviewedAt) return 0;
   return retrievabilityScheduler.get_retrievability(toFsrsCard(progress), now, false);
 }

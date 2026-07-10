@@ -1,14 +1,16 @@
-import { type PrismaClient } from "@prisma/client";
+import { type Prisma, type PrismaClient } from "@prisma/client";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders, setResponseStatus } from "@tanstack/react-start/server";
 
 import {
   FREE_DECK_GENERATIONS,
   FREE_EXAMS,
+  FREE_QUESTIONS_PER_EXAM,
   mskCalendarDaysBetween,
   PAYWALL_ERRORS,
   PRO_DECK_GENERATIONS_PER_DAY,
   PRO_EXAMS,
+  PRO_QUESTIONS_PER_EXAM,
   readiness,
   retrievability,
   startOfDayMsk,
@@ -44,9 +46,18 @@ function daysToExamOf(examDate: Date | null, now: Date): number | null {
 }
 
 // Гейт мультиэкзаменов: Free — 1 активный (2-й — пейвол), Pro — до 10 (fair-use).
-async function assertActiveExamCapacity(db: PrismaClient, userId: string, addedCount: number): Promise<void> {
-  const activeCount = await db.exam.count({ where: { userId, archivedAt: null } });
-  const pro = await hasActivePro(db, userId);
+// Вызывается в ОДНОЙ транзакции с созданием/разархивированием под advisory-локом по
+// пользователю: параллельные запросы (двойной сабмит, две вкладки) сериализуются
+// и не обходят лимит гонкой «прочитали count → записали».
+async function assertActiveExamCapacity(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  pro: boolean,
+  addedCount: number,
+): Promise<void> {
+  // ::text — pg_advisory_xact_lock возвращает void, который Prisma не умеет десериализовать.
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${userId}:active_exams`}, 0))::text`;
+  const activeCount = await tx.exam.count({ where: { userId, archivedAt: null } });
   if (!pro && activeCount + addedCount > FREE_EXAMS) {
     setResponseStatus(402);
     throw new Error(PAYWALL_ERRORS.MULTI_EXAM);
@@ -55,6 +66,12 @@ async function assertActiveExamCapacity(db: PrismaClient, userId: string, addedC
     setResponseStatus(402);
     throw new Error(typo(`В Pro можно вести до ${PRO_EXAMS} активных экзаменов — заархивируйте прошедшие`));
   }
+}
+
+// Лимит вопросов на экзамен по тарифу — тот же, что в setExamQuestions: применяется
+// и к форку, и к запуску генерации (defense-in-depth против обхода через готовые данные).
+function questionLimitOf(pro: boolean): number {
+  return pro ? PRO_QUESTIONS_PER_EXAM : FREE_QUESTIONS_PER_EXAM;
 }
 
 export const getExams = createServerFn({ method: "GET" })
@@ -166,7 +183,15 @@ export const getExamById = createServerFn({ method: "GET" })
         question: { select: { topic: true } },
         progress: {
           where: { userId },
-          select: { stability: true, difficulty: true, due: true, state: true, reps: true, lapses: true, lastReviewedAt: true },
+          select: {
+            stability: true,
+            difficulty: true,
+            due: true,
+            state: true,
+            reps: true,
+            lapses: true,
+            lastReviewedAt: true,
+          },
         },
       },
     });
@@ -260,22 +285,25 @@ export const createExamsDraft = createServerFn({ method: "POST" })
   .validator(zodRussian.object({ exams: zodRussian.array(draftExamInput).min(1).max(10) }))
   .handler(async ({ data, context }) => {
     const userId = context.session.user.id;
-    await assertActiveExamCapacity(context.db, userId, data.exams.length);
+    const pro = await hasActivePro(context.db, userId);
 
-    const created: { id: string; title: string }[] = [];
-    for (const draft of data.exams) {
-      const exam = await context.db.exam.create({
-        data: {
-          userId,
-          title: draft.title,
-          examDate: parseExamDate(draft.examDate),
-          status: "draft",
-        },
-        select: { id: true, title: true },
-      });
-      created.push(exam);
-    }
-    return created;
+    return context.db.$transaction(async (tx) => {
+      await assertActiveExamCapacity(tx, userId, pro, data.exams.length);
+      const created: { id: string; title: string }[] = [];
+      for (const draft of data.exams) {
+        const exam = await tx.exam.create({
+          data: {
+            userId,
+            title: draft.title,
+            examDate: parseExamDate(draft.examDate),
+            status: "draft",
+          },
+          select: { id: true, title: true },
+        });
+        created.push(exam);
+      }
+      return created;
+    });
   });
 
 const examFieldsInput = zodRussian.object({
@@ -317,19 +345,29 @@ export const updateExam = createServerFn({ method: "POST" })
     return true;
   });
 
-// Архив «после экзамена»; разархивирование проходит тот же гейт активных экзаменов, что и создание.
+// Разархивирование проходит тот же гейт активных экзаменов, что и создание, — под локом.
+async function setExamArchived(
+  db: PrismaClient,
+  userId: string,
+  examId: string,
+  archived: boolean,
+): Promise<{ count: number }> {
+  if (archived) {
+    return db.exam.updateMany({ where: { id: examId, userId }, data: { archivedAt: new Date() } });
+  }
+  const pro = await hasActivePro(db, userId);
+  return db.$transaction(async (tx) => {
+    await assertActiveExamCapacity(tx, userId, pro, 1);
+    return tx.exam.updateMany({ where: { id: examId, userId }, data: { archivedAt: null } });
+  });
+}
+
+// Архив «после экзамена».
 export const archiveExam = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(zodRussian.object({ id: zodRussian.string(), archived: zodRussian.boolean() }))
   .handler(async ({ data, context }) => {
-    const userId = context.session.user.id;
-    if (!data.archived) {
-      await assertActiveExamCapacity(context.db, userId, 1);
-    }
-    const result = await context.db.exam.updateMany({
-      where: { id: data.id, userId },
-      data: { archivedAt: data.archived ? new Date() : null },
-    });
+    const result = await setExamArchived(context.db, context.session.user.id, data.id, data.archived);
     if (!result.count) {
       setResponseStatus(404);
       throw new Error(typo("Экзамен не найден"));
@@ -376,6 +414,19 @@ export const generateExam = createServerFn({ method: "POST" })
       setResponseStatus(400);
       throw new Error(typo("Сначала добавьте вопросы к экзамену"));
     }
+    const pro = await hasActivePro(context.db, userId);
+    // Defense-in-depth: лимит вопросов тарифа проверяется и на запуске генерации — иначе
+    // экзамен, получивший вопросы в обход setExamQuestions (форк, даунгрейд тарифа),
+    // запускал бы opus-джобу на числе вопросов много выше потолка тарифа.
+    const questionLimit = questionLimitOf(pro);
+    if (exam._count.questions > questionLimit) {
+      setResponseStatus(402);
+      throw new Error(
+        typo(
+          `Слишком много вопросов для генерации: лимит — ${questionLimit} на экзамен (бесплатно ${FREE_QUESTIONS_PER_EXAM}, в Pro ${PRO_QUESTIONS_PER_EXAM})`,
+        ),
+      );
+    }
 
     // Гонкоустойчивый переход в processing: второй параллельный клик не запустит вторую джобу.
     const flipped = await context.db.exam.updateMany({
@@ -389,10 +440,8 @@ export const generateExam = createServerFn({ method: "POST" })
 
     // Попытка списывается до постановки в очередь атомарно (advisory lock в tryChargeUsage);
     // при провале генерации джоба вернёт её (refundUsage по refId = examId).
-    let pro: boolean;
     let charged: boolean;
     try {
-      pro = await hasActivePro(context.db, userId);
       charged = pro
         ? await tryChargeUsage(context.db, {
             userId,
@@ -475,6 +524,14 @@ export const getPublicExam = createServerFn({ method: "GET" })
       throw new Error(typo("Экзамен не найден или недоступен"));
     }
 
+    const favorite =
+      viewerId && !isOwner
+        ? await context.db.examFavorite.findUnique({
+            where: { userId_examId: { userId: viewerId, examId: exam.id } },
+            select: { id: true },
+          })
+        : null;
+
     return {
       id: exam.id,
       title: exam.title,
@@ -486,6 +543,7 @@ export const getPublicExam = createServerFn({ method: "GET" })
       questions: exam.questions,
       isOwner,
       isAuthenticated: Boolean(viewerId),
+      isFavorite: Boolean(favorite),
     };
   });
 
@@ -518,6 +576,7 @@ export const forkExam = createServerFn({ method: "POST" })
         cards: {
           orderBy: { position: "asc" },
           select: {
+            id: true,
             format: true,
             prompt: true,
             answer: true,
@@ -542,61 +601,170 @@ export const forkExam = createServerFn({ method: "POST" })
       setResponseStatus(400);
       throw new Error(typo("Это ваш экзамен — он и так у вас есть"));
     }
-    await assertActiveExamCapacity(context.db, userId, 1);
+    const pro = await hasActivePro(context.db, userId);
+    // Лимит вопросов тарифа действует и на форк: без него Free забирал бы готовый экзамен
+    // Pro-автора на 300 вопросов в обход гейта (и мог перегенерировать его целиком).
+    const questionLimit = questionLimitOf(pro);
+    if (source.questions.length > questionLimit) {
+      setResponseStatus(402);
+      throw new Error(
+        typo(
+          `В этом экзамене ${source.questions.length} вопросов — на вашем тарифе доступно до ${questionLimit}. Pro поднимает лимит до ${PRO_QUESTIONS_PER_EXAM} вопросов на экзамен`,
+        ),
+      );
+    }
 
-    const forked = await context.db.$transaction(async (tx) => {
-      const exam = await tx.exam.create({
-        data: {
-          userId,
-          title: source.title,
-          description: source.description,
-          examDate: parseExamDate(data.examDate),
-          status: "ready",
-        },
-        select: { id: true },
-      });
-
-      // Вопросы копируются с новой картой id — карточки привязываются к копиям.
-      const questionIdMap = new Map<string, string>();
-      for (const question of source.questions) {
-        const copy = await tx.question.create({
+    // Таймаут транзакции выше дефолтных 5 секунд: копирование до 300 вопросов идёт
+    // последовательными insert'ами (нужна карта старый id → новый id для карточек).
+    const forked = await context.db.$transaction(
+      async (tx) => {
+        await assertActiveExamCapacity(tx, userId, pro, 1);
+        const exam = await tx.exam.create({
           data: {
-            examId: exam.id,
-            position: question.position,
-            text: question.text,
-            topic: question.topic,
-            answerMd: question.answerMd,
-            covered: question.covered,
-            aiGenerated: question.aiGenerated,
-            sourceRef: question.sourceRef,
+            userId,
+            title: source.title,
+            description: source.description,
+            examDate: parseExamDate(data.examDate),
+            status: "ready",
           },
           select: { id: true },
         });
-        questionIdMap.set(question.id, copy.id);
-      }
 
-      await tx.card.createMany({
-        data: source.cards.map((card) => ({
-          examId: exam.id,
-          format: card.format,
-          prompt: card.prompt,
-          answer: card.answer,
-          options: card.options,
-          explanation: card.explanation,
-          deepMd: card.deepMd,
-          mnemonic: card.mnemonic,
-          sourceRef: card.sourceRef,
-          aiGenerated: card.aiGenerated,
-          suspended: card.suspended,
-          position: card.position,
-          questionId: card.questionId ? (questionIdMap.get(card.questionId) ?? null) : null,
-        })),
-      });
+        // Вопросы копируются с новой картой id — карточки привязываются к копиям.
+        const questionIdMap = new Map<string, string>();
+        for (const question of source.questions) {
+          const copy = await tx.question.create({
+            data: {
+              examId: exam.id,
+              position: question.position,
+              text: question.text,
+              topic: question.topic,
+              answerMd: question.answerMd,
+              covered: question.covered,
+              aiGenerated: question.aiGenerated,
+              sourceRef: question.sourceRef,
+            },
+            select: { id: true },
+          });
+          questionIdMap.set(question.id, copy.id);
+        }
 
-      return exam;
-    });
+        await tx.card.createMany({
+          data: source.cards.map((card) => ({
+            examId: exam.id,
+            format: card.format,
+            prompt: card.prompt,
+            answer: card.answer,
+            options: card.options,
+            explanation: card.explanation,
+            deepMd: card.deepMd,
+            mnemonic: card.mnemonic,
+            sourceRef: card.sourceRef,
+            aiGenerated: card.aiGenerated,
+            suspended: card.suspended,
+            position: card.position,
+            questionId: card.questionId ? (questionIdMap.get(card.questionId) ?? null) : null,
+          })),
+        });
+
+        // Прогресс форкающего по исходным карточкам переезжает на копии (маппинг по позиции):
+        // в старом приложении чужие публичные колоды учились без копирования, и после миграции
+        // этот прогресс иначе остался бы навсегда недостижимым — форк начинал бы с нуля.
+        const progressRows = await tx.cardProgress.findMany({
+          where: { userId, cardId: { in: source.cards.map((card) => card.id) } },
+          select: {
+            cardId: true,
+            stability: true,
+            difficulty: true,
+            due: true,
+            state: true,
+            reps: true,
+            lapses: true,
+            lastReviewedAt: true,
+            masteredDays: true,
+            priority: true,
+          },
+        });
+        if (progressRows.length) {
+          const copies = await tx.card.findMany({ where: { examId: exam.id }, select: { id: true, position: true } });
+          const copyIdByPosition = new Map(copies.map((copy) => [copy.position, copy.id]));
+          const positionBySourceCardId = new Map(source.cards.map((card) => [card.id, card.position]));
+          await tx.cardProgress.createMany({
+            data: progressRows.flatMap((row) => {
+              const { cardId, ...fsrsState } = row;
+              const position = positionBySourceCardId.get(cardId);
+              const copyId = position === undefined ? undefined : copyIdByPosition.get(position);
+              if (!copyId) return [];
+              return [{ userId, cardId: copyId, ...fsrsState }];
+            }),
+            skipDuplicates: true,
+          });
+        }
+
+        return exam;
+      },
+      { timeout: 30_000 },
+    );
 
     return { id: forked.id };
+  });
+
+// Избранное: чужой публичный экзамен сохраняется в закладки (перенос механики колод) —
+// список живёт на «Сегодня», забрать себе можно в любой момент через форк на /d/$examId.
+export const setExamFavorite = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ examId: zodRussian.string(), favorite: zodRussian.boolean() }))
+  .handler(async ({ data, context }) => {
+    const userId = context.session.user.id;
+    const exam = await context.db.exam.findFirst({
+      where: { id: data.examId, isPublic: true },
+      select: { id: true, userId: true },
+    });
+    if (!exam) {
+      setResponseStatus(404);
+      throw new Error(typo("Экзамен не найден или недоступен"));
+    }
+    if (exam.userId === userId) {
+      setResponseStatus(400);
+      throw new Error(typo("Свой экзамен не нужно добавлять в избранное — он и так у вас"));
+    }
+    if (data.favorite) {
+      await context.db.examFavorite.upsert({
+        where: { userId_examId: { userId, examId: exam.id } },
+        create: { userId, examId: exam.id },
+        update: {},
+      });
+    } else {
+      await context.db.examFavorite.deleteMany({ where: { userId, examId: exam.id } });
+    }
+    return { favorite: data.favorite };
+  });
+
+export const getFavoriteExams = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const favorites = await context.db.examFavorite.findMany({
+      // Фильтр isPublic — страховка: снятие публикации и так отзывает избранное.
+      where: { userId: context.session.user.id, exam: { isPublic: true } },
+      orderBy: { createdAt: "desc" },
+      select: {
+        exam: {
+          select: {
+            id: true,
+            title: true,
+            user: { select: { name: true } },
+            _count: { select: { cards: true, questions: true } },
+          },
+        },
+      },
+    });
+    return favorites.map((favorite) => ({
+      examId: favorite.exam.id,
+      title: favorite.exam.title,
+      authorName: favorite.exam.user.name,
+      totalCards: favorite.exam._count.cards,
+      totalQuestions: favorite.exam._count.questions,
+    }));
   });
 
 export type ExamListItem = Awaited<ReturnType<typeof getExams>>[number];

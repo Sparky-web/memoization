@@ -31,7 +31,17 @@ const navLinkClass =
 
 // fullWidth — для вертикального сайдбара (пункт на всю ширину); в мобильной горизонтальной
 // панели ширина по контенту. Базовый Link приходит с `w-fit`, поэтому растяжку включаем явно.
-function NavLink({ to, icon: Icon, label, fullWidth }: { to: AdminTo; icon: LucideIcon; label: string; fullWidth?: boolean }) {
+function NavLink({
+  to,
+  icon: Icon,
+  label,
+  fullWidth,
+}: {
+  to: AdminTo;
+  icon: LucideIcon;
+  label: string;
+  fullWidth?: boolean;
+}) {
   return (
     <Link to={to} className={fullWidth ? `${navLinkClass} w-full` : navLinkClass}>
       <Icon className="size-4 shrink-0" />

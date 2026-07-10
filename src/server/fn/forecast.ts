@@ -38,7 +38,10 @@ export const maybeGetForecastPrompt = createServerFn({ method: "GET" })
     // Висящий дольше суток — брошенный: резолву он уже не подлежит и блокировать предложение навсегда не должен.
     const freshPending =
       lastForecast && !lastForecast.resolvedAt && now.getTime() - lastForecast.createdAt.getTime() < RESOLVE_WINDOW_MS;
-    if (freshPending || (lastForecast && mskCalendarDaysBetween(lastForecast.createdAt, now) < MIN_DAYS_BETWEEN_FORECASTS)) {
+    if (
+      freshPending ||
+      (lastForecast && mskCalendarDaysBetween(lastForecast.createdAt, now) < MIN_DAYS_BETWEEN_FORECASTS)
+    ) {
       return { shouldPrompt: false };
     }
 

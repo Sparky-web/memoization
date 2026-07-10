@@ -4,7 +4,19 @@ import { GraduationCap, Play, Waypoints } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { AdaptiveGrid, Badge, Button, Heading, HStack, PaywallCard, ReadinessRing, SimpleCard, Stat, Text, VStack } from "~/components";
+import {
+  AdaptiveGrid,
+  Badge,
+  Button,
+  Heading,
+  HStack,
+  PaywallCard,
+  ReadinessRing,
+  SimpleCard,
+  Stat,
+  Text,
+  VStack,
+} from "~/components";
 import { formatDateRuMsk, isPaywallError, typo } from "~/lib";
 import { logEvent } from "~/server/fn/events";
 
@@ -123,7 +135,9 @@ function GenerationStatusBanner({ exam }: { exam: ExamDetail }) {
       <SimpleCard>
         <VStack gap="sm">
           <Text variant="small" color="supplementary">
-            {typo("Вопросы добавлены. ИИ ответит на каждый (по материалам — с цитатой источника) и соберёт атомарные карточки.")}
+            {typo(
+              "Вопросы добавлены. ИИ ответит на каждый (по материалам — с цитатой источника) и соберёт атомарные карточки.",
+            )}
           </Text>
           <HStack>
             <Button
@@ -140,9 +154,9 @@ function GenerationStatusBanner({ exam }: { exam: ExamDetail }) {
               reason="GENERATION"
               compact
               onShown={() => {
-                void logEvent({ data: { name: "paywall_shown", meta: { reason: "GENERATION", place: "exam_hub" } } }).catch(
-                  () => undefined,
-                );
+                void logEvent({
+                  data: { name: "paywall_shown", meta: { reason: "GENERATION", place: "exam_hub" } },
+                }).catch(() => undefined);
               }}
             />
           )}
@@ -248,7 +262,9 @@ function ExamHubPage() {
             reason="CRAM"
             compact
             onShown={() => {
-              void logEvent({ data: { name: "paywall_shown", meta: { reason: "CRAM", place: "exam_hub" } } }).catch(() => undefined);
+              void logEvent({ data: { name: "paywall_shown", meta: { reason: "CRAM", place: "exam_hub" } } }).catch(
+                () => undefined,
+              );
             }}
           />
         )}
@@ -292,7 +308,11 @@ function ExamHubPage() {
           <Stat label={typo("Карточек")} value={exam.counters.totalCards} />
           <Stat label={typo("К повторению")} value={exam.counters.due} />
           <Stat label={typo("Новых")} value={exam.counters.new} />
-          <Stat label={typo("Помечено")} value={exam.counters.flagged} hint={typo(`выключено: ${exam.counters.suspended}`)} />
+          <Stat
+            label={typo("Помечено")}
+            value={exam.counters.flagged}
+            hint={typo(`выключено: ${exam.counters.suspended}`)}
+          />
         </AdaptiveGrid>
       )}
 

@@ -17,9 +17,14 @@ export const Route = createFileRoute("/app/exams/")({
 
 function statusBadge(exam: ExamListItem) {
   if (exam.status === "processing") {
-    return <Badge variant="muted">{exam.queuePosition ? typo(`в очереди: ${exam.queuePosition}`) : typo("генерируется…")}</Badge>;
+    return (
+      <Badge variant="muted">
+        {exam.queuePosition ? typo(`в очереди: ${exam.queuePosition}`) : typo("генерируется…")}
+      </Badge>
+    );
   }
-  if (exam.status === "failed") return <Badge className="bg-destructive/15 text-destructive">{typo("ошибка генерации")}</Badge>;
+  if (exam.status === "failed")
+    return <Badge className="bg-destructive/15 text-destructive">{typo("ошибка генерации")}</Badge>;
   if (exam.status === "draft") return <Badge variant="muted">{typo("черновик")}</Badge>;
   return null;
 }

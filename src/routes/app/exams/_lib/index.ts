@@ -41,5 +41,6 @@ export {
   type ExamListItem,
   examQueries,
   type ExamQuestionItem,
+  type FavoriteExamItem,
   type TodayPlan,
 } from "./model/examQueries";

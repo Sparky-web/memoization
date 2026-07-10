@@ -81,10 +81,7 @@ function examQueue(exam: PlanExamInput): string[] {
  * квоты — по наибольшим остаткам, излишки (когда карточек меньше квоты) отдаются другим
  * экзаменам по весу. Блоки — в порядке убывания веса (самое срочное — первым).
  */
-export function buildDailyPlan(input: {
-  exams: readonly PlanExamInput[];
-  capacityCards: number;
-}): DailyPlanBlock[] {
+export function buildDailyPlan(input: { exams: readonly PlanExamInput[]; capacityCards: number }): DailyPlanBlock[] {
   const candidates = input.exams
     .map((exam) => ({
       exam,
@@ -135,58 +132,43 @@ export function buildDailyPlan(input: {
     .map((candidate) => ({ examId: candidate.exam.examId, cardIds: candidate.queue.slice(0, candidate.quota) }));
 }
 
-/** Вход подсчёта серии: дни выполнения плана (ключи МСК), дни отдыха и остаток заморозок. */
+/** Вход подсчёта серии: выполненные и замороженные дни (ключи МСК) и дни отдыха. */
 export interface StreakInput {
   now: Date;
   /** Ключи МСК-дней (см. mskDayKey), в которые дневной план выполнен. */
   completedDayKeys: ReadonlySet<string>;
+  /** Дни, закрытые заморозкой (журнал автосписания StreakDay): серию сохраняют, но не удлиняют. */
+  frozenDayKeys: ReadonlySet<string>;
   /** Запланированные дни отдыха: 0 — воскресенье … 6 — суббота (МСК) — серию не рвут. */
   restWeekdays: readonly number[];
-  /** Сколько заморозок доступно: пропуски сверх них рвут серию. */
-  freezesLeft: number;
-}
-
-export interface StreakResult {
-  /** Длина серии в выполненных днях (дни отдыха и заморозки серию сохраняют, но не удлиняют). */
-  days: number;
-  /** Сколько заморозок «виртуально» потрачено на пропуски внутри серии. */
-  freezesSpent: number;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-// Дальше года не ходим: и серия такой длины уже подвиг, и цикл гарантированно конечен.
-const MAX_STREAK_LOOKBACK_DAYS = 366;
+/** Дальше года не ходим: и серия такой длины уже подвиг, и циклы гарантированно конечны. */
+export const MAX_STREAK_LOOKBACK_DAYS = 366;
 
 /**
- * Серия по календарным дням МСК от сегодня назад. Сегодняшний невыполненный день серию
- * не рвёт (день ещё не кончился); прошлый пропуск закрывается днём отдыха или заморозкой.
+ * Серия (в выполненных днях) по календарным дням МСК от сегодня назад. Сегодняшний
+ * невыполненный день серию не рвёт (день ещё не кончился); прошлый пропуск закрывается
+ * днём отдыха или заморозкой из журнала (автосписание — на сервере, src/server/streak.ts).
  */
-export function computeStreak(input: StreakInput): StreakResult {
+export function computeStreak(input: StreakInput): number {
   const restWeekdays = new Set(input.restWeekdays);
   let days = 0;
-  let freezesSpent = 0;
-  // Заморозка тратится, только если за пропуском (глубже в прошлом) есть выполненный день:
-  // хвост пропусков без продолжения серии заморозки жечь не должен.
-  let pendingFreezes = 0;
 
   for (let offset = 0; offset < MAX_STREAK_LOOKBACK_DAYS; offset += 1) {
     const moment = new Date(input.now.getTime() - offset * DAY_MS);
     if (input.completedDayKeys.has(mskDayKey(moment))) {
       days += 1;
-      freezesSpent += pendingFreezes;
-      pendingFreezes = 0;
       continue;
     }
     if (!offset) continue; // сегодня ещё можно успеть
+    if (input.frozenDayKeys.has(mskDayKey(moment))) continue;
     if (restWeekdays.has(mskWeekday(moment))) continue;
-    if (freezesSpent + pendingFreezes < input.freezesLeft) {
-      pendingFreezes += 1;
-      continue;
-    }
     break;
   }
 
-  return { days, freezesSpent };
+  return days;
 }
 
 // Ключ МСК-дня → момент полуночи этого дня (для итерации по календарю в longestStreak).
@@ -196,10 +178,14 @@ function mskDayKeyToDate(dayKey: string): Date {
 
 /**
  * Лучшая серия за всю историю: самый длинный отрезок выполненных дней, где пропуски
- * закрыты только днями отдыха. Заморозки в прошлое не ретроспектируем — их расход
- * по историческим пропускам не восстановим, поэтому «лучший стрик» считается строже текущего.
+ * закрыты только днями отдыха или заморозками из журнала (расход заморозок durable —
+ * StreakDay, поэтому исторические пропуски бриджатся честно).
  */
-export function longestStreak(input: { completedDayKeys: ReadonlySet<string>; restWeekdays: readonly number[] }): number {
+export function longestStreak(input: {
+  completedDayKeys: ReadonlySet<string>;
+  frozenDayKeys: ReadonlySet<string>;
+  restWeekdays: readonly number[];
+}): number {
   const restWeekdays = new Set(input.restWeekdays);
   const sortedDays = [...input.completedDayKeys].sort();
   let best = 0;
@@ -211,9 +197,10 @@ export function longestStreak(input: { completedDayKeys: ReadonlySet<string>; re
     let bridged = false;
     if (previous) {
       bridged = true;
-      // Все дни между выполненными должны быть днями отдыха, иначе серия начинается заново.
+      // Все дни между выполненными должны быть днями отдыха или заморозками, иначе серия заново.
       for (let time = previous.getTime() + DAY_MS; time < current.getTime(); time += DAY_MS) {
-        if (!restWeekdays.has(mskWeekday(new Date(time)))) {
+        const gapMoment = new Date(time);
+        if (!restWeekdays.has(mskWeekday(gapMoment)) && !input.frozenDayKeys.has(mskDayKey(gapMoment))) {
           bridged = false;
           break;
         }

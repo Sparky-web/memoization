@@ -46,6 +46,11 @@ export const PRO_DECK_GENERATIONS_PER_DAY = 5;
 export const PRO_CHAT_PER_DAY = 50;
 /** ИИ-сверок открытых ответов в день (Pro fair-use; у Free функция выключена настройкой). */
 export const PRO_AI_CHECKS_PER_DAY = 200;
+/**
+ * Голосовых вызовов SpeechKit (STT и TTS суммарно) в день — Pro fair-use: роуты
+ * /api/speech/* можно дёргать мимо UI, без потолка это неограниченный платный трафик.
+ */
+export const PRO_SPEECH_PER_DAY = 200;
 
 /**
  * Машиночитаемые коды paywall-ошибок: сервер кидает их в message при статусе 402,

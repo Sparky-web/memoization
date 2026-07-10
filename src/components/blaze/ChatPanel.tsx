@@ -27,7 +27,7 @@ interface ChatPanelProps {
 function UserBubble({ content }: { content: string }) {
   return (
     <div className="flex justify-end">
-      <div className="bg-primary text-primary-foreground max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2">
+      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-primary-foreground">
         <Text variant="small">{content}</Text>
       </div>
     </div>
@@ -37,7 +37,7 @@ function UserBubble({ content }: { content: string }) {
 function AssistantBubble({ content }: { content: string }) {
   return (
     <div className="flex justify-start">
-      <div className="bg-muted max-w-[90%] min-w-0 overflow-hidden rounded-2xl rounded-bl-sm px-3 py-2">
+      <div className="max-w-[90%] min-w-0 overflow-hidden rounded-2xl rounded-bl-sm bg-muted px-3 py-2">
         <MarkdownView>{content}</MarkdownView>
       </div>
     </div>
@@ -69,7 +69,7 @@ export function ChatPanel({ messages, pending, pendingQuestion, onSend }: ChatPa
           {pendingQuestion ? <UserBubble content={pendingQuestion} /> : null}
           {pending ? (
             <div className="flex justify-start">
-              <div className="bg-muted rounded-2xl rounded-bl-sm px-3 py-2">
+              <div className="rounded-2xl rounded-bl-sm bg-muted px-3 py-2">
                 <Text variant="small" color="supplementary">
                   {typo("Claude печатает…")}
                 </Text>
@@ -84,7 +84,7 @@ export function ChatPanel({ messages, pending, pendingQuestion, onSend }: ChatPa
       )}
 
       {/* Поле ввода прижато к низу окна (sticky), чтобы не уезжало под клавиатуру на мобиле. */}
-      <div className="bg-card border-border sticky bottom-0 border-t pt-2">
+      <div className="sticky bottom-0 border-t border-border bg-card pt-2">
         <form
           onSubmit={(event) => {
             event.preventDefault();

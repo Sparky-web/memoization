@@ -64,16 +64,29 @@ function DraftSection({ examId, onCreated }: { examId: string; onCreated: (mapId
         <VStack gap="3xs">
           <Text bold>{typo("Черновик от ИИ")}</Text>
           <Text variant="mini" color="supplementary">
-            {typo("Строить схему самому полезнее, чем смотреть готовую, — черновик от ИИ только скелет: достраивайте связи руками.")}
+            {typo(
+              "Строить схему самому полезнее, чем смотреть готовую, — черновик от ИИ только скелет: достраивайте связи руками.",
+            )}
           </Text>
         </VStack>
         {topics.length > 0 && (
           <HStack gap="2xs" wrap>
-            <Chip active={!topic} onClick={() => { setTopic(null); }}>
+            <Chip
+              active={!topic}
+              onClick={() => {
+                setTopic(null);
+              }}
+            >
               {typo("Весь экзамен")}
             </Chip>
             {topics.map((option) => (
-              <Chip key={option} active={topic === option} onClick={() => { setTopic(option); }}>
+              <Chip
+                key={option}
+                active={topic === option}
+                onClick={() => {
+                  setTopic(option);
+                }}
+              >
                 {typo(option)}
               </Chip>
             ))}
@@ -121,7 +134,9 @@ function ConceptMapPage() {
       {!maps.isLoading && !mapList.length && (
         <SimpleCard>
           <Text color="supplementary">
-            {typo("Карт пока нет. Набросайте черновик от ИИ и достройте его — или начните с чистого листа, сгенерировав скелет по любой теме.")}
+            {typo(
+              "Карт пока нет. Набросайте черновик от ИИ и достройте его — или начните с чистого листа, сгенерировав скелет по любой теме.",
+            )}
           </Text>
         </SimpleCard>
       )}
@@ -129,7 +144,13 @@ function ConceptMapPage() {
       {mapList.length > 1 && (
         <HStack gap="2xs" wrap>
           {mapList.map((map) => (
-            <Chip key={map.id} active={activeMap?.id === map.id} onClick={() => { setActiveMapId(map.id); }}>
+            <Chip
+              key={map.id}
+              active={activeMap?.id === map.id}
+              onClick={() => {
+                setActiveMapId(map.id);
+              }}
+            >
               {typo(map.title)}
             </Chip>
           ))}

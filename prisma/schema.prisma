@@ -26,6 +26,7 @@ model User {
   cardProgress CardProgress[]
   favorites    ExamFavorite[]
   anxietyDumps AnxietyDump[]
+  streakDays   StreakDay[]
   settings     UserSettings?
 
   subscription    Subscription?
@@ -364,16 +365,30 @@ model ExamFavorite {
   @@index([examId])
 }
 
-/// Настройки пользователя: дневной бюджет, дни отдыха и заморозки серии.
+/// Журнал серии дней: kind "done" — план дня закрыт (день засчитан и при < 10 ответах),
+/// kind "freeze" — пропуск закрыт заморозкой (durable-автосписание). dayKey — день МСК YYYY-MM-DD.
+model StreakDay {
+  id String @id @default(cuid())
+  /// Ключ календарного дня МСК (см. mskDayKey).
+  dayKey String
+  /// "done" | "freeze".
+  kind      String
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayKey])
+}
+
+/// Настройки пользователя: дневной бюджет, дни отдыха, предсонное напоминание, ИИ-сверка.
+/// Заморозки серии живут в журнале StreakDay (остаток считается на скользящие 30 дней).
 model UserSettings {
   id String @id @default(cuid())
   /// Общий дневной бюджет минут на все экзамены.
   dailyMinutesTotal Int @default(25)
   /// Запланированные дни отдыха (0 — воскресенье … 6 — суббота, счёт по МСК) — не рвут серию.
   restWeekdays Int[] @default([])
-  /// Остаток заморозок серии (2 в месяц, автосписание при пропуске).
-  streakFreezesLeft Int       @default(2)
-  freezesRenewedAt  DateTime?
   /// Час предсонного напоминания по МСК (null — выключено; без строки настроек действует дефолт 21).
   bedtimeHour Int? @default(21)
   /// ИИ-сверка открытых ответов (Pro): сервер сверяет ответ с эталоном по смыслу (волна 5).

@@ -34,7 +34,9 @@ export function TopicsSection({ exam, onPretest }: TopicsSectionProps) {
             <VStack gap="3xs">
               <Text bold>{typo("Сначала бой: претест по новым темам")}</Text>
               <Text variant="mini" color="supplementary">
-                {typo("Попробуй ответить до изучения — ошибаться сейчас нормально и полезно, так материал запомнится лучше.")}
+                {typo(
+                  "Попробуй ответить до изучения — ошибаться сейчас нормально и полезно, так материал запомнится лучше.",
+                )}
               </Text>
             </VStack>
             <Button variant="outline" size="sm" onClick={onPretest}>

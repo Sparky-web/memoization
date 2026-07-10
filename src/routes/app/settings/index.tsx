@@ -88,7 +88,9 @@ function SettingsPage() {
   const requestAiCheck = (enabled: boolean) => {
     if (enabled && !billing.pro) {
       setShowAiPaywall(true);
-      void logEvent({ data: { name: "paywall_shown", meta: { reason: "AI_CHECK", place: "settings" } } }).catch(() => undefined);
+      void logEvent({ data: { name: "paywall_shown", meta: { reason: "AI_CHECK", place: "settings" } } }).catch(
+        () => undefined,
+      );
       return;
     }
     save.mutate({ aiCheckEnabled: enabled });
@@ -121,7 +123,7 @@ function SettingsPage() {
       <SimpleCard title={typo("Дни отдыха")}>
         <Text variant="small" color="supplementary">
           {typo(
-            `Запланированный отдых не рвёт серию. Внеплановый пропуск закрывает заморозка — их 2 в месяц, остаток: ${settings.streakFreezesLeft} ${pluralRu(settings.streakFreezesLeft, "штука", "штуки", "штук")}`,
+            `Запланированный отдых не рвёт серию. Внеплановый пропуск закрывает заморозка — их 2 на месяц, остаток: ${settings.freezesLeft} ${pluralRu(settings.freezesLeft, "штука", "штуки", "штук")}`,
           )}
         </Text>
         <HStack gap="2xs" wrap>
@@ -194,7 +196,9 @@ function SettingsPage() {
         }
       >
         <Text variant="small" color="supplementary">
-          {typo("Нейросеть сверяет твой открытый ответ с эталоном по смыслу и сразу говорит, что упущено. Без неё ты оцениваешь ответ сам.")}
+          {typo(
+            "Нейросеть сверяет твой открытый ответ с эталоном по смыслу и сразу говорит, что упущено. Без неё ты оцениваешь ответ сам.",
+          )}
         </Text>
         <HStack gap="2xs" wrap>
           <Chip

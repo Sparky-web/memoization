@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowRight, CalendarDays, FileQuestion, Quote, Sparkles } from "lucide-react";
 
-import { Heading, HStack, Text, VStack } from "~/components";
+import { Badge, Heading, HStack, Text, VStack } from "~/components";
 import { typo } from "~/lib";
 
 /**
@@ -84,7 +84,10 @@ export function LandingDemo() {
           {/* Выход: ответ с цитатой → атомарная карточка → план повторений к дате */}
           <div className="w-full max-w-md md:max-w-none md:flex-1">
             <VStack gap="sm">
-              <div className="landing-demo-card rounded-2xl border border-border bg-card p-4 shadow-sm" style={stageDelay(0)}>
+              <div
+                className="landing-demo-card rounded-2xl border border-border bg-card p-4 shadow-sm"
+                style={stageDelay(0)}
+              >
                 <VStack gap="3xs">
                   <Text variant="mini" color="supplementary">
                     {typo("Ответ на вопрос 2")}
@@ -92,16 +95,21 @@ export function LandingDemo() {
                   <Text variant="small" bold>
                     {typo("Активное припоминание — самостоятельное извлечение знания из памяти без подсказки…")}
                   </Text>
+                  {/* Привязка к конспектам — возможность Pro: бейдж честно предупреждает об этом ещё на лендинге. */}
                   <HStack gap="xs" align="center">
                     <Quote className="size-3.5 shrink-0 text-primary" />
                     <Text variant="mini" color="supplementary">
                       {typo("Из твоего конспекта: Лекции_по_психологии.pdf")}
                     </Text>
+                    <Badge variant="primary">Pro</Badge>
                   </HStack>
                 </VStack>
               </div>
 
-              <div className="landing-demo-card rounded-2xl border border-border bg-card p-4 shadow-sm" style={stageDelay(1)}>
+              <div
+                className="landing-demo-card rounded-2xl border border-border bg-card p-4 shadow-sm"
+                style={stageDelay(1)}
+              >
                 <VStack gap="3xs">
                   <Text variant="mini" color="supplementary">
                     {typo("Карточка · один факт")}
@@ -112,7 +120,10 @@ export function LandingDemo() {
                 </VStack>
               </div>
 
-              <div className="landing-demo-card rounded-2xl border border-border bg-card p-4 shadow-sm" style={stageDelay(2)}>
+              <div
+                className="landing-demo-card rounded-2xl border border-border bg-card p-4 shadow-sm"
+                style={stageDelay(2)}
+              >
                 <VStack gap="xs">
                   <Text variant="mini" color="supplementary">
                     {typo("План повторений — точно к дате")}

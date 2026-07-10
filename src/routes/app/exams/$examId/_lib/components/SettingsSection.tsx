@@ -7,7 +7,16 @@ import { toast } from "sonner";
 import { Button, ConfirmDialog, HStack, Input, PaywallCard, SimpleCard, Text, VStack } from "~/components";
 import { isPaywallError, typo } from "~/lib";
 
-import { archiveExam, Chip, deleteExam, type ExamDetail, generateExam, logEvent, setExamPublic, updateExam } from "../../../_lib";
+import {
+  archiveExam,
+  Chip,
+  deleteExam,
+  type ExamDetail,
+  generateExam,
+  logEvent,
+  setExamPublic,
+  updateExam,
+} from "../../../_lib";
 
 // Настройки экзамена: параметры подготовки, публичная ссылка, перегенерация, архив и удаление.
 
@@ -200,7 +209,7 @@ export function SettingsSection({ exam }: { exam: ExamDetail }) {
         </VStack>
         <VStack gap="xs">
           <Text variant="small" color="supplementary">
-            {typo("Минут в день на этот экзамен")}
+            {typo("Минут на претест и зубрёжку (дневной план делит общий бюджет минут из настроек)")}
           </Text>
           <HStack gap="2xs" wrap>
             {minutesOptions.map((option) => (
@@ -248,7 +257,9 @@ export function SettingsSection({ exam }: { exam: ExamDetail }) {
 
       <SimpleCard title={typo("Публичная ссылка")}>
         <Text variant="small" color="supplementary">
-          {typo("По ссылке виден список вопросов без ответов; любой может забрать экзамен себе и готовиться со своим прогрессом.")}
+          {typo(
+            "По ссылке виден список вопросов без ответов; любой может забрать экзамен себе и готовиться со своим прогрессом.",
+          )}
         </Text>
         <HStack gap="sm" align="center" wrap>
           <Button
@@ -266,7 +277,12 @@ export function SettingsSection({ exam }: { exam: ExamDetail }) {
               <Text variant="small" color="supplementary" breakWords>
                 {publicUrl}
               </Text>
-              <Button variant="ghost" size="icon" aria-label={typo("Скопировать ссылку")} onClick={() => void copyPublicLink()}>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={typo("Скопировать ссылку")}
+                onClick={() => void copyPublicLink()}
+              >
                 <Copy className="size-4" />
               </Button>
             </HStack>
@@ -276,7 +292,9 @@ export function SettingsSection({ exam }: { exam: ExamDetail }) {
 
       <SimpleCard title={typo("Перегенерация")}>
         <Text variant="small" color="supplementary">
-          {typo("ИИ заново ответит на все вопросы и соберёт карточки — например, после загрузки материалов или правки списка.")}
+          {typo(
+            "ИИ заново ответит на все вопросы и соберёт карточки — например, после загрузки материалов или правки списка.",
+          )}
         </Text>
         <HStack>
           <Button
@@ -295,9 +313,9 @@ export function SettingsSection({ exam }: { exam: ExamDetail }) {
             reason="GENERATION"
             compact
             onShown={() => {
-              void logEvent({ data: { name: "paywall_shown", meta: { reason: "GENERATION", place: "exam_settings" } } }).catch(
-                () => undefined,
-              );
+              void logEvent({
+                data: { name: "paywall_shown", meta: { reason: "GENERATION", place: "exam_settings" } },
+              }).catch(() => undefined);
             }}
           />
         )}
