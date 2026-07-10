@@ -66,8 +66,7 @@ function CountdownTimer() {
 
 // Иконка-плитка чек-листа: мягкий акцентный квадрат, иконка тише текста.
 function TipIcon({ icon: Icon, tone }: { icon: typeof Moon; tone: "accent" | "warning" }) {
-  const toneClass =
-    tone === "warning" ? "bg-warning/15 text-warning" : "bg-accent/60 text-accent-foreground";
+  const toneClass = tone === "warning" ? "bg-warning/15 text-warning" : "bg-accent/60 text-accent-foreground";
   return (
     <span aria-hidden className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${toneClass}`}>
       <Icon className="size-5" strokeWidth={1.8} />

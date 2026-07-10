@@ -18,14 +18,24 @@ const generatedAnswerSchema = zodRussian.object({
 
 const MCQ_OPTIONS_COUNT = 4;
 
+// Модель иногда ставит пропуск cloze внутри LaTeX-формулы, экранируя подчёркивания
+// («$O(\_\_\_)$»): приводим такой пропуск к обычному «___», чтобы одна карточка
+// не провалила валидацию целого прохода генерации (повтор — лишний вызов opus).
+function normalizeClozeGap(prompt: string): string {
+  return prompt.replaceAll("\\_\\_\\_", "___");
+}
+
 const generatedCardSchema = zodRussian
   .object({
     format: zodRussian.enum(["open", "mcq", "cloze", "truefalse"]),
+    /** «full» — карточка полного экзаменационного вопроса, «atomic» — один факт. */
+    kind: zodRussian.enum(["full", "atomic"]).default("atomic"),
     prompt: zodRussian.string().min(1).max(4000),
     answer: zodRussian.string().min(1).max(8000),
     options: zodRussian.array(zodRussian.string().min(1).max(600)).max(8).default([]),
     explanation: zodRussian.string().min(1).max(2000),
   })
+  .transform((card) => (card.format === "cloze" ? { ...card, prompt: normalizeClozeGap(card.prompt) } : card))
   .superRefine((card, ctx) => {
     if (card.format === "mcq" && card.options.length !== MCQ_OPTIONS_COUNT) {
       ctx.addIssue({ code: "custom", message: typo(`у теста должно быть ровно ${MCQ_OPTIONS_COUNT} варианта`) });
@@ -42,17 +52,49 @@ const generatedCardSchema = zodRussian
     if (card.format === "truefalse" && card.answer !== "true" && card.answer !== "false") {
       ctx.addIssue({ code: "custom", message: typo("ответ «верно/неверно» — строго true или false") });
     }
+    if (card.kind === "full" && card.format !== "open") {
+      ctx.addIssue({ code: "custom", message: typo("карточка «полный вопрос» обязана быть формата open") });
+    }
   });
+
+type GeneratedCardParsed = ReturnType<typeof generatedCardSchema.parse>;
+
+// Инвариант набора карточек вопроса: первая — обязательная «полный вопрос», ровно одна.
+function assertFullCardLeads(cards: readonly GeneratedCardParsed[], ctx: zodRussian.core.$RefinementCtx): void {
+  if (cards[0]?.kind !== "full") {
+    ctx.addIssue({
+      code: "custom",
+      message: typo("первая карточка вопроса обязана быть «полным вопросом» (kind=full)"),
+    });
+  }
+  if (cards.filter((card) => card.kind === "full").length > 1) {
+    ctx.addIssue({ code: "custom", message: typo("карточка «полный вопрос» должна быть ровно одна") });
+  }
+}
 
 const generatedQuestionCardsSchema = zodRussian.object({
   /** Номер вопроса из questions.txt, с единицы. */
   position: zodRussian.number().int().min(1),
-  cards: zodRussian.array(generatedCardSchema).min(1).max(8),
+  /** Первая карточка — «полный вопрос», плюс 2–4 атомарные (минимум одна). */
+  cards: zodRussian.array(generatedCardSchema).min(2).max(8).superRefine(assertFullCardLeads),
 });
 
 const answersFileSchema = zodRussian.array(generatedAnswerSchema).min(1);
 const cardsFileSchema = zodRussian.array(generatedQuestionCardsSchema).min(1);
-const cardListSchema = zodRussian.array(generatedCardSchema).min(1).max(8);
+// Перегенерация вопроса пересобирает и «полный вопрос» — инвариант тот же, что в проходе B.
+const cardListSchema = zodRussian.array(generatedCardSchema).min(2).max(8).superRefine(assertFullCardLeads);
+
+/** Сжатый ответ «полного вопроса» для бэкфилла существующих экзаменов. */
+const generatedFullAnswerSchema = zodRussian.object({
+  /** Номер вопроса из списка бэкфилла, с единицы. */
+  position: zodRussian.number().int().min(1),
+  /** Сжатый полный ответ (5–8 предложений или пунктов) — достаточный для устного ответа. */
+  answer: zodRussian.string().min(1).max(8000),
+  /** Ключевая структура ответа одной строкой. */
+  explanation: zodRussian.string().min(1).max(2000),
+});
+
+const fullAnswersFileSchema = zodRussian.array(generatedFullAnswerSchema).min(1);
 
 /** Ответ на один вопрос из answers.json (проход A). */
 export type GeneratedAnswer = ReturnType<typeof generatedAnswerSchema.parse>;
@@ -145,4 +187,25 @@ export function parseGeneratedCardList(rawText: string): GeneratedCard[] {
   } catch (error) {
     throw new Error(`${fileLabel}: ${firstIssueMessage(error)}`, { cause: error });
   }
+}
+
+/** Ответ бэкфилла «полных вопросов» на один вопрос. */
+export type GeneratedFullAnswer = ReturnType<typeof generatedFullAnswerSchema.parse>;
+
+/** Разбор батча бэкфилла: каждый вопрос покрыт ровно один раз, отсортировано по позиции. */
+export function parseGeneratedFullAnswers(rawText: string, questionCount: number): GeneratedFullAnswer[] {
+  const fileLabel = typo("Карточки полных вопросов");
+  const json = parseJson(rawText, fileLabel);
+  let answers: GeneratedFullAnswer[];
+  try {
+    answers = fullAnswersFileSchema.parse(json);
+  } catch (error) {
+    throw new Error(`${fileLabel}: ${firstIssueMessage(error)}`, { cause: error });
+  }
+  assertPositionsExact(
+    answers.map((answer) => answer.position),
+    questionCount,
+    fileLabel,
+  );
+  return [...answers].sort((left, right) => left.position - right.position);
 }

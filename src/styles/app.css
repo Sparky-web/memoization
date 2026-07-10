@@ -466,6 +466,21 @@ textarea {
   animation: page-enter 0.28s var(--ease-out) both;
 }
 
+/* Лёгкий fade области контента на каждый внутренний переход приложения:
+   сдвиг + долгая анимация читались как «моргание» при частой навигации. */
+@keyframes page-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.page-fade {
+  animation: page-fade 0.12s var(--ease-out) both;
+}
+
 /* Зелёная пульсация на весь экран при свайпе «вспомнил». */
 @keyframes good-pulse {
   0% {
@@ -617,7 +632,8 @@ textarea {
 
 /* Уважаем настройку «уменьшить движение». */
 @media (prefers-reduced-motion: reduce) {
-  .page-enter {
+  .page-enter,
+  .page-fade {
     animation: none;
   }
   /* Подъём/нажатие: без движения, но смены цветов остаются мгновенными. */
@@ -769,4 +785,46 @@ textarea {
 .markdown a {
   color: var(--primary);
   text-decoration: underline;
+}
+/* Таблицы (remark-gfm): мягкая рамка, зебра, скругление; обёртка даёт горизонтальный
+   скролл на мобиле вместо распирания карточки. */
+.markdown .markdown-table-wrap {
+  overflow-x: auto;
+  margin: 0.6em 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+.markdown th,
+.markdown td {
+  padding: 0.45em 0.8em;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+.markdown th {
+  font-weight: 600;
+  background: var(--muted);
+}
+.markdown tbody tr:nth-child(even) {
+  background: color-mix(in oklab, var(--muted) 50%, transparent);
+}
+.markdown tbody tr:last-child td {
+  border-bottom: none;
+}
+/* Короткий текст в масштабе окружения (строки карточек, списки вопросов):
+   без внешних отступов у крайних блоков, шрифт наследуется от родителя. */
+.markdown-inline {
+  font-size: inherit;
+  line-height: inherit;
+}
+.markdown-inline > :first-child {
+  margin-top: 0;
+}
+.markdown-inline > :last-child {
+  margin-bottom: 0;
 }

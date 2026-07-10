@@ -170,6 +170,8 @@ model Card {
   id     String @id @default(cuid())
   /// "open" | "mcq" | "cloze" | "truefalse".
   format String
+  /// "full" — карточка полного экзаменационного вопроса (prompt = вопрос билета) | "atomic" — один факт.
+  kind   String @default("atomic")
   /// Вопрос карточки; для cloze — текст с пропуском «___».
   prompt String
   /// Верный ответ (краткий); для truefalse — "true"/"false".

@@ -17,6 +17,7 @@ export {
 } from "./lib/texts";
 export {
   addCard,
+  addFullQuestionCards,
   archiveExam,
   askCardChat,
   createForecast,

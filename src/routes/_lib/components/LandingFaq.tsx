@@ -50,7 +50,7 @@ export function LandingFaq() {
             {FAQ_ITEMS.map((item, itemIndex) => (
               <details
                 key={item.question}
-                className="group rounded-2xl bg-card p-5 shadow-card rise"
+                className="group rise rounded-2xl bg-card p-5 shadow-card"
                 style={riseDelay(itemIndex)}
               >
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 [&::-webkit-details-marker]:hidden">

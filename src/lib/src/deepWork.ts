@@ -112,7 +112,9 @@ export function mergeConceptMapDraft(
     if (!from || !to || from === to) continue;
     const duplicate = edges.some(
       (edge) =>
-        edge.from === from && edge.to === to && edge.label.trim().toLowerCase() === draftEdge.label.trim().toLowerCase(),
+        edge.from === from &&
+        edge.to === to &&
+        edge.label.trim().toLowerCase() === draftEdge.label.trim().toLowerCase(),
     );
     if (!duplicate) edges.push({ from, to, label: draftEdge.label });
   }

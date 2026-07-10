@@ -51,14 +51,14 @@ function PlanCardBody({ plan, pending, onSelect }: PlanCardProps) {
 export function PlanCard(props: PlanCardProps) {
   if (!props.plan.hero) {
     return (
-      <SimpleCard className="h-full content-stretch lift">
+      <SimpleCard className="lift h-full content-stretch">
         <PlanCardBody {...props} />
       </SimpleCard>
     );
   }
   return (
     // Рамка 4px: на 2px градиент индиго→фиолет читался как сплошной primary-бордер.
-    <div className="relative h-full rounded-3xl bg-brand-gradient p-1 shadow-card lift">
+    <div className="lift relative h-full rounded-3xl bg-brand-gradient p-1 shadow-card">
       {props.plan.badge && (
         <span className="absolute -top-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-brand-gradient px-3 py-1 whitespace-nowrap text-brand-foreground shadow-card">
           <Text variant="mini" bold>

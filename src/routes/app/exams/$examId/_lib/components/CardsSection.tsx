@@ -12,6 +12,7 @@ import {
   EmptyState,
   HStack,
   Input,
+  MarkdownView,
   PaywallCard,
   ResponsiveModal,
   SimpleCard,
@@ -268,6 +269,40 @@ function CardChatModal({ card, onClose }: { card: ExamCardItem; onClose: () => v
 // точечно для спотыкающихся карточек, спека «Мнемоники»).
 const STUBBORN_LAPSES = 3;
 
+// Текст карточки в списке — через markdown (формулы $…$ и таблицы). Cloze — плоским
+// текстом: markdown съел бы «___» пропуска. Размер — токены small, как у прежнего Text.
+const inlineSmallClasses = "text-(length:--paragraph-small-font-size) leading-(--paragraph-small-line-height)";
+
+function CardPromptView({ card }: { card: ExamCardItem }) {
+  if (card.format === "cloze") {
+    return (
+      <Text bold breakWords>
+        {typo(card.prompt)}
+      </Text>
+    );
+  }
+  return (
+    <MarkdownView variant="inline" className="font-semibold">
+      {card.prompt}
+    </MarkdownView>
+  );
+}
+
+function CardAnswerView({ card }: { card: ExamCardItem }) {
+  if (card.format === "truefalse") {
+    return (
+      <Text variant="small" color="supplementary" breakWords>
+        {card.answer === "true" ? typo("верно") : typo("неверно")}
+      </Text>
+    );
+  }
+  return (
+    <MarkdownView variant="inline" className={`${inlineSmallClasses} text-muted-foreground`}>
+      {card.answer}
+    </MarkdownView>
+  );
+}
+
 // Частые действия — тихие ссылки: вторичное тише контента на два тона, primary остаётся hover'у.
 const quietActionClasses = "font-semibold text-muted-foreground hover:text-primary";
 
@@ -392,6 +427,11 @@ function CardRow({
     <VStack gap="2xs" className="rounded-2xl bg-card p-4 shadow-card">
       <HStack gap="xs" align="center" wrap>
         <Badge variant="muted">{cardFormatLabel(card.format)}</Badge>
+        {card.kind === "full" && (
+          <Badge variant="dot" dot="primary">
+            {typo("полный вопрос")}
+          </Badge>
+        )}
         {card.topic && <Badge variant="outline">{typo(card.topic)}</Badge>}
         {card.flagged && (
           <Badge variant="dot" dot="primary">
@@ -409,12 +449,8 @@ function CardRow({
           </Badge>
         )}
       </HStack>
-      <Text bold breakWords>
-        {typo(card.prompt)}
-      </Text>
-      <Text variant="small" color="supplementary" breakWords>
-        {typo(card.answer)}
-      </Text>
+      <CardPromptView card={card} />
+      <CardAnswerView card={card} />
       <Text variant="mini" color="supplementary">
         {progressLine}
       </Text>

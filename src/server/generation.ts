@@ -8,9 +8,11 @@ import WordExtractor from "word-extractor";
 import {
   type GeneratedAnswer,
   type GeneratedCard,
+  type GeneratedFullAnswer,
   parseGeneratedAnswers,
   parseGeneratedCardList,
   parseGeneratedCards,
+  parseGeneratedFullAnswers,
   typo,
 } from "~/lib";
 
@@ -33,15 +35,21 @@ const REGENERATION_TIMEOUT_MS = 5 * 60 * 1000;
 const wordExtractor = new WordExtractor();
 
 const MATH_RULES = typo(
-  `Математику оформляй формулами LaTeX: формула внутри строки — между одиночными «$» ($E=mc^2$), отдельная блочная формула — между «$$», причём «$$» на ОТДЕЛЬНЫХ строках. Не дублируй формулу обычным текстом.`,
+  `Математику оформляй формулами LaTeX (KaTeX): формула внутри строки — между одиночными «$» ($E=mc^2$), отдельная блочная формула — между «$$», причём «$$» на ОТДЕЛЬНЫХ строках. Не дублируй формулу обычным текстом. Сравнения, классификации и структурированные перечисления оформляй markdown-таблицами, где это уместно.`,
 );
 
 const CARD_FORMAT_RULES = typo(`Форматы карточек:
 - "open" — базовый: вопрос → краткий верный ответ (answer), options — пустой массив;
-- "cloze" — утверждение с пропуском КЛЮЧЕВОГО слова: в prompt вместо него стоит «___», answer — пропущенное слово или короткая фраза, options — пустой массив;
+- "cloze" — утверждение с пропуском КЛЮЧЕВОГО слова: в prompt вместо него стоит «___» (ровно три подчёркивания обычным текстом, НЕ внутри LaTeX-формулы и БЕЗ экранирования), answer — пропущенное слово или короткая фраза, options — пустой массив;
 - "mcq" — тест: ровно 4 варианта в options, answer ДОСЛОВНО совпадает с одним из них; дистракторы делай ПРАВДОПОДОБНЫМИ — предпочтительно бери правильные ответы на СОСЕДНИЕ вопросы этого же экзамена (хитрые отвлечения);
 - "truefalse" — немного, только для разминки: prompt — утверждение, answer — строго "true" или "false", options — пустой массив.
 У каждой карточки обязательно explanation — однострочное «почему это так».`);
+
+// Обязательная первая карточка каждого вопроса — «полный вопрос»: тренировка ответа
+// на билет целиком, а не только на атомарные факты (жалоба «в сессии только лёгкие вопросы»).
+const FULL_CARD_RULE = typo(
+  `ПЕРВАЯ карточка КАЖДОГО вопроса — обязательная карточка «полный вопрос»: kind="full", format="open", prompt — сам экзаменационный вопрос (как в билете, без перефразирования), answer — сжатый полный ответ на него (5–8 предложений или пунктов — достаточный для устного ответа на экзамене), explanation — ключевая структура ответа одной строкой. Остальные карточки — kind="atomic".`,
+);
 
 // Смещение пропорций форматов карточек по формату экзамена (спека, раздел 4).
 const FORMAT_MIX_BY_EXAM: Record<string, string> = {
@@ -92,7 +100,9 @@ function buildCardsPrompt(examFormat: string | null, questionCount: number): str
   return `${typo(`Ты дробишь ответы на экзаменационные вопросы на атомарные карточки для интервального повторения.
 В ./inputs/questions.txt — нумерованный список из ${questionCount} вопросов, в ./answers.json — готовые ответы на них (поля position, topic, answerMd, covered, aiGenerated, sourceRef). Прочитай оба файла целиком (Read).`)}
 
-${typo("На КАЖДЫЙ вопрос составь 2–5 атомарных карточек: один факт — одна карточка.")}
+${FULL_CARD_RULE}
+
+${typo("ПЛЮС к карточке «полный вопрос» составь на каждый вопрос 2–4 атомарные карточки: один факт — одна карточка.")}
 
 ${CARD_FORMAT_RULES}
 
@@ -102,10 +112,10 @@ ${typo("Язык карточек — как у ответов.")} ${MATH_RULES}
 
 ${typo("Результат запиши строго как валидный JSON-массив в файл ./cards.json (Write), без пояснений вокруг:")}
 [
-  { "position": 1, "cards": [ { "format": "open", "prompt": "…", "answer": "…", "options": [], "explanation": "…" } ] }
+  { "position": 1, "cards": [ { "format": "open", "kind": "full", "prompt": "…", "answer": "…", "options": [], "explanation": "…" }, { "format": "cloze", "kind": "atomic", "prompt": "…", "answer": "…", "options": [], "explanation": "…" } ] }
 ]
 ${typo(
-  `Каждый вопрос — ровно один раз (position от 1 до ${questionCount}), у каждого 2–5 карточек. Не выводи ничего в ответ и не выходи за пределы текущей папки.`,
+  `Каждый вопрос — ровно один раз (position от 1 до ${questionCount}), у каждого первая карточка — «полный вопрос» и ещё 2–4 атомарные. Не выводи ничего в ответ и не выходи за пределы текущей папки.`,
 )}`;
 }
 
@@ -244,10 +254,13 @@ async function persistGenerationResult(
             examId,
             questionId: question.id,
             format: card.format,
+            kind: card.kind,
             prompt: card.prompt,
             answer: card.answer,
             options: card.options,
             explanation: card.explanation,
+            // «Полный вопрос» несёт полный ответ прохода A развёрнутым разбором.
+            deepMd: card.kind === "full" ? answer.answerMd : null,
             // Привязка к источнику наследуется от ответа на вопрос (проход A).
             sourceRef: answer.sourceRef,
             aiGenerated: answer.aiGenerated,
@@ -368,7 +381,7 @@ function buildQuestionCardsPrompt(question: RegenerationQuestion): string {
 
   const parts = [
     typo(
-      "Ты пересобираешь карточки интервального повторения для ОДНОГО экзаменационного вопроса. Составь 2–5 атомарных карточек: один факт — одна карточка.",
+      "Ты пересобираешь карточки интервального повторения для ОДНОГО экзаменационного вопроса. Составь карточку «полный вопрос» и 2–4 атомарные: один факт — одна карточка.",
     ),
     "",
     `${typo("Вопрос")}: ${question.text}`,
@@ -377,18 +390,19 @@ function buildQuestionCardsPrompt(question: RegenerationQuestion): string {
     "",
     neighborsBlock,
     "",
+    FULL_CARD_RULE,
     CARD_FORMAT_RULES,
     formatMix,
     `${typo("Язык карточек — как у ответа.")} ${MATH_RULES}`,
     "",
     typo("Выведи в ответ ТОЛЬКО валидный JSON-массив карточек, без пояснений и без markdown-ограждений:"),
-    `[ { "format": "open", "prompt": "…", "answer": "…", "options": [], "explanation": "…" } ]`,
+    `[ { "format": "open", "kind": "full", "prompt": "…", "answer": "…", "options": [], "explanation": "…" }, { "format": "cloze", "kind": "atomic", "prompt": "…", "answer": "…", "options": [], "explanation": "…" } ]`,
   ];
   return parts.filter(Boolean).join("\n");
 }
 
 // Запуск claude -p без инструментов (ответ в stdout): маленькая задача, ФС ей не нужна.
-function runClaudeText(prompt: string): Promise<string> {
+function runClaudeText(prompt: string, timeoutMs: number = REGENERATION_TIMEOUT_MS): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const child = spawn("claude", ["-p", prompt, "--model", REGENERATION_MODEL, "--tools", ""], {
       cwd: tmpdir(),
@@ -408,7 +422,7 @@ function runClaudeText(prompt: string): Promise<string> {
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       reject(new Error(typo("Превышено время перегенерации карточек.")));
-    }, REGENERATION_TIMEOUT_MS);
+    }, timeoutMs);
 
     child.on("error", (error) => {
       clearTimeout(timer);
@@ -432,4 +446,47 @@ function runClaudeText(prompt: string): Promise<string> {
 export async function generateQuestionCards(question: RegenerationQuestion): Promise<GeneratedCard[]> {
   const raw = await runClaudeText(buildQuestionCardsPrompt(question));
   return parseGeneratedCardList(raw);
+}
+
+// --- Бэкфилл «полных вопросов» для существующих экзаменов: один батч-вызов sonnet ---
+
+// Батч заметно больше точечной перегенерации (до сотен сжатых ответов) — таймаут шире.
+const FULL_BACKFILL_TIMEOUT_MS = 15 * 60 * 1000;
+// Полный ответ вопроса режем в промпте: модель пишет сжатый ответ, целиком ей текст не нужен.
+const FULL_BACKFILL_ANSWER_SLICE = 4000;
+
+export interface FullBackfillQuestion {
+  text: string;
+  answerMd: string;
+}
+
+function buildFullAnswersPrompt(questions: readonly FullBackfillQuestion[]): string {
+  const questionsBlock = questions
+    .map(
+      (question, index) =>
+        `${index + 1}. ${typo("Вопрос")}: ${question.text}\n${typo("Полный ответ (markdown)")}:\n${question.answerMd.slice(0, FULL_BACKFILL_ANSWER_SLICE)}`,
+    )
+    .join("\n\n---\n\n");
+
+  return [
+    typo(
+      `Ты готовишь карточки «полный вопрос» для интервального повторения: по полному ответу на каждый экзаменационный вопрос составь сжатый полный ответ (5–8 предложений или пунктов — достаточный, чтобы устно ответить на билет) и explanation — ключевую структуру ответа одной строкой. Ничего не выдумывай сверх данного ответа.`,
+    ),
+    `${typo("Язык — как у ответов.")} ${MATH_RULES}`,
+    "",
+    typo(`Вопросы (${questions.length}):`),
+    questionsBlock,
+    "",
+    typo("Выведи в ответ ТОЛЬКО валидный JSON-массив, без пояснений и без markdown-ограждений:"),
+    `[ { "position": 1, "answer": "…", "explanation": "…" } ]`,
+    typo(`Каждый вопрос — ровно один раз, position — его номер из списка выше (от 1 до ${questions.length}).`),
+  ].join("\n");
+}
+
+/** Батч сжатых ответов «полных вопросов» (sonnet, один вызов на экзамен) — бэкфилл старых экзаменов. */
+export async function generateFullQuestionAnswers(
+  questions: readonly FullBackfillQuestion[],
+): Promise<GeneratedFullAnswer[]> {
+  const raw = await runClaudeText(buildFullAnswersPrompt(questions), FULL_BACKFILL_TIMEOUT_MS);
+  return parseGeneratedFullAnswers(raw, questions.length);
 }

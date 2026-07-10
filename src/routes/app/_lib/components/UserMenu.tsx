@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Crown, LogOut, Moon, Settings, ShieldCheck, Sun } from "lucide-react";
 import { useState } from "react";
@@ -20,6 +20,7 @@ interface UserMenuProps {
 /** Меню пользователя в шапке: аватар-кружок с инициалом, имя (на десктопе), дропдаун с темой и выходом. */
 export function UserMenu({ user }: UserMenuProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const { isDark, setDark } = useTheme();
 
@@ -31,6 +32,8 @@ export function UserMenu({ user }: UserMenuProps) {
 
   const handleSignOut = async () => {
     await authClient.signOut();
+    // Весь кэш принадлежит вышедшему пользователю (включая guard-сессию /app) — чистим целиком.
+    queryClient.clear();
     await navigate({ to: "/auth/signin" });
   };
 

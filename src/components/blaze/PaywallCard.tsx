@@ -119,11 +119,7 @@ export function PaywallCard({ reason, compact, onShown }: PaywallCardProps) {
           </Text>
         </VStack>
         <VStack gap="2xs">
-          <Button
-            variant="brand"
-            size={compact ? "default" : "pill"}
-            onClick={() => void navigate({ to: "/pricing" })}
-          >
+          <Button variant="brand" size={compact ? "default" : "pill"} onClick={() => void navigate({ to: "/pricing" })}>
             {typo("Открыть Pro")}
           </Button>
           <Text variant="mini" color="supplementary">

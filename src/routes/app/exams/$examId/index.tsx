@@ -21,6 +21,7 @@ import { formatDateRuMsk, isPaywallError, typo } from "~/lib";
 import { logEvent } from "~/server/fn/events";
 
 import {
+  addFullQuestionCards,
   Chip,
   daysToExamLabel,
   type ExamDetail,
@@ -176,6 +177,55 @@ function GenerationStatusBanner({ exam }: { exam: ExamDetail }) {
   }
 
   return null;
+}
+
+// Баннер бэкфилла «полных вопросов»: у старых экзаменов карточек полного билета нет —
+// один батч-вызов добавляет их ко всем вопросам с готовыми ответами.
+function FullCardsBackfillBanner({ exam }: { exam: ExamDetail }) {
+  const queryClient = useQueryClient();
+
+  const backfill = useMutation({
+    mutationFn: () => addFullQuestionCards({ data: { examId: exam.id } }),
+    onSuccess: (result) => {
+      toast.success(typo(`Добавили карточки полных вопросов: ${result.count}`));
+      void queryClient.invalidateQueries({ queryKey: ["exams"] });
+      void queryClient.invalidateQueries({ queryKey: ["plan"] });
+    },
+    onError: (error) => {
+      console.error(error);
+      const humanMessage = /[а-яё]/i.test(error.message)
+        ? error.message
+        : typo("Не удалось добавить карточки полных вопросов");
+      toast.error(humanMessage);
+    },
+  });
+
+  if (exam.status !== "ready" || !exam.questionsWithoutFullCard) return null;
+
+  return (
+    <SimpleCard>
+      <VStack gap="sm">
+        <Text variant="small" color="supplementary">
+          {typo(
+            "К экзамену готовятся не только атомарными фактами: карточка «полный вопрос» тренирует ответ на билет целиком — как на устном экзамене.",
+          )}
+        </Text>
+        <HStack>
+          <Button
+            variant="outline"
+            disabled={backfill.isPending}
+            onClick={() => {
+              backfill.mutate();
+            }}
+          >
+            {backfill.isPending
+              ? typo("Добавляем — займёт пару минут…")
+              : typo(`Добавить карточки полных вопросов (${exam.questionsWithoutFullCard})`)}
+          </Button>
+        </HStack>
+      </VStack>
+    </SimpleCard>
+  );
 }
 
 function ExamHubPage() {
@@ -367,6 +417,7 @@ function ExamHubPage() {
       </VStack>
 
       <GenerationStatusBanner exam={exam} />
+      <FullCardsBackfillBanner exam={exam} />
 
       {hasActiveCards && (
         <AdaptiveGrid cols={{ base: 2, md: 4 }} gap="sm">

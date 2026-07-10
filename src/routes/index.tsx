@@ -129,13 +129,13 @@ function HomePage() {
                     {typo("ИИ-подготовка к экзаменам")}
                   </Badge>
                 </div>
-                <div className="max-w-3xl rise" style={riseDelay(1)}>
+                <div className="rise max-w-3xl" style={riseDelay(1)}>
                   <Heading variant="h1" align="center">
                     {typo("Вставь вопросы к экзамену — ")}
                     <span className="text-brand-gradient">{typo("Домашник доведёт до сдачи")}</span>
                   </Heading>
                 </div>
-                <div className="max-w-2xl rise" style={riseDelay(2)}>
+                <div className="rise max-w-2xl" style={riseDelay(2)}>
                   <Text variant="large" color="supplementary" align="center">
                     {typo(
                       "ИИ ответит на каждый вопрос, разобьёт ответы на карточки и составит план повторений точно к дате экзамена. С Pro ответы строятся по твоим конспектам — с цитатой источника.",
@@ -193,9 +193,9 @@ function HomePage() {
               </VStack>
               <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="md" align="stretch" className="pt-3 md:pt-2">
                 {LANDING_PLANS.map((plan, planIndex) => (
-                  <Link key={plan.id} to="/pricing" className="block h-full w-full rise" style={riseDelay(planIndex)}>
+                  <Link key={plan.id} to="/pricing" className="rise block h-full w-full" style={riseDelay(planIndex)}>
                     {plan.hero ? (
-                      <div className="relative h-full rounded-3xl bg-brand-gradient p-0.5 shadow-card lift press">
+                      <div className="lift press relative h-full rounded-3xl bg-brand-gradient p-0.5 shadow-card">
                         <span className="absolute -top-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-brand-gradient px-3 py-1 whitespace-nowrap text-brand-foreground shadow-card">
                           <Text variant="mini" bold>
                             {typo("Выгоднее всего")}

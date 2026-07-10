@@ -56,10 +56,31 @@ const searchSchema = zodRussian.object({
 
 export const Route = createFileRoute("/app/exams/$examId/session/")({
   validateSearch: (search) => searchSchema.parse(search),
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(examQueries.detail(params.examId)),
+  loaderDeps: ({ search }) => ({ kind: search.kind }),
+  loader: ({ context, params, deps }) => {
+    // Очередь сессии стартует параллельно с деталями экзамена, не последовательно
+    // (её дожидается скелет плеера); на сервере не запускаем — при гидрации
+    // клиентский useQuery всё равно строил бы очередь заново.
+    if (!import.meta.env.SSR) void context.queryClient.prefetchQuery(examQueries.session(params.examId, deps.kind));
+    return context.queryClient.ensureQueryData(examQueries.detail(params.examId));
+  },
   head: () => ({ meta: [{ title: typo("Сессия") }] }),
+  // Скелет вместо «замершего» прежнего экрана, пока loader ждёт сеть.
+  pendingComponent: SessionSkeleton,
   component: SessionPage,
 });
+
+// Скелет плеера — общий для pending-состояния роута и построения очереди:
+// переход в сессию проходит без промежуточных экранов.
+function SessionSkeleton() {
+  return (
+    <VStack gap="lg" className="mx-auto w-full max-w-2xl">
+      <div className="h-6 w-1/2 animate-pulse rounded-full bg-muted" />
+      <div className="h-2 animate-pulse rounded-full bg-muted" />
+      <div className="h-72 animate-pulse rounded-2xl bg-muted" />
+    </VStack>
+  );
+}
 
 interface CardOutcome {
   cardId: string;
@@ -265,6 +286,8 @@ interface AnswerInput {
   answerText?: string;
   selectedOption?: string;
   boolAnswer?: boolean;
+  /** «Не знаю»: честный провал без попытки ответа (сервер запишет rating=1 без текста). */
+  skip?: boolean;
 }
 
 // ИИ-сверка (Pro): вердикт haiku предзаполняет самооценку, человек может поправить.
@@ -352,6 +375,9 @@ function ExplainWhyBlock({ cardId, extraAction }: { cardId: string; extraAction?
   );
 }
 
+// Токен-размер «small» для inline-markdown: тот же приём, что в библиотеке карточек.
+const inlineSmallClasses = "text-(length:--paragraph-small-font-size) leading-(--paragraph-small-line-height)";
+
 // Сцена карточки: тихие бейджи формата и темы + вопрос. Общая для припоминания и фидбека.
 function CardScene({ card, children }: PropsWithChildren<{ card: SessionCard }>) {
   return (
@@ -362,14 +388,20 @@ function CardScene({ card, children }: PropsWithChildren<{ card: SessionCard }>)
             <Badge variant="dot" dot="primary">
               {cardFormatLabel(card.format)}
             </Badge>
+            {card.kind === "full" && (
+              <Badge variant="dot" dot="primary">
+                {typo("полный вопрос")}
+              </Badge>
+            )}
             {card.topic && (
               <Badge variant="dot" dot="muted">
                 {typo(card.topic)}
               </Badge>
             )}
           </HStack>
-          {/* Все форматы держат один масштаб вопроса: cloze — Heading h3,
-              markdown-промпты — вариант «prompt» с типографикой h3 у первого абзаца. */}
+          {/* Все форматы держат один масштаб вопроса: cloze — Heading h3 БЕЗ markdown
+              (парсер съедал бы пропуск «___» как разметку), markdown-промпты — вариант
+              «prompt» с типографикой h3 у первого абзаца. */}
           {card.format === "cloze" ? (
             <Heading variant="h3" asParagraph breakWords>
               {typo(card.prompt)}
@@ -381,6 +413,35 @@ function CardScene({ card, children }: PropsWithChildren<{ card: SessionCard }>)
         {children}
       </VStack>
     </SimpleCard>
+  );
+}
+
+// Развёрнутый разбор (deepMd) — свёрнут по умолчанию: полный текст ответа нужен
+// не каждому показу, а по запросу — прежде всего у full-карточек.
+function DeepDiveBlock({ deepMd }: { deepMd: string }) {
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <HStack>
+        <Button
+          variant="link"
+          size="inline"
+          onClick={() => {
+            setOpen(true);
+          }}
+        >
+          {typo("Развёрнутый разбор")}
+        </Button>
+      </HStack>
+    );
+  }
+  return (
+    <VStack gap="3xs" className="rounded-2xl bg-muted/50 p-3">
+      <Text variant="mini" color="supplementary">
+        {typo("Развёрнутый разбор")}
+      </Text>
+      <MarkdownView>{deepMd}</MarkdownView>
+    </VStack>
   );
 }
 
@@ -490,9 +551,24 @@ function CardPlayer({
                 submitOption(option);
               }}
             >
-              {typo(option)}
+              {/* Вариант может содержать $…$-формулы — рендерим markdown в масштабе кнопки. */}
+              <MarkdownView variant="inline">{option}</MarkdownView>
             </Button>
           ))}
+          {/* Только для cloze: честное «не знаю» вместо угадывания по вариантам.
+              У mcq перебор вариантов — часть формата, лишняя кнопка перегружала бы панель. */}
+          {card.format === "cloze" && (
+            <Button
+              variant="ghost"
+              disabled={answer.isPending}
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                answer.mutate({ skip: true });
+              }}
+            >
+              {typo("Не знаю")}
+            </Button>
+          )}
         </VStack>
       );
     }
@@ -528,7 +604,9 @@ function CardPlayer({
         <Input
           value={typed}
           placeholder={typo("Пропущенное слово")}
-          className="max-w-xs flex-1"
+          // min-w: на узком экране инпут не сжимается до нечитаемого плейсхолдера —
+          // вместо этого «Не знаю» переносится на следующую строку.
+          className="max-w-xs min-w-44 flex-1"
           onChange={(event) => {
             setTyped(event.target.value);
           }}
@@ -546,6 +624,17 @@ function CardPlayer({
           }}
         >
           {typo("Ответить")}
+        </Button>
+        {/* Тихий выход без угадывания: провал засчитывается честно, ответ показывается. */}
+        <Button
+          variant="ghost"
+          disabled={answer.isPending}
+          className="text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            answer.mutate({ skip: true });
+          }}
+        >
+          {typo("Не знаю")}
         </Button>
       </HStack>
     );
@@ -663,9 +752,9 @@ function CardPlayer({
                   key={option}
                   className={`rounded-lg border border-input px-4 py-2.5 ${optionFeedbackClass(option, graded)}`}
                 >
-                  <Text variant="small" breakWords>
-                    {typo(option)}
-                  </Text>
+                  <MarkdownView variant="inline" className={inlineSmallClasses}>
+                    {option}
+                  </MarkdownView>
                 </div>
               ))}
             </VStack>
@@ -697,15 +786,16 @@ function CardPlayer({
           )}
 
           {aiView && graded.aiComment && (
-            <Text variant="small" color="supplementary" breakWords>
-              {typo(graded.aiComment)}
-            </Text>
+            <MarkdownView variant="inline" className={`${inlineSmallClasses} text-muted-foreground`}>
+              {graded.aiComment}
+            </MarkdownView>
           )}
           {graded.explanation && (
-            <Text variant="small" color="supplementary" breakWords>
-              {typo(graded.explanation)}
-            </Text>
+            <MarkdownView variant="inline" className={`${inlineSmallClasses} text-muted-foreground`}>
+              {graded.explanation}
+            </MarkdownView>
           )}
+          {graded.deepMd && <DeepDiveBlock deepMd={graded.deepMd} />}
           {graded.sourceRef && (
             <Text variant="mini" color="supplementary" breakWords>
               {typo(`Из твоего конспекта: ${graded.sourceRef}`)}
@@ -1115,15 +1205,7 @@ function SessionPage() {
     setLeavingOutcome(null);
   };
 
-  if (session.isLoading) {
-    return (
-      <VStack gap="lg" className="mx-auto w-full max-w-2xl">
-        <div className="h-6 w-1/2 animate-pulse rounded-full bg-muted" />
-        <div className="h-2 animate-pulse rounded-full bg-muted" />
-        <div className="h-72 animate-pulse rounded-2xl bg-muted" />
-      </VStack>
-    );
-  }
+  if (session.isLoading) return <SessionSkeleton />;
   if (session.error) {
     if (isPaywallError(session.error, "CRAM")) return <PaywallCard reason="CRAM" />;
     return (

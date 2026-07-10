@@ -13,6 +13,7 @@ import {
   Heading,
   HStack,
   Input,
+  MarkdownView,
   PaywallCard,
   ResponsiveModal,
   SimpleCard,
@@ -318,12 +319,7 @@ function PublicExamPage() {
             </VStack>
 
             {/* Цифры и кольцо тем — один ряд плиток по центру: без пустых хвостов на десктопе. */}
-            <AdaptiveGrid
-              cols={{ base: 2, md: topics.length ? 3 : 2 }}
-              gap="sm"
-              className="rise"
-              style={riseDelay(1)}
-            >
+            <AdaptiveGrid cols={{ base: 2, md: topics.length ? 3 : 2 }} gap="sm" className="rise" style={riseDelay(1)}>
               <Stat align="center" label={typo("Вопросов")} value={exam.totalQuestions} />
               <Stat align="center" label={typo("Карточек")} value={exam.totalCards} />
               {topics.length > 0 && (
@@ -356,9 +352,13 @@ function PublicExamPage() {
                       <span className="w-6 shrink-0 text-right font-semibold text-muted-foreground tabular-nums">
                         <Text variant="small">{indexNumber + 1}</Text>
                       </span>
-                      <Text variant="small" breakWords>
-                        {typo(question.text)}
-                      </Text>
+                      {/* Текст вопроса — через markdown: в билетах живут формулы $…$. */}
+                      <MarkdownView
+                        variant="inline"
+                        className="text-(length:--paragraph-small-font-size) leading-(--paragraph-small-line-height)"
+                      >
+                        {question.text}
+                      </MarkdownView>
                     </HStack>
                   ))}
                 </VStack>

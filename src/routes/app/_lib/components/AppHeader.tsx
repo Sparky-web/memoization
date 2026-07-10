@@ -20,28 +20,31 @@ export function AppHeader({ user }: AppHeaderProps) {
     <header className="shrink-0 border-b border-border bg-background/80 backdrop-blur">
       <Container className="py-3">
         <HStack justify="between" align="center" gap="md">
-          {/* Словомарка с градиентной точкой-акцентом; на мобильном место отдаём навигации. */}
-          <Link to="/app" className="hidden items-baseline gap-0.5 sm:flex">
+          {/* Словомарка с градиентной точкой-акцентом. */}
+          <Link to="/app" className="flex items-baseline gap-0.5">
             <span className="font-headings text-(length:--heading-4-font-size) font-extrabold tracking-tight">
               {typo("Домашник")}
             </span>
             <span aria-hidden className="size-2 rounded-full bg-brand-gradient" />
           </Link>
           <HStack gap="lg" align="center">
-            <Link to="/app" activeOptions={{ exact: true }} activeProps={activeNavProps} className={navLinkClasses}>
-              {typo("Сегодня")}
-            </Link>
-            <Link
-              to="/app/exams"
-              activeOptions={{ exact: true }}
-              activeProps={activeNavProps}
-              className={navLinkClasses}
-            >
-              {typo("Экзамены")}
-            </Link>
-            <Link to="/app/stats" activeProps={activeNavProps} className={navLinkClasses}>
-              {typo("Статистика")}
-            </Link>
+            {/* Ссылки разделов — только на десктопе; на мобиле навигация в нижнем таб-баре. */}
+            <HStack gap="lg" align="center" className="hidden lg:flex">
+              <Link to="/app" activeOptions={{ exact: true }} activeProps={activeNavProps} className={navLinkClasses}>
+                {typo("Сегодня")}
+              </Link>
+              <Link
+                to="/app/exams"
+                activeOptions={{ exact: true }}
+                activeProps={activeNavProps}
+                className={navLinkClasses}
+              >
+                {typo("Экзамены")}
+              </Link>
+              <Link to="/app/stats" activeProps={activeNavProps} className={navLinkClasses}>
+                {typo("Статистика")}
+              </Link>
+            </HStack>
             <UserMenu user={user} />
           </HStack>
         </HStack>

@@ -182,9 +182,10 @@ export const getExamById = createServerFn({ method: "GET" })
       select: {
         id: true,
         format: true,
+        kind: true,
         suspended: true,
         flagged: true,
-        question: { select: { topic: true } },
+        question: { select: { id: true, topic: true } },
         progress: {
           where: { userId },
           select: {
@@ -237,6 +238,14 @@ export const getExamById = createServerFn({ method: "GET" })
     }).length;
     const newCount = activeCards.filter((card) => !card.progress.length).length;
 
+    // Вопросы с ответом, но без карточки «полный вопрос» — кандидаты бэкфилла (баннер хаба).
+    const fullCardQuestionIds = new Set(
+      cards.flatMap((card) => (card.kind === "full" && card.question ? [card.question.id] : [])),
+    );
+    const questionsWithoutFullCard = exam.questions.filter(
+      (question) => question.answerMd && !fullCardQuestionIds.has(question.id),
+    ).length;
+
     return {
       id: exam.id,
       title: exam.title,
@@ -267,6 +276,7 @@ export const getExamById = createServerFn({ method: "GET" })
       })),
       materials: exam.materials,
       topics,
+      questionsWithoutFullCard,
       readiness: readiness(activeCards.map((card) => ({ retrievability: retrievabilityOf(card) }))),
       counters: {
         totalCards: cards.length,

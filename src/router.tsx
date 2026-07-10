@@ -16,8 +16,10 @@ function DefaultError({ error }: { error: Error }) {
 }
 
 function PageLoader() {
+  // Спиннер в потоке контента (не min-h-screen): внутри /app он появляется под шапкой
+  // и таб-баром, не «съедая» весь экран белой вспышкой на медленных переходах.
   return (
-    <div className="flex min-h-screen items-center justify-center">
+    <div className="flex justify-center py-24">
       <div className="size-8 animate-spin rounded-full border-2 border-current border-t-transparent" />
     </div>
   );
@@ -38,6 +40,10 @@ export function getRouter() {
     defaultPreload: "intent",
     defaultErrorComponent: DefaultError,
     defaultPendingComponent: PageLoader,
+    // Медленный loader показывает pending уже через 300мс (дефолтная секунда «замораживала»
+    // старый экран без обратной связи); minMs сглаживает мигание на быстрых ответах.
+    defaultPendingMs: 300,
+    defaultPendingMinMs: 200,
     scrollRestoration: true,
   });
 

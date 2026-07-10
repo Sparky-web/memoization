@@ -126,7 +126,10 @@ export function ConceptGraph({
   });
 
   return (
-    <div ref={centerScroll} className="max-h-140 w-full overflow-auto overscroll-x-contain rounded-2xl bg-card shadow-card">
+    <div
+      ref={centerScroll}
+      className="max-h-140 w-full overflow-auto overscroll-x-contain rounded-2xl bg-card shadow-card"
+    >
       <svg
         width={layout.width}
         height={layout.height}

@@ -56,6 +56,7 @@ export const getExamCards = createServerFn({ method: "GET" })
       select: {
         id: true,
         format: true,
+        kind: true,
         prompt: true,
         answer: true,
         options: true,
@@ -93,6 +94,7 @@ export const getExamCards = createServerFn({ method: "GET" })
       return {
         id: card.id,
         format: card.format,
+        kind: card.kind,
         prompt: card.prompt,
         answer: card.answer,
         options: card.options,

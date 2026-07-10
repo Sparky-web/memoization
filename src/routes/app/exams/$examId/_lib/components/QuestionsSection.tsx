@@ -35,6 +35,11 @@ import {
 // Вопросы экзамена: покрытие материалами, страница вопроса (ответ + карточки + пересборка)
 // и правка списка целиком.
 
+// Токен-размер small для markdown-текста в масштабе окружения (как у Text variant="small").
+const inlineSmallClasses = "text-(length:--paragraph-small-font-size) leading-(--paragraph-small-line-height)";
+// Токен-размер mini — для «почему» карточки (как у Text variant="mini").
+const inlineMiniClasses = "text-(length:--paragraph-mini-font-size) leading-(--paragraph-mini-line-height)";
+
 function QuestionRow({
   question,
   riseDelayMs,
@@ -56,9 +61,10 @@ function QuestionRow({
           <Text variant="small" color="supplementary">
             {question.position + 1}.
           </Text>
-          <Text variant="small" bold breakWords>
-            {typo(question.text)}
-          </Text>
+          {/* Текст вопроса — через markdown: в билетах живут формулы $…$. */}
+          <MarkdownView variant="inline" className={`${inlineSmallClasses} font-semibold`}>
+            {question.text}
+          </MarkdownView>
         </HStack>
         <HStack gap="xs" align="center" wrap>
           {question.topic && <Badge variant="outline">{typo(question.topic)}</Badge>}
@@ -115,9 +121,9 @@ function QuestionModal({ questionId, onClose }: { questionId: string; onClose: (
         </VStack>
       ) : (
         <VStack gap="md">
-          <Text bold breakWords>
-            {typo(question.text)}
-          </Text>
+          <MarkdownView variant="inline" className="font-semibold">
+            {question.text}
+          </MarkdownView>
           <HStack gap="xs" align="center" wrap>
             {question.topic && <Badge variant="outline">{typo(question.topic)}</Badge>}
             <CoverageBadge covered={question.covered} aiGenerated={question.aiGenerated} />
@@ -169,6 +175,11 @@ function QuestionModal({ questionId, onClose }: { questionId: string; onClose: (
               <VStack key={card.id} gap="3xs" className="rounded-2xl bg-muted/40 p-3">
                 <HStack gap="xs" wrap>
                   <Badge variant="muted">{cardFormatLabel(card.format)}</Badge>
+                  {card.kind === "full" && (
+                    <Badge variant="dot" dot="primary">
+                      {typo("полный вопрос")}
+                    </Badge>
+                  )}
                   {card.suspended && (
                     <Badge variant="dot" dot="muted">
                       {typo("выключена")}
@@ -180,16 +191,24 @@ function QuestionModal({ questionId, onClose }: { questionId: string; onClose: (
                     </Badge>
                   )}
                 </HStack>
-                <Text variant="small" bold breakWords>
-                  {typo(card.prompt)}
-                </Text>
-                <Text variant="small" color="supplementary" breakWords>
-                  {typo(card.answer)}
-                </Text>
-                {card.explanation && (
-                  <Text variant="mini" color="supplementary" breakWords>
-                    {typo(card.explanation)}
+                {/* Cloze — плоским текстом: markdown съел бы «___» пропуска. */}
+                {card.format === "cloze" ? (
+                  <Text variant="small" bold breakWords>
+                    {typo(card.prompt)}
                   </Text>
+                ) : (
+                  <MarkdownView variant="inline" className={`${inlineSmallClasses} font-semibold`}>
+                    {card.prompt}
+                  </MarkdownView>
+                )}
+                <MarkdownView variant="inline" className={`${inlineSmallClasses} text-muted-foreground`}>
+                  {card.answer}
+                </MarkdownView>
+                {card.explanation && (
+                  // «Почему» тоже носит формулы $…$ — рендерим markdown в размере mini.
+                  <MarkdownView variant="inline" className={`${inlineMiniClasses} text-muted-foreground`}>
+                    {card.explanation}
+                  </MarkdownView>
                 )}
               </VStack>
             ))}

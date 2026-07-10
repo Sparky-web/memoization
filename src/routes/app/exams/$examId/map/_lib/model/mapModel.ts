@@ -156,7 +156,12 @@ export function useConceptMapEditor(map: ConceptMapItem) {
     const resolved = resolveRelation({ nodes, edges }, input);
     if (!resolved) return false;
     const edge = { from: resolved.from.id, to: resolved.to.id, label: input.label.trim().slice(0, 60) };
-    if (isDuplicateEdge(edges.filter((_, edgeIndex) => edgeIndex !== index), edge)) {
+    if (
+      isDuplicateEdge(
+        edges.filter((_, edgeIndex) => edgeIndex !== index),
+        edge,
+      )
+    ) {
       toast.error(typo("Такая связь уже есть"));
       return false;
     }

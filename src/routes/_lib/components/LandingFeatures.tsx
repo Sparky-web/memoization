@@ -77,7 +77,7 @@ export function LandingFeatures() {
           </VStack>
           <AdaptiveGrid cols={{ base: 1, md: 2, lg: 3 }} gap="md" align="stretch">
             {FEATURES.map((feature, featureIndex) => (
-              <SimpleCard key={feature.title} className="h-full lift rise" style={riseDelay(featureIndex)}>
+              <SimpleCard key={feature.title} className="lift rise h-full" style={riseDelay(featureIndex)}>
                 <VStack gap="sm">
                   <HStack justify="between" align="center" gap="sm">
                     <span className="flex size-10 items-center justify-center rounded-xl bg-accent text-accent-foreground">

@@ -10,8 +10,8 @@ const CONFIDENCE_DEMO = 0.65;
 
 /** Мокап плана дня: блоки экзаменов с количеством карточек. */
 const PLAN_ROWS: readonly { title: string; cards: string }[] = [
-  { title: typo("Психология"), cards: typo("14 карточек") },
-  { title: typo("История"), cards: typo("8 карточек") },
+  { title: typo("Физика"), cards: typo("14 карточек") },
+  { title: typo("Информатика"), cards: typo("8 карточек") },
 ];
 
 /** Готовность в демо-кольце: честные 73%, как на экране готовности. */
@@ -46,7 +46,7 @@ export function LandingDailyLoop() {
 
           <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="md" align="stretch">
             {/* 1. План дня */}
-            <SimpleCard className="h-full lift rise" style={riseDelay(0)}>
+            <SimpleCard className="lift rise h-full" style={riseDelay(0)}>
               <VStack gap="sm">
                 <StepHead icon={CalendarCheck} step="01" />
                 <Heading variant="h4" asParagraph>
@@ -76,7 +76,7 @@ export function LandingDailyLoop() {
             </SimpleCard>
 
             {/* 2. Сессия припоминания: мини-мокап карточки с ползунком уверенности */}
-            <SimpleCard className="h-full lift rise" style={riseDelay(1)}>
+            <SimpleCard className="lift rise h-full" style={riseDelay(1)}>
               <VStack gap="sm">
                 <StepHead icon={Brain} step="02" />
                 <Heading variant="h4" asParagraph>
@@ -88,7 +88,7 @@ export function LandingDailyLoop() {
                 <div className="rounded-xl bg-muted/60 p-3">
                   <VStack gap="xs">
                     <Text variant="small" bold>
-                      {typo("Что показывает кривая забывания?")}
+                      {typo("Сформулируй закон сохранения импульса")}
                     </Text>
                     <VStack gap="3xs">
                       <div className="relative h-2 rounded-full bg-muted-foreground/25">
@@ -119,7 +119,7 @@ export function LandingDailyLoop() {
             </SimpleCard>
 
             {/* 3. Честная готовность */}
-            <SimpleCard className="h-full lift rise" style={riseDelay(2)}>
+            <SimpleCard className="lift rise h-full" style={riseDelay(2)}>
               <VStack gap="sm">
                 <StepHead icon={Gauge} step="03" />
                 <Heading variant="h4" asParagraph>

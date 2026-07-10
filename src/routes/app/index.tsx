@@ -162,15 +162,11 @@ function PlanBlockCard({
       <HStack gap="sm" align="center" className="min-w-0">
         <ReadinessRing value={summary.readiness} size="sm" />
         <VStack gap="3xs" className="min-w-0 flex-1">
-          <Link
-            to={`/app/exams/${summary.examId}`}
-            className="max-w-full truncate font-semibold"
-            onClick={(event) => {
-              event.stopPropagation();
-            }}
-          >
+          {/* Название — НЕ ссылка на хаб: тап по самому заметному месту карточки должен
+              запускать сессию, а не открывать «экран экзамена» (хаб доступен из «Экзаменов»). */}
+          <Text bold maxLines={1} breakWords>
             {typo(summary.title)}
-          </Link>
+          </Text>
           <Text variant="mini" color="supplementary" maxLines={1}>
             {meta}
           </Text>

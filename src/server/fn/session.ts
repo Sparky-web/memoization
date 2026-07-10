@@ -43,6 +43,8 @@ const BEDTIME_CARDS = 10;
 interface QueueCard {
   id: string;
   format: string;
+  /** "atomic" | "full" — full-карточка на весь вопрос помечается бейджем в плеере. */
+  kind: string;
   prompt: string;
   answer: string;
   explanation: string | null;
@@ -106,6 +108,7 @@ export const startSession = createServerFn({ method: "POST" })
       select: {
         id: true,
         format: true,
+        kind: true,
         prompt: true,
         answer: true,
         explanation: true,
@@ -129,6 +132,7 @@ export const startSession = createServerFn({ method: "POST" })
     const cards: QueueCard[] = rows.map((row) => ({
       id: row.id,
       format: row.format,
+      kind: row.kind,
       prompt: row.prompt,
       answer: row.answer,
       explanation: row.explanation,
@@ -200,6 +204,7 @@ export const startSession = createServerFn({ method: "POST" })
           {
             id: card.id,
             format: card.format,
+            kind: card.kind,
             prompt: card.prompt,
             topic: card.topic,
             questionText: card.questionText,
@@ -405,6 +410,8 @@ const answerCardInput = zodRussian.object({
   answerText: zodRussian.string().max(8000).optional(),
   selectedOption: zodRussian.string().max(600).optional(),
   boolAnswer: zodRussian.boolean().optional(),
+  /** «Не знаю» в закрытых форматах: честный провал без текста ответа (correct=false, rating=1). */
+  skip: zodRussian.boolean().optional(),
   durationMs: zodRussian.number().int().min(0).max(3_600_000).optional(),
 });
 
@@ -482,7 +489,8 @@ export const answerCard = createServerFn({ method: "POST" })
       };
     }
 
-    const correct = checkClosedAnswer(card, data);
+    // «Не знаю» — провал без попытки: ответ не проверяется и в журнал не пишется.
+    const correct = data.skip ? false : checkClosedAnswer(card, data);
     const rating = ratingForClosedAnswer(correct, data.confidence ?? null);
     await recordAnswer(context.db, {
       userId,
@@ -493,7 +501,7 @@ export const answerCard = createServerFn({ method: "POST" })
       rating,
       correct,
       confidence: data.confidence ?? null,
-      answerText: data.answerText ?? data.selectedOption ?? null,
+      answerText: data.skip ? null : (data.answerText ?? data.selectedOption ?? null),
       aiVerdict: null,
       durationMs: data.durationMs ?? null,
     });

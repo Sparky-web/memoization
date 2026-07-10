@@ -8,7 +8,7 @@ export { logEvent } from "~/server/fn/events";
 export { archiveExam, deleteExam, generateExam, setExamPaused, setExamPublic, updateExam } from "~/server/fn/exams";
 export { createForecast, resolveForecast } from "~/server/fn/forecast";
 export { deleteMaterial } from "~/server/fn/materials";
-export { regenerateQuestionCards, setExamQuestions } from "~/server/fn/questions";
+export { addFullQuestionCards, regenerateQuestionCards, setExamQuestions } from "~/server/fn/questions";
 
 const uploadErrorSchema = zodRussian.object({ error: zodRussian.string() });
 

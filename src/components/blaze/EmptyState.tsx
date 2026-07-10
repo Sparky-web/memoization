@@ -24,9 +24,33 @@ const illustrationSvgProps = {
 function CardsIllustration() {
   return (
     <svg {...illustrationSvgProps}>
-      <rect x={30} y={36} width={66} height={46} rx={10} className="fill-accent stroke-primary" transform="rotate(-8 63 59)" />
-      <rect x={38} y={46} width={68} height={48} rx={10} className="fill-card stroke-primary" transform="rotate(-2 72 70)" />
-      <rect x={40} y={58} width={72} height={50} rx={10} className="fill-card stroke-primary" transform="rotate(4 76 83)" />
+      <rect
+        x={30}
+        y={36}
+        width={66}
+        height={46}
+        rx={10}
+        className="fill-accent stroke-primary"
+        transform="rotate(-8 63 59)"
+      />
+      <rect
+        x={38}
+        y={46}
+        width={68}
+        height={48}
+        rx={10}
+        className="fill-card stroke-primary"
+        transform="rotate(-2 72 70)"
+      />
+      <rect
+        x={40}
+        y={58}
+        width={72}
+        height={50}
+        rx={10}
+        className="fill-card stroke-primary"
+        transform="rotate(4 76 83)"
+      />
       <path d="M54 76 h34" className="stroke-primary/35" />
       <path d="M54 88 h44" className="stroke-primary/35" />
       <circle cx={104} cy={70} r={3} className="fill-primary/30" />

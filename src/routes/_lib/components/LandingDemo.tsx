@@ -4,13 +4,13 @@ import { Badge, Container, Heading, HStack, Text, VStack } from "~/components";
 import { typo } from "~/lib";
 
 /**
- * Вопросы демо-экзамена. Тема нарочно «про память» — заодно демка объясняет,
- * на чём построен сам сервис.
+ * Вопросы демо-экзамена. Нарочно предметные (физика/информатика) — по ним сразу понятно,
+ * как выглядит подготовка к настоящему экзамену.
  */
 const DEMO_QUESTIONS: readonly string[] = [
-  typo("1. Кривая забывания Эббингауза"),
-  typo("2. Что такое активное припоминание?"),
-  typo("3. Интервальные повторения и их эффект"),
+  typo("1. Второй закон Ньютона"),
+  typo("2. Что такое TCP/IP?"),
+  typo("3. Уровни модели OSI и их функции"),
 ];
 
 /** Пауза между появлением артефактов генерации и стартовый сдвиг (секунды цикла CSS-анимации). */
@@ -49,7 +49,7 @@ export function LandingDemo() {
 
           <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-4 md:flex-row md:items-stretch md:gap-6">
             {/* Вход: список вопросов и дата — всё, что нужно от пользователя */}
-            <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-card lift md:max-w-none md:flex-1">
+            <div className="lift w-full max-w-md rounded-2xl bg-card p-5 shadow-card md:max-w-none md:flex-1">
               <VStack gap="sm">
                 <HStack gap="xs" align="center">
                   <FileQuestion className="size-5 shrink-0 text-primary" strokeWidth={1.8} />
@@ -85,37 +85,37 @@ export function LandingDemo() {
             {/* Выход: ответ с цитатой → атомарная карточка → план повторений к дате */}
             <div className="w-full max-w-md md:max-w-none md:flex-1">
               <VStack gap="sm">
-                <div className="landing-demo-card rounded-2xl bg-card p-4 shadow-card lift" style={stageDelay(0)}>
+                <div className="landing-demo-card lift rounded-2xl bg-card p-4 shadow-card" style={stageDelay(0)}>
                   <VStack gap="3xs">
                     <Text variant="mini" color="supplementary">
-                      {typo("Ответ на вопрос 2")}
+                      {typo("Ответ на вопрос 1")}
                     </Text>
                     <Text variant="small" bold>
-                      {typo("Активное припоминание — самостоятельное извлечение знания из памяти без подсказки…")}
+                      {typo("Ускорение тела прямо пропорционально силе и обратно пропорционально массе: F = m·a…")}
                     </Text>
                     {/* Привязка к конспектам — возможность Pro: бейдж честно предупреждает об этом ещё на лендинге. */}
                     <HStack gap="xs" align="center">
                       <Quote className="size-3.5 shrink-0 text-primary" strokeWidth={1.8} />
                       <Text variant="mini" color="supplementary">
-                        {typo("Из твоего конспекта: Лекции_по_психологии.pdf")}
+                        {typo("Из твоего конспекта: Лекции_по_механике.pdf")}
                       </Text>
                       <Badge variant="primary">Pro</Badge>
                     </HStack>
                   </VStack>
                 </div>
 
-                <div className="landing-demo-card rounded-2xl bg-card p-4 shadow-card lift" style={stageDelay(1)}>
+                <div className="landing-demo-card lift rounded-2xl bg-card p-4 shadow-card" style={stageDelay(1)}>
                   <VStack gap="3xs">
                     <Text variant="mini" color="supplementary">
                       {typo("Карточка · один факт")}
                     </Text>
                     <Text variant="small" bold>
-                      {typo("Чем припоминание полезнее перечитывания?")}
+                      {typo("Чему равна сила при m = 2 кг и a = 3 м/с²?")}
                     </Text>
                   </VStack>
                 </div>
 
-                <div className="landing-demo-card rounded-2xl bg-card p-4 shadow-card lift" style={stageDelay(2)}>
+                <div className="landing-demo-card lift rounded-2xl bg-card p-4 shadow-card" style={stageDelay(2)}>
                   <VStack gap="xs">
                     <Text variant="mini" color="supplementary">
                       {typo("План повторений — точно к дате")}
