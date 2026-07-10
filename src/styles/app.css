@@ -703,10 +703,15 @@ textarea {
   overflow-wrap: break-word;
 }
 /* Широкие выключные формулы — горизонтальная прокрутка вместо вылезания за край. */
-.markdown .katex-display {
+.markdown .katex-display,
+.katex-inline-display .katex-display {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0.2em 0;
+}
+/* Выключная формула в InlineMath (cloze/ответы вне markdown): собственный блок с прокруткой. */
+.katex-inline-display {
+  display: block;
 }
 /* Вопрос-«сцена» плеера: первый абзац markdown-промпта — в масштабе Heading h3,
    чтобы все форматы карточек держали одинаково крупный главный элемент экрана. */

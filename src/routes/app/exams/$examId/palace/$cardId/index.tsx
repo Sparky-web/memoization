@@ -9,6 +9,7 @@ import {
   ConfirmDialog,
   Heading,
   HStack,
+  InlineMath,
   Input,
   PaywallCard,
   SimpleCard,
@@ -263,7 +264,8 @@ function LociEditor({ loci, onChange }: { loci: PalaceLocus[]; onChange: (next: 
           <HStack gap="sm" align="center">
             <PlaceNumber value={index + 1} />
             <Text variant="small" bold breakWords>
-              {typo(locus.place)}
+              {/* Метка места — read-only, может нести формулу $…$ (item/image редактируются ниже). */}
+              <InlineMath>{locus.place}</InlineMath>
             </Text>
           </HStack>
           <Input

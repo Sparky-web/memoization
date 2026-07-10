@@ -1,7 +1,7 @@
 import { ArrowRight, Check, Pencil, Plus, X } from "lucide-react";
 import { useState } from "react";
 
-import { Button, HStack, Input, Text, VStack } from "~/components";
+import { Button, HStack, InlineMath, Input, Text, VStack } from "~/components";
 import { type MapEdge, type MapNode, typo } from "~/lib";
 
 import { type RelationInput } from "../model/mapModel";
@@ -269,7 +269,7 @@ export function RelationPanel({
                     }}
                   >
                     <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-sm font-medium break-words">
-                      {typo(fromLabel)}
+                      <InlineMath>{fromLabel}</InlineMath>
                     </span>
                     <span className="inline-flex items-center gap-1 text-sm text-primary">
                       {masked && (
@@ -285,11 +285,15 @@ export function RelationPanel({
                           ?
                         </button>
                       )}
-                      {!masked && Boolean(edge.label.trim()) && <span className="break-words">{typo(edge.label)}</span>}
+                      {!masked && Boolean(edge.label.trim()) && (
+                        <span className="break-words">
+                          <InlineMath>{edge.label}</InlineMath>
+                        </span>
+                      )}
                       <ArrowRight aria-hidden className="size-3.5 shrink-0" />
                     </span>
                     <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-sm font-medium break-words">
-                      {typo(toLabel)}
+                      <InlineMath>{toLabel}</InlineMath>
                     </span>
                   </div>
                   <HStack gap="3xs" align="center" className="shrink-0">

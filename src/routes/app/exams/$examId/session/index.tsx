@@ -12,6 +12,7 @@ import {
   EmptyState,
   Heading,
   HStack,
+  InlineMath,
   Input,
   MarkdownView,
   PaywallCard,
@@ -400,12 +401,12 @@ function CardScene({ card, children }: PropsWithChildren<{ card: SessionCard }>)
               </Badge>
             )}
           </HStack>
-          {/* Все форматы держат один масштаб вопроса: cloze — Heading h3 БЕЗ markdown
-              (парсер съедал бы пропуск «___» как разметку), markdown-промпты — вариант
-              «prompt» с типографикой h3 у первого абзаца. */}
+          {/* Все форматы держат один масштаб вопроса: cloze — Heading h3 с InlineMath
+              (markdown съел бы пропуск «___» как разметку, но формулы $…$ рендерить надо),
+              markdown-промпты — вариант «prompt» с типографикой h3 у первого абзаца. */}
           {card.format === "cloze" ? (
             <Heading variant="h3" asParagraph breakWords>
-              {typo(card.prompt)}
+              <InlineMath>{card.prompt}</InlineMath>
             </Heading>
           ) : (
             <MarkdownView variant="prompt">{card.prompt}</MarkdownView>
@@ -797,13 +798,7 @@ function CardPlayer({
                 <Text variant="mini" color="supplementary">
                   {typo("Эталонный ответ")}
                 </Text>
-                {card.format === "open" ? (
-                  <MarkdownView>{graded.answer}</MarkdownView>
-                ) : (
-                  <Text bold breakWords>
-                    {formatClosedAnswer(card.format, graded.answer)}
-                  </Text>
-                )}
+                <ReferenceAnswer format={card.format} answer={graded.answer} />
               </VStack>
             </VStack>
           )}
@@ -885,9 +880,22 @@ function CardPlayer({
   return result ? renderFeedback(result) : renderRecall();
 }
 
-function formatClosedAnswer(format: string, answer: string): string {
-  if (format !== "truefalse") return typo(answer);
-  return answer === "true" ? typo("Верно") : typo("Неверно");
+// Эталонный ответ в фидбеке: open — полный markdown; truefalse — слово; cloze/mcq —
+// краткий ответ через InlineMath (может содержать $…$-формулу, но markdown его бы испортил).
+function ReferenceAnswer({ format, answer }: { format: string; answer: string }) {
+  if (format === "open") return <MarkdownView>{answer}</MarkdownView>;
+  if (format === "truefalse") {
+    return (
+      <Text bold breakWords>
+        {answer === "true" ? typo("Верно") : typo("Неверно")}
+      </Text>
+    );
+  }
+  return (
+    <Text bold breakWords>
+      <InlineMath>{answer}</InlineMath>
+    </Text>
+  );
 }
 
 // Защита сна в зубрёжке: после 23:00 МСК предлагаем завершить — сон важнее ещё одного круга.

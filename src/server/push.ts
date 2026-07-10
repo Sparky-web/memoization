@@ -21,6 +21,9 @@ function ensureVapid(): void {
   vapidReady = true;
 }
 
+// Вид тестового пуша: без дедупа — владелец может слать его сколько угодно раз для самопроверки.
+export const PUSH_TEST_KIND = "test";
+
 // Протухшая подписка: браузер отписался или переустановлен — запись удаляется.
 const GONE_STATUS_CODES = new Set([404, 410]);
 
@@ -42,21 +45,24 @@ export interface PushMessage {
 
 /**
  * Шлёт push всем подпискам пользователя. Дедуп по PushLog (userId, kind, dayKey):
- * запись уже есть — не шлём. Подписки, на которые сервис отвечает 404/410, удаляются.
- * Ошибки доставки не бросаются наружу — только console.error.
- * Возвращает true, если пуш этого вида сегодня ушёл впервые.
+ * запись уже есть — не шлём. Исключение — kind="test" (PUSH_TEST_KIND): тест можно слать
+ * многократно, PushLog для него не пишется и не проверяется. Подписки, на которые сервис
+ * отвечает 404/410, удаляются. Ошибки доставки не бросаются наружу — только console.error.
+ * Возвращает true, если пуш ушёл (для test — всегда при наличии конфигурации).
  */
 export async function sendPushToUser(db: PrismaClient, userId: string, message: PushMessage): Promise<boolean> {
   if (!isPushConfigured()) return false;
   ensureVapid();
 
   // Guard-запись: уникальный индекс (userId, kind, dayKey) сериализует параллельные прогоны —
-  // проигравший получает P2002 и не шлёт дубль.
-  try {
-    await db.pushLog.create({ data: { userId, kind: message.kind, dayKey: message.dayKey } });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return false;
-    throw error;
+  // проигравший получает P2002 и не шлёт дубль. Тестовый пуш дедупа не проходит.
+  if (message.kind !== PUSH_TEST_KIND) {
+    try {
+      await db.pushLog.create({ data: { userId, kind: message.kind, dayKey: message.dayKey } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return false;
+      throw error;
+    }
   }
 
   const subscriptions = await db.pushSubscription.findMany({

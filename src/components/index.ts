@@ -6,6 +6,7 @@ export { Container } from "./blaze/Container";
 export { EmptyState } from "./blaze/EmptyState";
 export { Heading } from "./blaze/Heading";
 export { HStack } from "./blaze/HStack";
+export { InlineMath } from "./blaze/InlineMath";
 export { Link } from "./blaze/Link";
 export { MarkdownView } from "./blaze/MarkdownView";
 export { PaywallCard } from "./blaze/PaywallCard";

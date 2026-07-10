@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Check, RotateCcw, X } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
 
-import { AdaptiveGrid, Badge, Button, Heading, HStack, MarkdownView, Text, VStack } from "~/components";
+import { AdaptiveGrid, Badge, Button, Heading, HStack, InlineMath, MarkdownView, Text, VStack } from "~/components";
 import { typo } from "~/lib";
 import { type SessionCard, submitSwipe } from "~/server/fn/session";
 
@@ -44,10 +44,22 @@ function reducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-// Текст ответа закрытых форматов: truefalse хранит "true"/"false", человеку — слова.
-function answerLabelOf(card: SessionCard): string {
-  if (card.format === "truefalse") return card.answer === "true" ? typo("Верно") : typo("Неверно");
-  return typo(card.answer ?? "");
+// Оборот карточки: open — полный markdown; truefalse — слово; cloze/mcq — краткий ответ
+// через InlineMath (может содержать $…$-формулу, а markdown бы её испортил).
+function SwipeAnswer({ card }: { card: SessionCard }) {
+  if (card.format === "open") return <MarkdownView>{card.answer ?? ""}</MarkdownView>;
+  if (card.format === "truefalse") {
+    return (
+      <Heading variant="h3" asParagraph align="center" breakWords>
+        {card.answer === "true" ? typo("Верно") : typo("Неверно")}
+      </Heading>
+    );
+  }
+  return (
+    <Heading variant="h3" asParagraph align="center" breakWords>
+      <InlineMath>{card.answer ?? ""}</InlineMath>
+    </Heading>
+  );
 }
 
 export function SwipeCardPlayer({ card, onFinished }: SwipeCardPlayerProps) {
@@ -312,8 +324,9 @@ export function SwipeCardPlayer({ card, onFinished }: SwipeCardPlayerProps) {
               <div ref={frontPaneRef} className="min-h-0 flex-1 overflow-y-auto">
                 <div className="flex min-h-full items-center justify-center">
                   {card.format === "cloze" ? (
+                    // cloze — InlineMath: сохраняет «___» и рендерит $…$-формулы (markdown бы съел пропуск).
                     <Heading variant="h3" asParagraph align="center" breakWords>
-                      {typo(card.prompt)}
+                      <InlineMath>{card.prompt}</InlineMath>
                     </Heading>
                   ) : (
                     <MarkdownView variant="prompt">{card.prompt}</MarkdownView>
@@ -333,17 +346,12 @@ export function SwipeCardPlayer({ card, onFinished }: SwipeCardPlayerProps) {
               <div ref={backPaneRef} className="min-h-0 flex-1 overflow-y-auto">
                 <VStack gap="sm" justify="center" className="min-h-full py-1 text-center">
                   <div className="flex flex-1 items-center justify-center">
-                    {card.format === "open" ? (
-                      <MarkdownView>{card.answer ?? ""}</MarkdownView>
-                    ) : (
-                      <Heading variant="h3" asParagraph align="center" breakWords>
-                        {answerLabelOf(card)}
-                      </Heading>
-                    )}
+                    <SwipeAnswer card={card} />
                   </div>
                   {card.explanation && (
+                    // «Почему» носит формулы $…$ — InlineMath (центрирование берём от Text).
                     <Text variant="small" color="supplementary" align="center" breakWords>
-                      {typo(card.explanation)}
+                      <InlineMath>{card.explanation}</InlineMath>
                     </Text>
                   )}
                   {/* Группа «повторить по теме»: выжимка из темы + билет по связанному вопросу.

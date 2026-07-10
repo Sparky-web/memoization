@@ -5,7 +5,7 @@ import { mskCalendarDaysBetween, mskDayKey, startOfDayMsk, typo } from "~/lib";
 import { computeTodayState } from "./dailyPlan";
 import { db } from "./db";
 import { isPushConfigured, sendPushToUser } from "./push";
-import { DEFAULT_BEDTIME_HOUR } from "./userSettings";
+import { DEFAULT_BEDTIME_HOUR, DEFAULT_DAILY_REMINDER_HOUR } from "./userSettings";
 
 // Планировщик push-напоминаний: лёгкий прогон раз в 10 минут. Сначала выбираются
 // пользователи с подписками, затем точечные запросы по каждому. Дедуп «раз в день» —
@@ -15,9 +15,9 @@ const RUN_INTERVAL_MS = 10 * 60 * 1000;
 // Скорость из планировщика: ~2 карточки в минуту — для «~M минут» в тексте.
 const CARDS_PER_MINUTE = 2;
 
-// Окна отправки по МСК: канун экзамена утром, план дня после школы/пар, bedtime — по настройке.
+// Окна отправки по МСК: канун экзамена утром; дневное напоминание — по настройке пользователя
+// (dailyReminderHour), предсонное — по bedtimeHour.
 const EXAM_EVE_WINDOW = { from: 9, to: 12 };
-const DAILY_WINDOW = { from: 16, to: 19 };
 
 function mskHourOf(now: Date): number {
   return (now.getUTCHours() + 3) % 24;
@@ -67,7 +67,8 @@ async function runExamEveJob(
   }
 }
 
-// План дня (окно 16:00–18:59): план не закрыт и в нём есть карточки — мягкий толчок.
+// План дня (окно [dailyReminderHour, dailyReminderHour+1) МСК, час выбирает пользователь):
+// план не закрыт и в нём есть карточки — мягкий толчок.
 async function runDailyJob(
   client: PrismaClient,
   userIds: readonly string[],
@@ -75,8 +76,19 @@ async function runDailyJob(
   notified: Set<string>,
 ): Promise<void> {
   const dayKey = mskDayKey(now);
+  const hour = mskHourOf(now);
+  const settingsRows = await client.userSettings.findMany({
+    where: { userId: { in: [...userIds] } },
+    select: { userId: true, dailyReminderHour: true },
+  });
+  const reminderHourByUser = new Map(settingsRows.map((row) => [row.userId, row.dailyReminderHour]));
   for (const userId of userIds) {
     if (notified.has(userId)) continue;
+    // Без строки настроек действует дефолтный час; null — дневное напоминание выключено пользователем.
+    const reminderHour = reminderHourByUser.has(userId)
+      ? reminderHourByUser.get(userId)
+      : DEFAULT_DAILY_REMINDER_HOUR;
+    if (reminderHour === null || reminderHour === undefined || hour !== reminderHour) continue;
     if (await alreadyPushed(client, userId, "daily", dayKey)) continue;
     const today = await computeTodayState(client, userId, now);
     if (!today.planTotal) continue;
@@ -140,9 +152,8 @@ export async function runPushJobsOnce(client: PrismaClient, now: Date): Promise<
   if (hour >= EXAM_EVE_WINDOW.from && hour < EXAM_EVE_WINDOW.to) {
     await runExamEveJob(client, userIds, now, notified);
   }
-  if (hour >= DAILY_WINDOW.from && hour < DAILY_WINDOW.to) {
-    await runDailyJob(client, userIds, now, notified);
-  }
+  // Дневное и предсонное напоминания сами сверяют час пользователя (dailyReminderHour/bedtimeHour).
+  await runDailyJob(client, userIds, now, notified);
   await runBedtimeJob(client, userIds, now, notified);
 }
 

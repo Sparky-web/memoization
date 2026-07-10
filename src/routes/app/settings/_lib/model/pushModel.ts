@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { getPushStatus, removePushSubscription, savePushSubscription } from "~/server/fn/push";
+import { getPushStatus, removePushSubscription, savePushSubscription, sendTestPush } from "~/server/fn/push";
 
 import { urlBase64ToUint8Array } from "../lib/vapid";
 
@@ -62,6 +62,11 @@ export async function enablePushNotifications(publicKey: string): Promise<void> 
   await savePushSubscription({
     data: { endpoint: subscription.endpoint, p256dh, auth: authKey, userAgent: navigator.userAgent.slice(0, 500) },
   });
+}
+
+/** Шлёт тестовое уведомление на все устройства пользователя (для самопроверки). */
+export async function sendTestPushNotification(): Promise<void> {
+  await sendTestPush();
 }
 
 /** Отключает напоминания на ЭТОМ устройстве. Возвращает false, если локальной подписки не было. */

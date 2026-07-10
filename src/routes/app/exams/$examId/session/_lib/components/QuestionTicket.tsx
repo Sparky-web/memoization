@@ -1,7 +1,7 @@
 import { BookOpen, ScrollText } from "lucide-react";
 import { useState } from "react";
 
-import { Button, Heading, HStack, MarkdownView, ResponsiveModal, Text, VStack } from "~/components";
+import { Button, Heading, HStack, InlineMath, MarkdownView, ResponsiveModal, Text, VStack } from "~/components";
 import { typo } from "~/lib";
 
 // Группа «повторить по теме» на экране обратной связи: тихая выжимка из темы связанного
@@ -85,7 +85,8 @@ export function TicketButton({ questionText, questionAnswerMd }: Omit<QuestionTi
       <ResponsiveModal open={open} onOpenChange={setOpen} title={typo("Билет")}>
         <VStack gap="md">
           <Heading variant="h3" asParagraph breakWords>
-            {typo(question)}
+            {/* Текст вопроса-билета носит формулы $…$ — InlineMath (это не cloze, «___» тут нет). */}
+            <InlineMath>{question}</InlineMath>
           </Heading>
           <MarkdownView>{answer}</MarkdownView>
         </VStack>

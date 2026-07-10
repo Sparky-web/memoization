@@ -398,6 +398,8 @@ model UserSettings {
   restWeekdays Int[] @default([])
   /// Час предсонного напоминания по МСК (null — выключено; без строки настроек действует дефолт 21).
   bedtimeHour Int? @default(21)
+  /// Час дневного push-напоминания о плане по МСК (null — выключено; без строки настроек действует дефолт 18).
+  dailyReminderHour Int? @default(18)
   /// ИИ-сверка открытых ответов (Pro): сервер сверяет ответ с эталоном по смыслу (волна 5).
   aiCheckEnabled Boolean @default(false)
 

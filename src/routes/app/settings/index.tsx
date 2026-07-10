@@ -10,7 +10,12 @@ import { logEvent } from "~/server/fn/events";
 import { updateUserSettings } from "~/server/fn/settings";
 
 import { Chip, examQueries, pluralRu } from "../exams/_lib";
-import { disablePushNotifications, enablePushNotifications, pushQueries } from "./_lib/model/pushModel";
+import {
+  disablePushNotifications,
+  enablePushNotifications,
+  pushQueries,
+  sendTestPushNotification,
+} from "./_lib/model/pushModel";
 
 // Настройки пользователя: дневной бюджет, дни отдыха, предсонное напоминание, уведомления,
 // тема, ИИ-сверка открытых ответов (Pro). Каждое изменение сохраняется сразу — без «Сохранить».
@@ -73,6 +78,17 @@ function NotificationsCard() {
     },
   });
 
+  const test = useMutation({
+    mutationFn: () => sendTestPushNotification(),
+    onSuccess: () => {
+      toast.success(typo("Отправлено — уведомление придёт через пару секунд"));
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось отправить тестовое уведомление"));
+    },
+  });
+
   if (!push.configured) {
     return (
       <SimpleCard title={typo("Уведомления")}>
@@ -87,7 +103,7 @@ function NotificationsCard() {
     <SimpleCard title={typo("Уведомления")}>
       <Text variant="small" color="supplementary">
         {typo(
-          "Напомним о плане дня (после 16:00), лёгком повторении перед сном и накануне экзамена — не больше пары напоминаний в день.",
+          "Напомним о плане дня (час выбираешь ниже), лёгком повторении перед сном и накануне экзамена — не больше пары напоминаний в день.",
         )}
       </Text>
       {push.subscribed ? (
@@ -95,6 +111,16 @@ function NotificationsCard() {
           <Badge variant="dot" dot="success">
             {typo("включены")}
           </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={test.isPending}
+            onClick={() => {
+              test.mutate();
+            }}
+          >
+            {test.isPending ? typo("Отправляем…") : typo("Отправить тестовое уведомление")}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -148,10 +174,17 @@ const BEDTIME_OPTIONS: readonly { value: number | null; label: string }[] = [
   { value: 23, label: "23:00" },
 ];
 
+// Час дневного напоминания о плане (МСК). null — напоминание выключено.
+const DAILY_REMINDER_OPTIONS: readonly { value: number | null; label: string }[] = [
+  { value: null, label: typo("выключено") },
+  ...[8, 10, 12, 14, 16, 18, 20].map((hour) => ({ value: hour, label: `${hour}:00` })),
+];
+
 interface SettingsPatch {
   dailyMinutesTotal?: number;
   restWeekdays?: number[];
   bedtimeHour?: number | null;
+  dailyReminderHour?: number | null;
   aiCheckEnabled?: boolean;
 }
 
@@ -266,6 +299,26 @@ function SettingsPage() {
       </SimpleCard>
 
       <NotificationsCard />
+
+      <SimpleCard title={typo("Час дневного напоминания")}>
+        <Text variant="small" color="supplementary">
+          {typo("В этот час пришлём push о плане дня, если он ещё не закрыт. Работает при включённых уведомлениях.")}
+        </Text>
+        <HStack gap="2xs" wrap>
+          {DAILY_REMINDER_OPTIONS.map((option) => (
+            <Chip
+              key={option.label}
+              active={settings.dailyReminderHour === option.value}
+              disabled={save.isPending}
+              onClick={() => {
+                save.mutate({ dailyReminderHour: option.value });
+              }}
+            >
+              {option.label}
+            </Chip>
+          ))}
+        </HStack>
+      </SimpleCard>
 
       <SimpleCard title={typo("Тема")}>
         <HStack gap="2xs">

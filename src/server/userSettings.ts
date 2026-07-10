@@ -9,16 +9,21 @@ export interface EffectiveUserSettings {
   restWeekdays: number[];
   /** null — предсонное напоминание выключено пользователем. */
   bedtimeHour: number | null;
+  /** Час дневного push-напоминания о плане по МСК; null — выключено. */
+  dailyReminderHour: number | null;
   aiCheckEnabled: boolean;
 }
 
 /** Час предсонного напоминания по умолчанию — им же живут пользователи без строки настроек. */
 export const DEFAULT_BEDTIME_HOUR = 21;
+/** Час дневного напоминания по умолчанию — им же живут пользователи без строки настроек. */
+export const DEFAULT_DAILY_REMINDER_HOUR = 18;
 
 const DEFAULT_SETTINGS: EffectiveUserSettings = {
   dailyMinutesTotal: 25,
   restWeekdays: [],
   bedtimeHour: DEFAULT_BEDTIME_HOUR,
+  dailyReminderHour: DEFAULT_DAILY_REMINDER_HOUR,
   aiCheckEnabled: false,
 };
 
@@ -31,6 +36,7 @@ export async function loadUserSettings(db: PrismaClient, userId: string): Promis
     dailyMinutesTotal: row.dailyMinutesTotal,
     restWeekdays: row.restWeekdays,
     bedtimeHour: row.bedtimeHour,
+    dailyReminderHour: row.dailyReminderHour,
     aiCheckEnabled: row.aiCheckEnabled,
   };
 }

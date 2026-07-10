@@ -85,13 +85,17 @@ function voiceErrorText(code: string): string {
   return /[а-яё]/i.test(code) ? typo(code) : typo("Голосовая функция не сработала — продолжите текстом");
 }
 
+// Реплики диалога носят формулы $…$ (ученик-ИИ и объяснение пользователя) — рендерим markdown
+// в масштабе Text variant="small". Размер задаём токеном, цвет наследуется от пузыря.
+const bubbleTextClasses = "text-(length:--paragraph-small-font-size) leading-(--paragraph-small-line-height)";
+
 function UserBubble({ content }: { content: string }) {
   return (
     <div className="rise flex justify-end">
       <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground shadow-card">
-        <Text variant="small" breakWords>
+        <MarkdownView variant="inline" className={bubbleTextClasses}>
           {content}
-        </Text>
+        </MarkdownView>
       </div>
     </div>
   );
@@ -104,9 +108,9 @@ function StudentBubble({ content }: { content: string }) {
         🧑‍🎓
       </span>
       <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-muted px-4 py-2.5 shadow-card">
-        <Text variant="small" breakWords>
+        <MarkdownView variant="inline" className={bubbleTextClasses}>
           {content}
-        </Text>
+        </MarkdownView>
       </div>
     </div>
   );

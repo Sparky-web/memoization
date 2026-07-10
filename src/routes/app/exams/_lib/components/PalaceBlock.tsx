@@ -1,7 +1,7 @@
 import { Landmark } from "lucide-react";
 import { useState } from "react";
 
-import { Button, Text, VStack } from "~/components";
+import { Button, InlineMath, Text, VStack } from "~/components";
 import { type PalaceLocus, typo } from "~/lib";
 
 // Свёрнутый блок «Твой дворец»: маршрут дворца памяти на карточке — в плеере
@@ -26,11 +26,13 @@ export function PalaceBlock({ title, loci }: { title: string; loci: PalaceLocus[
         <VStack gap="2xs">
           {loci.map((locus, index) => (
             <VStack key={index} gap="3xs">
+              {/* Метки образа-локуса могут носить формулы $…$ (факт/образ) — InlineMath.
+                  Нумерация и разделитель — литеральный текст сегментами. */}
               <Text variant="small" bold breakWords>
-                {typo(`${index + 1}. ${locus.place} — ${locus.item}`)}
+                <InlineMath>{`${index + 1}. ${locus.place} — ${locus.item}`}</InlineMath>
               </Text>
               <Text variant="mini" color="supplementary" breakWords>
-                {typo(locus.image)}
+                <InlineMath>{locus.image}</InlineMath>
               </Text>
             </VStack>
           ))}

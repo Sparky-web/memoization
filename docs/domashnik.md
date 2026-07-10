@@ -108,7 +108,7 @@ model AnxietyDump { id, userId (Cascade), examId String?, content String @db.Tex
 
 model ExamFavorite { userId+examId @@unique }   // из DeckFavorite; читается списком «Избранное» на «Сегодня» и тогглом на /d/$examId
 model StreakDay { userId+dayKey @@unique, kind } // журнал серии: "done" — план дня закрыт (durable, день с < 10 ответами не забывается), "freeze" — пропуск закрыт заморозкой (durable-автосписание)
-// UserSettings (новая): userId @unique, dailyMinutesTotal Int @default(25), restWeekdays Int[] (@default []), bedtimeHour Int? — используется предсонным напоминанием. Заморозки живут в StreakDay (остаток = 2 − потраченные за скользящие 30 дней)
+// UserSettings (новая): userId @unique, dailyMinutesTotal Int @default(25), restWeekdays Int[] (@default []), bedtimeHour Int? @default(21) — предсонное напоминание (null = выкл), dailyReminderHour Int? @default(18) — час дневного push-напоминания о плане по МСК (null = выкл; бэкфилл существующих в 18). Заморозки живут в StreakDay (остаток = 2 − потраченные за скользящие 30 дней)
 // ChatMessage: сохраняется (cardId тот же) — теперь это «вопрос по карточке»/«объясни почему»
 ```
 
@@ -208,5 +208,31 @@ model StreakDay { userId+dayKey @@unique, kind } // журнал серии: "do
 - Все server fn скоупятся по userId; публичное — только isPublic.
 - Дни — календарные МСК (dates.ts). SM-2 spacedRepetition.ts и exercises.ts (веса) удаляются вместе с потребителями.
 - Генерация — только через существующую очередь с UsageEvent-учётом и компенсациями.
-- Никаких push-уведомлений в этой итерации (напоминания — in-app + бейджи).
+- Push-уведомления (web-push/VAPID) реализованы — см. раздел 11. Без ключей VAPID слой полностью выключен, напоминания остаются in-app + бейджи.
 - Миграция обязана быть проверена на копии прод-данных ДО деплоя (В7): дамп с VDS → локальная БД → migrate deploy → выборочная сверка счётчиков.
+
+## 11. Push-уведомления (web-push / VAPID)
+
+Три вида напоминаний, все по МСК, не больше пары в день на пользователя:
+- **daily** — днём о незакрытом плане. Час выбирает пользователь в настройках (`UserSettings.dailyReminderHour`, дефолт 18:00, «выключено» доступно). Джоба стреляет в окне `[dailyReminderHour, dailyReminderHour+1)`.
+- **bedtime** — предсонное лёгкое повторение, если сегодня были ответы. Час — `UserSettings.bedtimeHour` (дефолт 21:00, «выключено»).
+- **exam_eve** — утром накануне экзамена (окно 9:00–12:00), если завтра экзамен.
+
+Архитектура:
+- `src/server/push.ts` — отправка через `web-push` (`sendPushToUser`). Дедуп «раз в день» через `PushLog` (уникальный индекс `userId+kind+dayKey`); **kind="test" идёт мимо дедупа** — тестовое уведомление можно слать многократно. Подписки, на которые push-сервис отвечает 404/410, удаляются.
+- `src/server/pushJobs.ts` — планировщик `setInterval` раз в 10 минут (`ensurePushJobs`, стартует только при заданных VAPID). `runPushJobsOnce(db, now)` — чистая, тестируется с подставленным `now`.
+- `src/server/fn/push.ts` — server fn: `getPushStatus` (configured + publicKey + subscribed), `savePushSubscription`, `removePushSubscription`, `sendTestPush` (авторизован, требует активной подписки).
+- `public/push-sw.js` — отдельный service worker, scope `/push/` (не конфликтует с PWA `sw.js` на scope `/`); без fetch-кэширования; показывает уведомление и открывает `url` по клику.
+- Клиент — `src/routes/app/settings/_lib/model/pushModel.ts`: `Notification.requestPermission` → регистрация SW на scope `/push/` → `pushManager.subscribe` с `applicationServerKey` из публичного VAPID → `savePushSubscription`.
+
+### Как включить на проде
+1. Сгенерировать пару ключей: `npx web-push generate-vapid-keys`.
+2. Положить в `.env` сервиса: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT="mailto:..."` (контакт для push-сервисов).
+3. Перезапустить приложение — планировщик поднимется сам (`ensurePushJobs`).
+4. В `/app/settings` → «Уведомления» → «Включить напоминания» (разрешить в браузере), затем «Отправить тестовое уведомление» для самопроверки.
+
+### iOS
+Web-push на iOS/iPadOS работает **только в установленном PWA**: пользователь открывает сайт в Safari → «Поделиться» → «На экран „Домой"», запускает приложение с иконки и уже там включает уведомления. В обычной вкладке Safari кнопка включения отработает с ошибкой разрешения.
+
+### Настраиваемый час
+Час дневного напоминания и час предсонного — независимые селекты в настройках, каждый со значением «выключено». Существующим пользователям `dailyReminderHour` бэкфиллится в 18 (напоминания не теряются); новая строка настроек создаётся при первом изменении, до этого действуют дефолты.

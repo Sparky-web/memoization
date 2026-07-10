@@ -11,6 +11,7 @@ import {
   ConfirmDialog,
   EmptyState,
   HStack,
+  InlineMath,
   Input,
   MarkdownView,
   PaywallCard,
@@ -246,7 +247,7 @@ function CardChatModal({ card, onClose }: { card: ExamCardItem; onClose: () => v
     <ResponsiveModal open onOpenChange={onClose} title={typo("Вопрос по карточке")}>
       <VStack gap="md">
         <Text variant="small" color="supplementary" maxLines={3}>
-          {typo(card.prompt)}
+          <InlineMath>{card.prompt}</InlineMath>
         </Text>
         {isPaywallError(ask.error, "CHAT") ? (
           <PaywallCard reason="CHAT" compact />
@@ -269,15 +270,16 @@ function CardChatModal({ card, onClose }: { card: ExamCardItem; onClose: () => v
 // точечно для спотыкающихся карточек, спека «Мнемоники»).
 const STUBBORN_LAPSES = 3;
 
-// Текст карточки в списке — через markdown (формулы $…$ и таблицы). Cloze — плоским
-// текстом: markdown съел бы «___» пропуска. Размер — токены small, как у прежнего Text.
+// Текст карточки в списке — через markdown (формулы $…$ и таблицы). Cloze — через InlineMath:
+// формулы рендерятся, а «___» пропуска сохраняется (markdown его бы съел). Размер — токены small.
 const inlineSmallClasses = "text-(length:--paragraph-small-font-size) leading-(--paragraph-small-line-height)";
 
 function CardPromptView({ card }: { card: ExamCardItem }) {
   if (card.format === "cloze") {
+    // cloze — InlineMath: сохраняет «___» и рендерит $…$-формулы (markdown съел бы пропуск).
     return (
       <Text bold breakWords>
-        {typo(card.prompt)}
+        <InlineMath>{card.prompt}</InlineMath>
       </Text>
     );
   }

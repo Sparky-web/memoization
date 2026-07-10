@@ -11,6 +11,7 @@ import {
   EmptyState,
   Heading,
   HStack,
+  InlineMath,
   MarkdownView,
   ResponsiveModal,
   SimpleCard,
@@ -191,10 +192,10 @@ function QuestionModal({ questionId, onClose }: { questionId: string; onClose: (
                     </Badge>
                   )}
                 </HStack>
-                {/* Cloze — плоским текстом: markdown съел бы «___» пропуска. */}
+                {/* Cloze — InlineMath: рендерит формулы $…$ и сохраняет «___» (markdown бы его съел). */}
                 {card.format === "cloze" ? (
                   <Text variant="small" bold breakWords>
-                    {typo(card.prompt)}
+                    <InlineMath>{card.prompt}</InlineMath>
                   </Text>
                 ) : (
                   <MarkdownView variant="inline" className={`${inlineSmallClasses} font-semibold`}>
