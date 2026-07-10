@@ -24,6 +24,7 @@ import { isPaywallError, typo } from "~/lib";
 import { forkExam, getPublicExam, setExamFavorite } from "~/server/fn/exams";
 
 import { riseDelay, SiteHeader } from "../../_lib";
+import { pluralRu } from "../../app/exams/_lib";
 
 // Публичное превью экзамена — мини-лендинг: вопросы без ответов + «Забрать себе» — форк
 // со своей датой и прогрессом с нуля. Гостю предлагаем войти.
@@ -179,7 +180,7 @@ function TopicsRing({ count }: { count: number }) {
           {count}
         </span>
         <Text variant="mini" color="supplementary">
-          {typo("тем")}
+          {typo(pluralRu(count, "тема", "темы", "тем"))}
         </Text>
       </div>
     </div>

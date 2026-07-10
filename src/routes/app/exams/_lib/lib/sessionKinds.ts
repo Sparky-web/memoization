@@ -1,7 +1,7 @@
 import { typo } from "~/lib";
 
 /** Режим сессии припоминания — совпадает с валидатором startSession. */
-export type SessionKind = "daily" | "pretest" | "bedtime" | "cram";
+export type SessionKind = "daily" | "pretest" | "bedtime" | "cram" | "swipe";
 
 /** Заголовки режимов для плеера и ссылок. */
 export const SESSION_KIND_TITLES: Record<SessionKind, string> = {
@@ -9,6 +9,7 @@ export const SESSION_KIND_TITLES: Record<SessionKind, string> = {
   pretest: typo("Претест: сначала бой"),
   bedtime: typo("Повторение перед сном"),
   cram: typo("Умная зубрёжка"),
+  swipe: typo("Повторение свайпами"),
 };
 
 /** Час по МСК (0–23) — для защиты сна в зубрёжке и вечерних предложений. */

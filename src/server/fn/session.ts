@@ -27,8 +27,13 @@ import { loadUserSettings } from "~/server/userSettings";
 // Сессия припоминания: сервер строит очередь и проверяет ответы. Ответы и correct
 // НИКОГДА не отдаются клиенту до ответа пользователя (анти-чит); open-карточка получает
 // эталон только в момент показа ответа, оценка приходит отдельным submitOpenRating.
+// Исключение — свайпы: самооценочный режим «вопрос → ответ → сам оцени», анти-чит не нужен,
+// карточка отдаётся целиком сразу (prompt + answer + explanation, без вариантов mcq).
 
 const sessionKindInput = zodRussian.enum(["daily", "pretest", "bedtime", "cram"]);
+// Очередь умеет строиться и для свайпов; ответные функции (answerCard/submitOpenRating)
+// режим "swipe" не принимают — свайпы оцениваются отдельным submitSwipe.
+const queueKindInput = zodRussian.enum(["daily", "pretest", "bedtime", "cram", "swipe"]);
 
 // Скорость ~2 карточки в минуту (дизайн-док, раздел 3).
 const CARDS_PER_MINUTE = 2;
@@ -39,6 +44,8 @@ interface QueueCard {
   id: string;
   format: string;
   prompt: string;
+  answer: string;
+  explanation: string | null;
   options: string[];
   topic: string | null;
   /** Текст исходного вопроса — тема для «объяснить ученику» из фидбека; null у ручных карточек. */
@@ -77,7 +84,7 @@ function cramQueue(cards: QueueCard[], capacity: number): string[] {
 
 export const startSession = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator(zodRussian.object({ examId: zodRussian.string(), kind: sessionKindInput }))
+  .validator(zodRussian.object({ examId: zodRussian.string(), kind: queueKindInput }))
   .handler(async ({ data, context }) => {
     const userId = context.session.user.id;
     const exam = await context.db.exam.findFirst({
@@ -100,6 +107,8 @@ export const startSession = createServerFn({ method: "POST" })
         id: true,
         format: true,
         prompt: true,
+        answer: true,
+        explanation: true,
         options: true,
         question: { select: { topic: true, text: true } },
         progress: {
@@ -121,6 +130,8 @@ export const startSession = createServerFn({ method: "POST" })
       id: row.id,
       format: row.format,
       prompt: row.prompt,
+      answer: row.answer,
+      explanation: row.explanation,
       options: row.options,
       topic: row.question?.topic ?? null,
       questionText: row.question?.text ?? null,
@@ -132,9 +143,10 @@ export const startSession = createServerFn({ method: "POST" })
     const capacity = Math.max(exam.dailyMinutes * CARDS_PER_MINUTE, 1);
 
     let queueIds: string[] = [];
-    if (data.kind === "daily") {
+    if (data.kind === "daily" || data.kind === "swipe") {
       // Очередь дневной сессии — ровно блок этого экзамена из общего плана дня: единая точка
       // правды с экраном «Сегодня» (общий бюджет минут делится между экзаменами по весам).
+      // Свайпы — тот же дневной блок, просто другой способ его пройти.
       const today = await computeTodayState(context.db, userId, now);
       queueIds = today.plan.find((block) => block.examId === exam.id)?.cardIds ?? [];
     }
@@ -170,6 +182,13 @@ export const startSession = createServerFn({ method: "POST" })
     }
 
     const cardById = new Map(cards.map((card) => [card.id, card]));
+    // В свайпах любая карточка — «вопрос → ответ → сам оцени»: вариантов выбора нет.
+    const optionsOf = (card: QueueCard): string[] => {
+      if (data.kind === "swipe") return [];
+      if (card.format !== "mcq" && card.format !== "cloze") return [];
+      // Варианты выбора перемешаны; правильный проверяется на сервере по тексту.
+      return shuffleItems([...new Set(card.options)]);
+    };
     return {
       examId: exam.id,
       examTitle: exam.title,
@@ -184,8 +203,11 @@ export const startSession = createServerFn({ method: "POST" })
             prompt: card.prompt,
             topic: card.topic,
             questionText: card.questionText,
-            // Варианты выбора перемешаны; правильный проверяется на сервере по тексту.
-            options: card.format === "mcq" || card.format === "cloze" ? shuffleItems([...new Set(card.options)]) : [],
+            options: optionsOf(card),
+            // Ответ целиком уходит клиенту ТОЛЬКО в самооценочных свайпах (анти-чит остальных
+            // режимов не трогаем): cloze-prompt остаётся с «___», answer — заполненное слово.
+            answer: data.kind === "swipe" ? card.answer : null,
+            explanation: data.kind === "swipe" ? card.explanation : null,
           },
         ];
       }),
@@ -204,7 +226,7 @@ interface AnswerRecord {
   cardId: string;
   examId: string;
   examDate: Date | null;
-  kind: "daily" | "pretest" | "bedtime" | "cram";
+  kind: "daily" | "pretest" | "bedtime" | "cram" | "swipe";
   rating: ReviewRating;
   correct: boolean;
   confidence: number | null;
@@ -537,6 +559,44 @@ export const submitOpenRating = createServerFn({ method: "POST" })
       durationMs: data.durationMs ?? null,
     });
     return { correct, rating };
+  });
+
+// Свайп-оценка: «вспомнил/не вспомнил» → Good/Again; самооценочный режим, уверенность не спрашиваем.
+export const submitSwipe = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    zodRussian.object({
+      cardId: zodRussian.string(),
+      remembered: zodRussian.boolean(),
+      durationMs: zodRussian.number().int().min(0).max(3_600_000).optional(),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const userId = context.session.user.id;
+    const card = await context.db.card.findFirst({
+      where: { id: data.cardId, exam: { userId } },
+      select: { id: true, examId: true, exam: { select: { examDate: true } } },
+    });
+    if (!card) {
+      setResponseStatus(404);
+      throw new Error(typo("Карточка не найдена"));
+    }
+
+    const rating: ReviewRating = data.remembered ? 3 : 1;
+    await recordAnswer(context.db, {
+      userId,
+      cardId: card.id,
+      examId: card.examId,
+      examDate: card.exam.examDate,
+      kind: "swipe",
+      rating,
+      correct: data.remembered,
+      confidence: null,
+      answerText: null,
+      aiVerdict: null,
+      durationMs: data.durationMs ?? null,
+    });
+    return { correct: data.remembered, rating };
   });
 
 export type SessionQueue = Awaited<ReturnType<typeof startSession>>;

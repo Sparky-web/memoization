@@ -23,9 +23,11 @@ export { formatDateRuMsk, mskCalendarDaysBetween, mskDayKey, mskWeekday, startOf
 export type { MapEdge, MapNode, PalaceLocus } from "./src/deepWork";
 export {
   EXPLAIN_WHY_MIN_REPS,
-  MAP_CANVAS,
+  MAP_MAX_EDGES,
+  MAP_MAX_NODES,
   mapEdgesSchema,
   mapNodesSchema,
+  mergeConceptMapDraft,
   palaceLociSchema,
   parseConceptMapDraft,
   parsePalaceImages,

@@ -5,20 +5,22 @@ import { zodRussian } from "./zodRussian";
 // и дворец памяти (маршрут локусов в MemoryPalace.loci Json). Живут в lib: сервер
 // валидирует ввод и выход модели, клиентский редактор использует те же типы.
 
-/** Холст редактора карты (виртуальные координаты SVG viewBox). */
-export const MAP_CANVAS = { width: 800, height: 520 };
-
 /**
  * «Объясни почему» предлагается не раньше третьего показа карточки (reps ≥ 2):
  * обоснование работает, когда база по теме уже есть (спека, «Глубокая проработка»).
  */
 export const EXPLAIN_WHY_MIN_REPS = 2;
 
-const mapNodeSchema = zodRussian.object({
+const conceptNodeSchema = zodRussian.object({
   id: zodRussian.string().min(1).max(64),
   label: zodRussian.string().min(1).max(80),
-  x: zodRussian.number().min(0).max(MAP_CANVAS.width),
-  y: zodRussian.number().min(0).max(MAP_CANVAS.height),
+});
+
+// Раскладка карты теперь считается автоматически на клиенте, координаты не хранятся.
+// x/y остаются опциональными полями схемы, чтобы карты старого SVG-редактора читались.
+const mapNodeSchema = conceptNodeSchema.extend({
+  x: zodRussian.number().optional(),
+  y: zodRussian.number().optional(),
 });
 
 const mapEdgeSchema = zodRussian.object({
@@ -27,22 +29,20 @@ const mapEdgeSchema = zodRussian.object({
   label: zodRussian.string().max(60),
 });
 
-export const mapNodesSchema = zodRussian.array(mapNodeSchema).max(40);
-export const mapEdgesSchema = zodRussian.array(mapEdgeSchema).max(80);
+/** Потолки карты: столько узлов и рёбер помещаются в читаемую схему. */
+export const MAP_MAX_NODES = 40;
+export const MAP_MAX_EDGES = 80;
 
-/** Узел карты связей: понятие-чип с позицией на холсте. */
-export type MapNode = ReturnType<typeof mapNodeSchema.parse>;
+export const mapNodesSchema = zodRussian.array(mapNodeSchema).max(MAP_MAX_NODES);
+export const mapEdgesSchema = zodRussian.array(mapEdgeSchema).max(MAP_MAX_EDGES);
+
+/** Узел карты связей: понятие с подписью; раскладку считает клиент. */
+export type MapNode = ReturnType<typeof conceptNodeSchema.parse>;
 /** Ребро карты связей с подписью отношения («вызывает», «часть», …). */
 export type MapEdge = ReturnType<typeof mapEdgeSchema.parse>;
 
-// Выход модели для черновика: узлы без координат (раскладку по кругу делает сервер).
-const draftNodeSchema = zodRussian.object({
-  id: zodRussian.string().min(1).max(64),
-  label: zodRussian.string().min(1).max(80),
-});
-
 const mapDraftSchema = zodRussian.object({
-  nodes: zodRussian.array(draftNodeSchema).min(3).max(12),
+  nodes: zodRussian.array(conceptNodeSchema).min(3).max(12),
   edges: zodRussian.array(mapEdgeSchema).max(24),
 });
 
@@ -62,29 +62,61 @@ function parseModelJson(rawText: string, label: string): unknown {
 }
 
 /**
- * Разбор черновика карты от модели: валидация + круговая раскладка узлов по холсту
- * и отбрасывание рёбер, ссылающихся на несуществующие узлы.
+ * Разбор черновика карты от модели: валидация и отбрасывание рёбер, ссылающихся
+ * на несуществующие узлы. Координаты не нужны — раскладку считает клиент.
  */
 export function parseConceptMapDraft(rawText: string): { nodes: MapNode[]; edges: MapEdge[] } {
   const label = typo("Черновик карты");
   const draft = mapDraftSchema.parse(parseModelJson(rawText, label));
-
-  const centerX = MAP_CANVAS.width / 2;
-  const centerY = MAP_CANVAS.height / 2;
-  const radiusX = MAP_CANVAS.width * 0.38;
-  const radiusY = MAP_CANVAS.height * 0.38;
-  const nodes = draft.nodes.map((node, index) => {
-    const angle = (2 * Math.PI * index) / draft.nodes.length - Math.PI / 2;
-    return {
-      id: node.id,
-      label: node.label,
-      x: Math.round(centerX + radiusX * Math.cos(angle)),
-      y: Math.round(centerY + radiusY * Math.sin(angle)),
-    };
-  });
-
-  const nodeIds = new Set(nodes.map((node) => node.id));
+  const nodeIds = new Set(draft.nodes.map((node) => node.id));
   const edges = draft.edges.filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to));
+  return { nodes: draft.nodes, edges };
+}
+
+/**
+ * Слияние черновика ИИ в существующую карту: узлы совпадают по подписи (без регистра),
+ * новым выдаются свежие id (id черновика могут совпадать с существующими), дубли рёбер
+ * пропускаются, лимиты карты (узлы/рёбра) не превышаются — лишнее тихо отбрасывается.
+ */
+export function mergeConceptMapDraft(
+  current: { nodes: MapNode[]; edges: MapEdge[] },
+  draft: { nodes: MapNode[]; edges: MapEdge[] },
+): { nodes: MapNode[]; edges: MapEdge[] } {
+  const nodes = [...current.nodes];
+  const edges = [...current.edges];
+  const idByLabel = new Map(nodes.map((node) => [node.label.trim().toLowerCase(), node.id]));
+  const takenIds = new Set(nodes.map((node) => node.id));
+
+  const mergedIdByDraftId = new Map<string, string>();
+  let serial = 0;
+  for (const draftNode of draft.nodes) {
+    const existingId = idByLabel.get(draftNode.label.trim().toLowerCase());
+    if (existingId) {
+      mergedIdByDraftId.set(draftNode.id, existingId);
+      continue;
+    }
+    if (nodes.length >= MAP_MAX_NODES) continue;
+    let freshId = `d${Date.now().toString(36)}-${serial}`;
+    serial += 1;
+    while (takenIds.has(freshId)) freshId += "x";
+    takenIds.add(freshId);
+    idByLabel.set(draftNode.label.trim().toLowerCase(), freshId);
+    nodes.push({ id: freshId, label: draftNode.label });
+    mergedIdByDraftId.set(draftNode.id, freshId);
+  }
+
+  for (const draftEdge of draft.edges) {
+    if (edges.length >= MAP_MAX_EDGES) break;
+    const from = mergedIdByDraftId.get(draftEdge.from);
+    const to = mergedIdByDraftId.get(draftEdge.to);
+    if (!from || !to || from === to) continue;
+    const duplicate = edges.some(
+      (edge) =>
+        edge.from === from && edge.to === to && edge.label.trim().toLowerCase() === draftEdge.label.trim().toLowerCase(),
+    );
+    if (!duplicate) edges.push({ from, to, label: draftEdge.label });
+  }
+
   return { nodes, edges };
 }
 

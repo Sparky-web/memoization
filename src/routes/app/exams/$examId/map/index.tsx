@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
-import { Sparkles } from "lucide-react";
+import { Plus, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -8,10 +8,12 @@ import { Button, EmptyState, Heading, HStack, PaywallCard, SimpleCard, Text, VSt
 import { type PaywallReason, paywallReasonOf, typo } from "~/lib";
 
 import { Chip, examQueries } from "../../_lib";
-import { MapEditor } from "./_lib/components/MapEditor";
-import { generateConceptMapDraft, mapQueries } from "./_lib/model/mapModel";
+import { MapWorkspace } from "./_lib/components/MapWorkspace";
+import { createConceptMap, generateConceptMapDraft, mapQueries } from "./_lib/model/mapModel";
 
-// Карта связей: черновик-скелет от ИИ по вопросам темы + достройка руками в SVG-редакторе.
+// Карта связей: связи строятся списком «Понятие А —(подпись)→ Понятие Б», граф рисуется сам.
+// Ценность — в формулировании связей самим студентом (строить схему полезнее, чем смотреть
+// готовую); ИИ-черновик лишь набрасывает скелет списка.
 
 export const Route = createFileRoute("/app/exams/$examId/map/")({
   loader: async ({ context, params }) => {
@@ -31,8 +33,19 @@ export const Route = createFileRoute("/app/exams/$examId/map/")({
   component: ConceptMapPage,
 });
 
-// Секция генерации черновика: тема + запуск. Пейволы: MAPS (вторая карта Free) и CHAT (квота).
-function DraftSection({ examId, onCreated }: { examId: string; onCreated: (mapId: string) => void }) {
+// Человеческий текст ошибки мутации: пейволы наверх, остальное — тостом.
+function reportMutationError(error: Error, fallback: string, onPaywall: (reason: PaywallReason) => void) {
+  const reason = paywallReasonOf(error);
+  if (reason) {
+    onPaywall(reason);
+    return;
+  }
+  console.error(error);
+  toast.error(/[а-яё]/i.test(error.message) ? error.message : fallback);
+}
+
+// Черновик от ИИ доливает связи в текущую карту: тема + запуск. Пейвол — квота чата.
+function DraftSection({ examId, mapId }: { examId: string; mapId: string }) {
   const queryClient = useQueryClient();
   const { data: exam } = useSuspenseQuery(examQueries.detail(examId));
   const [topic, setTopic] = useState<string | null>(null);
@@ -41,20 +54,12 @@ function DraftSection({ examId, onCreated }: { examId: string; onCreated: (mapId
   const topics = exam.topics.flatMap((entry) => (entry.topic ? [entry.topic] : []));
 
   const generate = useMutation({
-    mutationFn: () => generateConceptMapDraft({ data: { examId, topic: topic ?? undefined } }),
-    onSuccess: (result) => {
+    mutationFn: () => generateConceptMapDraft({ data: { examId, topic: topic ?? undefined, mapId } }),
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["conceptMaps", examId] });
-      onCreated(result.id);
     },
     onError: (error) => {
-      const reason = paywallReasonOf(error);
-      if (reason) {
-        setPaywall(reason);
-        return;
-      }
-      console.error(error);
-      const humanMessage = /[а-яё]/i.test(error.message) ? error.message : typo("Не удалось построить черновик");
-      toast.error(humanMessage);
+      reportMutationError(error, typo("Не удалось построить черновик"), setPaywall);
     },
   });
 
@@ -65,11 +70,11 @@ function DraftSection({ examId, onCreated }: { examId: string; onCreated: (mapId
           <Text bold>{typo("Черновик от ИИ")}</Text>
           <Text variant="mini" color="supplementary">
             {typo(
-              "Строить схему самому полезнее, чем смотреть готовую, — черновик от ИИ только скелет: достраивайте связи руками.",
+              "ИИ предложит связи по вопросам темы и добавит их в список. Строить схему самому полезнее — используйте черновик как скелет и достраивайте своими связями.",
             )}
           </Text>
         </VStack>
-        {topics.length > 0 && (
+        {Boolean(topics.length) && (
           <HStack gap="2xs" wrap>
             <Chip
               active={!topic}
@@ -101,7 +106,7 @@ function DraftSection({ examId, onCreated }: { examId: string; onCreated: (mapId
             }}
           >
             <Sparkles className="size-4" />
-            {generate.isPending ? typo("Строим…") : typo("Набросать черновик")}
+            {generate.isPending ? typo("Строим…") : typo("Предложить черновик")}
           </Button>
         </HStack>
         {paywall && <PaywallCard reason={paywall} compact />}
@@ -112,22 +117,47 @@ function DraftSection({ examId, onCreated }: { examId: string; onCreated: (mapId
 
 function ConceptMapPage() {
   const { examId } = Route.useParams();
+  const queryClient = useQueryClient();
   const maps = useQuery(mapQueries.list(examId));
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
+  // Автофокус формы связи после «Добавить первую связь» — сразу можно печатать.
+  const [focusFormMapId, setFocusFormMapId] = useState<string | null>(null);
+  const [paywall, setPaywall] = useState<PaywallReason | null>(null);
 
   const mapList = maps.data ?? [];
   const activeMap = mapList.find((map) => map.id === activeMapId) ?? mapList[0] ?? null;
+
+  const createEmpty = useMutation({
+    mutationFn: () => createConceptMap({ data: { examId } }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ["conceptMaps", examId] });
+      setActiveMapId(result.id);
+      setFocusFormMapId(result.id);
+    },
+    onError: (error) => {
+      reportMutationError(error, typo("Не удалось создать карту"), setPaywall);
+    },
+  });
+
+  const generateFirstDraft = useMutation({
+    mutationFn: () => generateConceptMapDraft({ data: { examId } }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ["conceptMaps", examId] });
+      setActiveMapId(result.id);
+    },
+    onError: (error) => {
+      reportMutationError(error, typo("Не удалось построить черновик"), setPaywall);
+    },
+  });
 
   return (
     <VStack gap="md">
       <VStack gap="2xs">
         <Heading variant="h1">{typo("Карта связей")}</Heading>
         <Text color="supplementary">
-          {typo("Понятия темы и связи между ними: схема, построенная своими руками, укладывает материал в систему.")}
+          {typo("Свяжите понятия темы утверждениями — карта нарисуется сама и уложит материал в систему.")}
         </Text>
       </VStack>
-
-      <DraftSection examId={examId} onCreated={setActiveMapId} />
 
       {maps.isLoading && <div className="h-72 animate-pulse rounded-2xl bg-muted" />}
 
@@ -135,31 +165,67 @@ function ConceptMapPage() {
         <SimpleCard>
           <EmptyState
             illustration="map"
-            title={typo("Карт пока нет")}
+            title={typo("Свяжите понятия — карта нарисуется сама")}
             text={typo(
-              "Набросайте черновик от ИИ и достройте его — или начните с чистого листа, сгенерировав скелет по любой теме.",
+              "Сформулируйте связи вида «понятие → понятие» списком, а раскладку схемы возьмёт на себя Домашник. Можно начать с черновика от ИИ.",
             )}
-          />
+          >
+            <HStack gap="2xs" wrap justify="center">
+              <Button
+                disabled={generateFirstDraft.isPending || createEmpty.isPending}
+                onClick={() => {
+                  generateFirstDraft.mutate();
+                }}
+              >
+                <Sparkles className="size-4" />
+                {generateFirstDraft.isPending ? typo("Строим…") : typo("Предложить черновик")}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={generateFirstDraft.isPending || createEmpty.isPending}
+                onClick={() => {
+                  createEmpty.mutate();
+                }}
+              >
+                <Plus className="size-4" />
+                {typo("Добавить первую связь")}
+              </Button>
+            </HStack>
+          </EmptyState>
+          {paywall && <PaywallCard reason={paywall} compact />}
         </SimpleCard>
       )}
 
-      {mapList.length > 1 && (
-        <HStack gap="2xs" wrap>
-          {mapList.map((map) => (
-            <Chip
-              key={map.id}
-              active={activeMap?.id === map.id}
-              onClick={() => {
-                setActiveMapId(map.id);
-              }}
-            >
-              {typo(map.title)}
-            </Chip>
-          ))}
-        </HStack>
+      {Boolean(mapList.length) && (
+        <VStack gap="sm">
+          {mapList.length > 1 && (
+            <HStack gap="2xs" wrap>
+              {mapList.map((map) => (
+                <Chip
+                  key={map.id}
+                  active={activeMap?.id === map.id}
+                  onClick={() => {
+                    setActiveMapId(map.id);
+                  }}
+                >
+                  {typo(map.title)}
+                </Chip>
+              ))}
+            </HStack>
+          )}
+          {paywall && <PaywallCard reason={paywall} compact />}
+          {activeMap && (
+            <MapWorkspace
+              key={`${activeMap.id}:${activeMap.updatedAt.getTime()}`}
+              map={activeMap}
+              examId={examId}
+              autoFocusForm={focusFormMapId === activeMap.id}
+            />
+          )}
+        </VStack>
       )}
 
-      {activeMap && <MapEditor key={activeMap.id} map={activeMap} examId={examId} />}
+      {activeMap && <DraftSection examId={examId} mapId={activeMap.id} />}
     </VStack>
   );
 }

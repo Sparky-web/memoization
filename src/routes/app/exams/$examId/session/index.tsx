@@ -43,6 +43,7 @@ import {
   type SessionKind,
   shouldSuggestFocusBreak,
 } from "../../_lib";
+import { SwipeCardPlayer } from "./_lib/components/SwipeCard";
 
 // Плеер сессии припоминания — ядро продукта. Принципы: «одно дело на экране»,
 // припоминание до показа ответа, немедленная обратная связь, нормализация ошибок претеста,
@@ -50,7 +51,7 @@ import {
 // Раскладка: карточка-«сцена» по центру, панель действий снизу, переходы карточек slide+fade.
 
 const searchSchema = zodRussian.object({
-  kind: zodRussian.enum(["daily", "pretest", "bedtime", "cram"]).catch("daily"),
+  kind: zodRussian.enum(["daily", "pretest", "bedtime", "cram", "swipe"]).catch("daily"),
 });
 
 export const Route = createFileRoute("/app/exams/$examId/session/")({
@@ -69,6 +70,8 @@ interface CardOutcome {
 // Зубрёжка: неверно отвеченная карточка возвращается в очередь через несколько позиций
 // («повторный показ ошибок в той же сессии через 5–10 карточек», дизайн-док, раздел 3).
 const CRAM_RETRY_GAP = 7;
+// Свайпы: «не вспомнил» возвращается быстрее — через пару карточек, как в старых «Мемокартах».
+const SWIPE_RETRY_GAP = 3;
 
 function reducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -390,6 +393,9 @@ function ActionPanel({ children }: PropsWithChildren) {
   );
 }
 
+// Режимы с ответом на сервере: свайпы оцениваются отдельным submitSwipe и сюда не попадают.
+type AnswerSessionKind = Exclude<SessionKind, "swipe">;
+
 // Потолок темы «объясни ученику» — как у validator'а createTeachSession.
 const TEACH_TOPIC_MAX_CHARS = 200;
 
@@ -401,7 +407,7 @@ function CardPlayer({
 }: {
   card: SessionCard;
   examId: string;
-  kind: SessionKind;
+  kind: AnswerSessionKind;
   onFinished: (outcome: CardOutcome) => void;
 }) {
   const navigate = useNavigate();
@@ -872,6 +878,7 @@ function emptyQueueText(kind: SessionKind): string {
     pretest: typo("Новых карточек нет — претест проходят до изучения. Добавь вопросы или дождись генерации."),
     bedtime: typo("Предсонное повторение собирается из карточек, пройденных за день. Сначала пройди дневную сессию."),
     cram: typo("Карточек для зубрёжки нет — добавь вопросы и сгенерируй карточки."),
+    swipe: typo("На сейчас всё повторено: план выполнен или карточки ещё не созрели. Загляни позже."),
   };
   return texts[kind];
 }
@@ -882,6 +889,7 @@ const EMPTY_QUEUE_ILLUSTRATIONS: Record<SessionKind, "cards" | "calendar" | "moo
   pretest: "cards",
   bedtime: "moon",
   cram: "cards",
+  swipe: "calendar",
 };
 
 function SessionSummary({
@@ -956,7 +964,9 @@ function SessionSummary({
 
   return (
     <SimpleCard size="lg">
-      <VStack gap="xl" align="center" className="py-2 text-center">
+      {/* min-w-0 обязателен: SimpleCard — grid, и без него длинный nowrap-контент (CTA «Дальше»)
+          растягивает грид-элемент за пределы карточки, унося весь итог за экран на мобиле. */}
+      <VStack gap="xl" align="center" className="min-w-0 py-2 text-center">
         <div className="relative">
           {/* Конфетти-бёрст при закрытом плане дня: одноразовый, в брендовых цветах. */}
           {planDone && (
@@ -980,19 +990,25 @@ function SessionSummary({
             текстовый дубль «было → стало» убран — цифры уже в кольцах. */}
         <VStack gap="2xs" justify="center">
           <HStack gap="md" align="center" justify="center">
-            <VStack gap="3xs" justify="center">
-              <ReadinessRing value={readinessBefore} size="sm" />
-              <Text variant="mini" color="supplementary">
-                {typo("было")}
-              </Text>
-            </VStack>
+            <ReadinessRing
+              value={readinessBefore}
+              size="sm"
+              label={
+                <Text variant="mini" color="supplementary">
+                  {typo("было")}
+                </Text>
+              }
+            />
             <MoveRight aria-hidden className="size-6 text-muted-foreground" strokeWidth={1.8} />
-            <VStack gap="3xs" justify="center">
-              <ReadinessRing value={exam.readiness} size="lg" />
-              <Text variant="mini" color="supplementary">
-                {typo("стало")}
-              </Text>
-            </VStack>
+            <ReadinessRing
+              value={exam.readiness}
+              size="lg"
+              label={
+                <Text variant="mini" color="supplementary">
+                  {typo("стало")}
+                </Text>
+              }
+            />
           </HStack>
           <Text variant="mini" color="supplementary">
             {typo("готовность экзамена")}
@@ -1027,7 +1043,9 @@ function SessionSummary({
             <Button
               size="pill"
               variant="brand"
-              className="w-full sm:w-auto"
+              // overflow-hidden на самой кнопке обязателен: без него nowrap-содержимое протаскивает
+              // свою min-content-ширину через флекс-родителей и распирает карточку итога на мобиле.
+              className="w-full max-w-full overflow-hidden sm:w-auto"
               onClick={() => {
                 void navigate({
                   to: "/app/exams/$examId/session",
@@ -1036,7 +1054,9 @@ function SessionSummary({
                 });
               }}
             >
-              {typo(`Дальше: ${nextTitle} (${cardsCountLabel(nextBlock.cardIds.length)})`)}
+              {/* Длинное название не должно распирать пилюлю: заголовок урезается, счётчик остаётся целым. */}
+              <span className="min-w-0 truncate">{typo(`Дальше: ${nextTitle}`)}</span>
+              <span className="shrink-0">{typo(`(${cardsCountLabel(nextBlock.cardIds.length)})`)}</span>
             </Button>
           )}
           <HStack gap="sm" justify="center" wrap>
@@ -1127,15 +1147,15 @@ function SessionPage() {
   const answered = outcomes.length;
   const showSleepGate = kind === "cram" && !finished && isSleepTimeMsk(new Date()) && answered >= sleepGateThreshold;
 
-  // Cram: ошибка возвращается в очередь через CRAM_RETRY_GAP позиций; пока повтор этой же
+  // Cram и свайпы: ошибка возвращается в очередь через несколько позиций; пока повтор этой же
   // карточки уже ждёт впереди, второй не добавляем (иначе очередь пухла бы дублями).
-  const requeueCramMiss = (missIndex: number) => {
+  const requeueMiss = (missIndex: number, gap: number) => {
     setExtendedCards((current) => {
       const base = current ?? queue.cards;
       const missed = base[missIndex];
       if (!missed) return current;
       if (base.slice(missIndex + 1).some((pending) => pending.id === missed.id)) return current;
-      const insertAt = Math.min(missIndex + CRAM_RETRY_GAP, base.length);
+      const insertAt = Math.min(missIndex + gap, base.length);
       return [...base.slice(0, insertAt), missed, ...base.slice(insertAt)];
     });
   };
@@ -1143,7 +1163,8 @@ function SessionPage() {
   // Продвижение очереди: вызывается после анимации ухода карточки (или сразу без анимации).
   const advanceQueue = (outcome: CardOutcome) => {
     setOutcomes((current) => [...current, outcome]);
-    if (kind === "cram" && !outcome.correct) requeueCramMiss(index);
+    if (kind === "cram" && !outcome.correct) requeueMiss(index, CRAM_RETRY_GAP);
+    if (kind === "swipe" && !outcome.correct) requeueMiss(index, SWIPE_RETRY_GAP);
     setIndex((current) => current + 1);
     // Привычка «понемногу, но часто»: после 40 минут подряд — мягкое предложение паузы.
     recordFocusActivity();
@@ -1154,8 +1175,9 @@ function SessionPage() {
   };
 
   // Смена карточек slide+fade. При reduced-motion animationend не придёт — двигаемся сразу.
+  // Свайп-карточка уже сыграла собственный вылет за экран — вторая анимация ухода не нужна.
   const handleCardFinished = (outcome: CardOutcome) => {
-    if (reducedMotion()) {
+    if (kind === "swipe" || reducedMotion()) {
       advanceQueue(outcome);
       return;
     }
@@ -1224,6 +1246,14 @@ function SessionPage() {
       );
     }
     if (!card) return null;
+    if (kind === "swipe") {
+      // Свайп-плеер сам анимирует вылет; ключ с индексом — как ниже, для повторов той же карточки.
+      return (
+        <div key={`${index}-${card.id}`} className="card-enter">
+          <SwipeCardPlayer card={card} onFinished={handleCardFinished} />
+        </div>
+      );
+    }
     return (
       // Индекс в ключе обязателен: в cram повтор той же карточки может идти следом,
       // и без него React не размонтировал бы плеер с уже показанным ответом.

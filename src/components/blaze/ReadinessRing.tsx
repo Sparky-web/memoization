@@ -1,4 +1,6 @@
-import { useId } from "react";
+import { type ReactNode, useId } from "react";
+
+import { VStack } from "./VStack";
 
 // Кольцо готовности — главный герой бренда: градиентный штрих (индиго → фиолет), мягкий трек,
 // отрисовка от нуля при маунте, крупная tabular-цифра. Ниже порога слабости градиент тёплый
@@ -25,17 +27,22 @@ interface ReadinessRingProps {
   /** Готовность 0..1. */
   value: number;
   size?: keyof typeof ringSizes;
+  /**
+   * Подпись под кольцом. Центровка по оси кольца живёт здесь, в компоненте:
+   * svg-бокс фиксированной ширины в обычном стеке прижимался бы к краю, а подпись — к центру.
+   */
+  label?: ReactNode;
 }
 
 /** Кольцевой индикатор готовности с процентом внутри. */
-export function ReadinessRing({ value, size = "md" }: ReadinessRingProps) {
+export function ReadinessRing({ value, size = "md", label }: ReadinessRingProps) {
   const gradientId = useId();
   const config = ringSizes[size];
   const ratio = Math.min(Math.max(value, 0), 1);
   const radius = (config.box - config.stroke) / 2;
   const weak = ratio < WEAK_THRESHOLD;
 
-  return (
+  const ring = (
     <div className="relative shrink-0" style={{ width: config.box, height: config.box }}>
       <svg width={config.box} height={config.box} className="-rotate-90" aria-hidden>
         <defs>
@@ -83,5 +90,13 @@ export function ReadinessRing({ value, size = "md" }: ReadinessRingProps) {
         {Math.round(ratio * 100)}%
       </span>
     </div>
+  );
+
+  if (!label) return ring;
+  return (
+    <VStack gap="3xs" justify="center" className="min-w-0">
+      {ring}
+      {label}
+    </VStack>
   );
 }

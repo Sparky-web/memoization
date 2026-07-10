@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
-import { CalendarDays, GraduationCap, Pause, Play, Waypoints } from "lucide-react";
+import { CalendarDays, GalleryHorizontalEnd, GraduationCap, Pause, Play, Waypoints } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -333,6 +333,16 @@ function ExamHubPage() {
             >
               <Play className="size-4" strokeWidth={1.8} />
               {exam.mode === "cram" ? typo("Начать зубрёжку") : typo("Начать сессию")}
+            </Button>
+            <Button
+              variant="outline"
+              title={typo("Тот же дневной блок, но свайпами: переверни и сам оцени")}
+              onClick={() => {
+                goSession("swipe");
+              }}
+            >
+              <GalleryHorizontalEnd className="size-4" />
+              {typo("Свайпами")}
             </Button>
             <Button
               variant="outline"

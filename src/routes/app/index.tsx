@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { CalendarCheck, Flame, Moon, Play, Plus, Zap } from "lucide-react";
+import { CalendarCheck, Flame, GalleryHorizontalEnd, Moon, Play, Plus, Zap } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -32,6 +32,7 @@ import {
   type FavoriteExamItem,
   pluralRu,
   questionsCountLabel,
+  type SessionKind,
   type TodayPlan,
 } from "./exams/_lib";
 
@@ -110,16 +111,20 @@ function TodayHero({ plan }: { plan: TodayPlan }) {
         {plan.exams.length > 0 && (
           <>
             <span aria-hidden className="hidden w-px self-stretch bg-border sm:block" />
-            <HStack gap="lg" align="start" justify="evenly" wrap className="min-w-0 flex-1">
+            <HStack gap="md" align="start" justify="evenly" wrap className="min-w-0 flex-1">
               {plan.exams.map((summary) => (
-                <VStack key={summary.examId} gap="2xs" align="center" className="max-w-28">
-                  <ReadinessRing value={summary.readiness} size={ringSize} />
-                  <Link to={`/app/exams/${summary.examId}`}>
-                    <Text variant="mini" color="supplementary" align="center" maxLines={2} breakWords>
-                      {typo(summary.title)}
-                    </Text>
-                  </Link>
-                </VStack>
+                <ReadinessRing
+                  key={summary.examId}
+                  value={summary.readiness}
+                  size={ringSize}
+                  label={
+                    <Link to={`/app/exams/${summary.examId}`} className="max-w-28">
+                      <Text variant="mini" color="supplementary" align="center" maxLines={2} breakWords>
+                        {typo(summary.title)}
+                      </Text>
+                    </Link>
+                  }
+                />
               ))}
             </HStack>
           </>
@@ -130,43 +135,62 @@ function TodayHero({ plan }: { plan: TodayPlan }) {
 }
 
 // Блок плана по одному экзамену: карточка с подъёмом, клик по ней запускает сессию.
+// Компактная строка «кольцо + название + тихая мета»; «Начать» на мобиле — на всю ширину
+// (в узкой строке кнопка переносилась и висела в пустоте), на десктопе — компактно справа.
 function PlanBlockCard({
   summary,
   cardCount,
   riseDelayMs,
   onStart,
+  onSwipe,
 }: {
   summary: TodayPlan["exams"][number];
   cardCount: number;
   riseDelayMs: number;
   onStart: () => void;
+  onSwipe: () => void;
 }) {
-  const daysLabel = daysToExamLabel(summary.daysToExam);
+  const meta = [cardsCountLabel(cardCount), daysToExamLabel(summary.daysToExam)].filter(Boolean).join(" · ");
+  const startButton = (className: string) => (
+    <Button variant="outline" size="sm" className={className}>
+      <Play className="size-4" strokeWidth={1.8} />
+      {typo("Начать")}
+    </Button>
+  );
   return (
     <SimpleCard interactive className="rise" style={{ animationDelay: `${riseDelayMs}ms` }} onClick={onStart}>
-      <HStack justify="between" align="center" gap="md" wrap>
-        <HStack gap="md" align="center">
-          <ReadinessRing value={summary.readiness} size="sm" />
-          <VStack gap="3xs">
-            <Link
-              to={`/app/exams/${summary.examId}`}
-              className="font-semibold"
-              onClick={(event) => {
-                event.stopPropagation();
-              }}
-            >
-              {typo(summary.title)}
-            </Link>
-            <Text variant="mini" color="supplementary">
-              {[daysLabel, cardsCountLabel(cardCount)].filter(Boolean).join(" · ")}
-            </Text>
-          </VStack>
-        </HStack>
-        <Button variant="outline" size="sm">
-          <Play className="size-4" strokeWidth={1.8} />
-          {typo("Начать")}
+      <HStack gap="sm" align="center" className="min-w-0">
+        <ReadinessRing value={summary.readiness} size="sm" />
+        <VStack gap="3xs" className="min-w-0 flex-1">
+          <Link
+            to={`/app/exams/${summary.examId}`}
+            className="max-w-full truncate font-semibold"
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            {typo(summary.title)}
+          </Link>
+          <Text variant="mini" color="supplementary" maxLines={1}>
+            {meta}
+          </Text>
+        </VStack>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          aria-label={typo("Повторить свайпами")}
+          title={typo("Повторить свайпами")}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSwipe();
+          }}
+        >
+          <GalleryHorizontalEnd className="size-5" strokeWidth={1.8} />
         </Button>
+        {startButton("hidden shrink-0 sm:inline-flex")}
       </HStack>
+      {startButton("w-full sm:hidden")}
     </SimpleCard>
   );
 }
@@ -277,9 +301,11 @@ function FavoritesCard({ favorites }: { favorites: readonly FavoriteExamItem[] }
       <VStack gap="2xs">
         {favorites.map((favorite) => (
           <HStack key={favorite.examId} justify="between" align="center" gap="sm" wrap>
-            <VStack gap="3xs">
-              <Link to={`/d/${favorite.examId}`}>{typo(favorite.title)}</Link>
-              <Text variant="mini" color="supplementary">
+            <VStack gap="3xs" className="min-w-0 flex-1">
+              <Link to={`/d/${favorite.examId}`} className="max-w-full truncate">
+                {typo(favorite.title)}
+              </Link>
+              <Text variant="mini" color="supplementary" maxLines={1}>
                 {typo(
                   [
                     favorite.authorName ? `автор: ${favorite.authorName}` : "",
@@ -294,6 +320,7 @@ function FavoritesCard({ favorites }: { favorites: readonly FavoriteExamItem[] }
             <Button
               variant="outline"
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => {
                 void navigate({ to: "/d/$examId", params: { examId: favorite.examId } });
               }}
@@ -414,7 +441,7 @@ function TodayPage() {
 
   const planTarget = plan.cardsDoneToday + plan.planTotal;
   const estimatedMinutes = Math.max(Math.ceil(plan.planTotal / CARDS_PER_MINUTE), 1);
-  const goSession = (examId: string, kind: "daily" | "pretest" | "bedtime" | "cram") => {
+  const goSession = (examId: string, kind: SessionKind) => {
     void navigate({ to: "/app/exams/$examId/session", params: { examId }, search: { kind } });
   };
 
@@ -468,6 +495,9 @@ function TodayPage() {
                 riseDelayMs={blockIndex * 70}
                 onStart={() => {
                   goSession(block.examId, "daily");
+                }}
+                onSwipe={() => {
+                  goSession(block.examId, "swipe");
                 }}
               />
             ))}
@@ -538,12 +568,12 @@ function TodayPage() {
       {examDayExams.map((exam) => (
         <SimpleCard key={exam.id}>
           <HStack justify="between" align="center" gap="md" wrap>
-            <HStack gap="sm" align="center">
+            <HStack gap="sm" align="center" className="min-w-0 flex-1">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
                 <CalendarCheck className="size-5" strokeWidth={1.8} />
               </span>
-              <VStack gap="3xs">
-                <Text bold>
+              <VStack gap="3xs" className="min-w-0">
+                <Text bold breakWords>
                   {typo(exam.daysToExam === 0 ? `Сегодня экзамен «${exam.title}»` : `Завтра экзамен «${exam.title}»`)}
                 </Text>
                 <Text variant="mini" color="supplementary">
@@ -554,6 +584,7 @@ function TodayPage() {
             <Button
               variant="outline"
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => {
                 void navigate({ to: "/app/exam-day/$examId", params: { examId: exam.id } });
               }}
@@ -583,8 +614,10 @@ function TodayPage() {
       {failedExams.map((exam) => (
         <SimpleCard key={exam.id}>
           <HStack justify="between" align="center" gap="sm" wrap>
-            <VStack gap="3xs">
-              <Text bold>{typo(`Генерация «${exam.title}» не удалась`)}</Text>
+            <VStack gap="3xs" className="min-w-0 flex-1">
+              <Text bold breakWords>
+                {typo(`Генерация «${exam.title}» не удалась`)}
+              </Text>
               {exam.generationError && (
                 <Text variant="mini" color="supplementary" breakWords>
                   {typo(exam.generationError)}
@@ -594,6 +627,7 @@ function TodayPage() {
             <Button
               variant="outline"
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => {
                 void navigate({ to: "/app/exams/$examId", params: { examId: exam.id } });
               }}
@@ -607,8 +641,10 @@ function TodayPage() {
       {draftExams.map((exam) => (
         <SimpleCard key={exam.id}>
           <HStack justify="between" align="center" gap="sm" wrap>
-            <VStack gap="3xs">
-              <Text bold>{typo(exam.title)}</Text>
+            <VStack gap="3xs" className="min-w-0 flex-1">
+              <Text bold breakWords>
+                {typo(exam.title)}
+              </Text>
               <Text variant="mini" color="supplementary">
                 {typo(
                   exam.totalQuestions > 0
@@ -620,6 +656,7 @@ function TodayPage() {
             <Button
               variant="outline"
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => {
                 void navigate({ to: "/app/exams/$examId", params: { examId: exam.id } });
               }}
@@ -635,11 +672,11 @@ function TodayPage() {
       {plan.suggestions.bedtime && bedtimeExamId && (
         <SimpleCard>
           <HStack justify="between" align="center" gap="md" wrap>
-            <HStack gap="sm" align="center">
+            <HStack gap="sm" align="center" className="min-w-0 flex-1">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
                 <Moon className="size-5" strokeWidth={1.8} />
               </span>
-              <VStack gap="3xs">
+              <VStack gap="3xs" className="min-w-0">
                 <Text bold>{typo("Лёгкое повторение перед сном")}</Text>
                 <Text variant="mini" color="supplementary">
                   {typo("Около 5 минут по пройденному за день — сон закрепит материал.")}
@@ -649,6 +686,7 @@ function TodayPage() {
             <Button
               variant="outline"
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => {
                 goSession(bedtimeExamId, "bedtime");
               }}
@@ -662,23 +700,26 @@ function TodayPage() {
       {firstCram && (
         <SimpleCard>
           <HStack justify="between" align="center" gap="md" wrap>
-            <HStack gap="sm" align="center">
+            <HStack gap="sm" align="center" className="min-w-0 flex-1">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-warning/15 text-warning">
                 <Zap className="size-5" strokeWidth={1.8} />
               </span>
-              <VStack gap="3xs">
-                <HStack gap="xs" align="center">
-                  <Text bold>{typo(`Скоро экзамен «${firstCram.title}»? Включи умную зубрёжку`)}</Text>
-                  <Badge variant="primary">Pro</Badge>
-                </HStack>
-                <Text variant="mini" color="supplementary">
-                  {typo("Спринты по самым слабым карточкам с повтором ошибок и защитой сна.")}
+              <VStack gap="3xs" className="min-w-0">
+                {/* Название экзамена — в тихой строке ниже: в заголовке длинное название
+                    раздувало карточку на мобиле до пяти строк. Бейдж — внутри текста,
+                    отдельным элементом он переносился на собственную строку. */}
+                <Text bold>
+                  {typo("Скоро экзамен? Включи умную зубрёжку")} <Badge variant="primary">Pro</Badge>
+                </Text>
+                <Text variant="mini" color="supplementary" maxLines={2} breakWords>
+                  {typo(`«${firstCram.title}»: спринты по самым слабым карточкам с повтором ошибок и защитой сна.`)}
                 </Text>
               </VStack>
             </HStack>
             <Button
               variant="outline"
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => {
                 if (plan.suggestions.pro) {
                   goSession(firstCram.examId, "cram");
