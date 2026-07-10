@@ -45,11 +45,7 @@ function AdminDashboardPage() {
           points={dashboard.revenueDailyKopecks}
           formatValue={formatRub}
         />
-        <DailyBarChart
-          title={typo("Повторения за 30 дней")}
-          points={dashboard.reviewsDaily}
-          formatValue={formatNumber}
-        />
+        <DailyBarChart title={typo("Ответы за 30 дней")} points={dashboard.reviewsDaily} formatValue={formatNumber} />
         <DailyBarChart
           title={typo("ИИ-генерации за 30 дней")}
           points={dashboard.generationsDaily}

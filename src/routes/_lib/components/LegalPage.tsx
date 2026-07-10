@@ -95,7 +95,7 @@ export function LegalPage({ doc }: { doc: LegalDoc }) {
           <HStack align="center" justify="between" className="h-16">
             <Link to="/">
               <Text variant="large" bold>
-                {typo("Мемокарты")}
+                {typo("Домашник")}
               </Text>
             </Link>
             <Link to="/" variant="secondary">

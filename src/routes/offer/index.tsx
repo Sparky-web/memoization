@@ -7,8 +7,8 @@ import { LegalPage, offerDoc } from "../_lib";
 export const Route = createFileRoute("/offer/")({
   head: () => ({
     meta: [
-      { title: typo("Публичная оферта — Мемокарты") },
-      { name: "description", content: typo("Публичная оферта на оказание услуг сервиса «Мемокарты».") },
+      { title: typo("Публичная оферта — Домашник") },
+      { name: "description", content: typo("Публичная оферта на оказание услуг сервиса «Домашник».") },
     ],
   }),
   component: OfferPage,

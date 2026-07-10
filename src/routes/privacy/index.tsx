@@ -7,8 +7,8 @@ import { LegalPage, privacyDoc } from "../_lib";
 export const Route = createFileRoute("/privacy/")({
   head: () => ({
     meta: [
-      { title: typo("Политика конфиденциальности — Мемокарты") },
-      { name: "description", content: typo("Политика обработки персональных данных сервиса «Мемокарты» (152-ФЗ).") },
+      { title: typo("Политика конфиденциальности — Домашник") },
+      { name: "description", content: typo("Политика обработки персональных данных сервиса «Домашник» (152-ФЗ).") },
     ],
   }),
   component: PrivacyPage,

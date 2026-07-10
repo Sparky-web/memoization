@@ -15,7 +15,7 @@ export function AppHeader({ user }: AppHeaderProps) {
       <Container className="py-3">
         <HStack justify="between" align="center" gap="md">
           <Link to="/app" className="hidden font-semibold sm:inline">
-            {typo("Мемокарты")}
+            {typo("Домашник")}
           </Link>
           <HStack gap="lg" align="center">
             <Link to="/app" activeOptions={{ exact: true }} activeProps={activeNavProps}>

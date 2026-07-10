@@ -147,6 +147,7 @@ export const getAdminUsers = createServerFn({ method: "GET" })
     }),
   )
   .handler(async ({ data, context }) => {
+    const now = new Date();
     const offset = data.offset ?? 0;
     const query = data.query?.trim();
     const where: Prisma.UserWhereInput = query
@@ -170,6 +171,13 @@ export const getAdminUsers = createServerFn({ method: "GET" })
         role: true,
         createdAt: true,
         subscription: { select: { status: true, currentPeriodEnd: true, provider: true } },
+        // Ближайший предстоящий экзамен (по неархивным с датой) — колонка «до экзамена» в списке.
+        exams: {
+          where: { archivedAt: null, examDate: { gte: now } },
+          orderBy: { examDate: "asc" },
+          take: 1,
+          select: { examDate: true },
+        },
         _count: {
           select: {
             exams: true,
@@ -201,7 +209,6 @@ export const getAdminUsers = createServerFn({ method: "GET" })
     const cardsByUser = new Map(cardRows.map((row) => [row.userId, row.n]));
     const lastReviewByUser = new Map(lastReviewGroups.map((group) => [group.userId, group._max.reviewedAt]));
 
-    const now = new Date();
     return {
       users: users.map((user) => {
         const subscription = user.subscription;
@@ -217,6 +224,7 @@ export const getAdminUsers = createServerFn({ method: "GET" })
           role: user.role,
           createdAt: user.createdAt,
           examCount: user._count.exams,
+          nextExamAt: user.exams[0]?.examDate ?? null,
           cardCount: cardsByUser.get(user.id) ?? 0,
           reviewCount: user._count.reviews,
           generationsUsed: user._count.usageEvents,
@@ -308,7 +316,7 @@ export const setUserSubscription = createServerFn({ method: "POST" })
     return true;
   });
 
-/** Возвращает пользователю последнюю списанную попытку ИИ-генерации колоды (удаляет UsageEvent). */
+/** Возвращает пользователю последнюю списанную попытку ИИ-генерации экзамена (удаляет UsageEvent). */
 export const refundGenerationUsage = createServerFn({ method: "POST" })
   .middleware([adminMiddleware])
   .validator(zodRussian.object({ userId: zodRussian.string() }))

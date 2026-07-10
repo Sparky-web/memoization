@@ -13,12 +13,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { title: typo(`Мемокарты`) },
+      { title: typo(`Домашник`) },
       { name: "theme-color", content: "#5b57e0" },
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "default" },
-      { name: "apple-mobile-web-app-title", content: typo(`Мемокарты`) },
+      { name: "apple-mobile-web-app-title", content: typo(`Домашник`) },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

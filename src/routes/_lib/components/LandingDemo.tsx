@@ -1,62 +1,77 @@
-import { ArrowDown, ArrowRight, FileText, Sparkles } from "lucide-react";
+import { ArrowDown, ArrowRight, CalendarDays, FileQuestion, Quote, Sparkles } from "lucide-react";
 
 import { Heading, HStack, Text, VStack } from "~/components";
 import { typo } from "~/lib";
 
-/** Ширины строк-полосок стилизованного конспекта — имитация абзацев текста. */
-const NOTE_LINE_WIDTHS: readonly string[] = ["w-11/12", "w-full", "w-4/5", "w-full", "w-2/3", "w-5/6", "w-3/5"];
-
-/** Шаг волны подсветки строк конспекта (секунды цикла CSS-анимации). */
-const LINE_DELAY_STEP_SECONDS = 0.35;
-
 /**
- * Вопросы демо-карточек. Тема нарочно совпадает с файлом «конспект по психологии» —
- * заодно демка объясняет, на чём построен сам сервис.
+ * Вопросы демо-экзамена. Тема нарочно «про память» — заодно демка объясняет,
+ * на чём построен сам сервис.
  */
 const DEMO_QUESTIONS: readonly string[] = [
-  typo("Что такое интервальное повторение?"),
-  typo("Чем рабочая память отличается от кратковременной?"),
-  typo("Что показывает кривая забывания Эббингауза?"),
+  typo("1. Кривая забывания Эббингауза"),
+  typo("2. Что такое активное припоминание?"),
+  typo("3. Интервальные повторения и их эффект"),
 ];
 
-/** Пауза между появлением демо-карточек и стартовый сдвиг (секунды цикла CSS-анимации). */
-const CARD_DELAY_STEP_SECONDS = 1.1;
-const CARD_DELAY_OFFSET_SECONDS = 0.5;
+/** Пауза между появлением артефактов генерации и стартовый сдвиг (секунды цикла CSS-анимации). */
+const STAGE_DELAY_STEP_SECONDS = 1.4;
+const STAGE_DELAY_OFFSET_SECONDS = 0.5;
 
-/** Живая демка «конспект → карточки»: чистый CSS-цикл, без скриншотов и JS-анимаций. */
+/** Мини-календарь плана: сколько карточек назначено на день; последний день — экзамен. */
+const PLAN_DAYS: readonly { label: string; dots: number; exam: boolean }[] = [
+  { label: typo("пн"), dots: 2, exam: false },
+  { label: typo("вт"), dots: 1, exam: false },
+  { label: typo("ср"), dots: 3, exam: false },
+  { label: typo("чт"), dots: 1, exam: false },
+  { label: typo("пт"), dots: 2, exam: false },
+  { label: typo("сб"), dots: 3, exam: false },
+  { label: typo("вс"), dots: 0, exam: true },
+];
+
+function stageDelay(index: number): { animationDelay: string } {
+  return { animationDelay: `${STAGE_DELAY_OFFSET_SECONDS + index * STAGE_DELAY_STEP_SECONDS}s` };
+}
+
+/** Живая демка «вопросы → ответ с цитатой → карточка → план к дате»: чистый CSS-цикл, без JS-анимаций. */
 export function LandingDemo() {
   return (
     <section>
       <VStack gap="lg">
         <VStack gap="xs">
           <Heading variant="h2" align="center">
-            {typo("Конспект превращается в карточки сам")}
+            {typo("Как это работает")}
           </Heading>
           <Text color="supplementary" align="center">
-            {typo("Никакой ручной набивки: Claude читает файл, выделяет главное и формулирует вопросы.")}
+            {typo("Один раз вставляешь вопросы — дальше Домашник сам готовит ответы, карточки и расписание.")}
           </Text>
         </VStack>
 
         <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-4 md:flex-row md:items-stretch md:gap-6">
-          {/* Стилизованный «конспект»: строки-полоски вместо скриншота */}
+          {/* Вход: список вопросов и дата — всё, что нужно от пользователя */}
           <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-sm md:max-w-none md:flex-1">
             <VStack gap="sm">
               <HStack gap="xs" align="center">
-                <FileText className="size-4 shrink-0 text-primary" />
+                <FileQuestion className="size-4 shrink-0 text-primary" />
                 <Text variant="mini" color="supplementary">
-                  {typo("Лекции_по_психологии.pdf")}
+                  {typo("Вопросы к экзамену")}
                 </Text>
               </HStack>
               <VStack gap="xs">
-                {NOTE_LINE_WIDTHS.map((widthClass, index) => (
-                  <div
-                    // Ширины повторяются — ключ дополняем позицией строки.
-                    key={`${widthClass}-${index}`}
-                    className={`landing-demo-line h-2.5 rounded-full bg-muted-foreground ${widthClass}`}
-                    style={{ animationDelay: `${index * LINE_DELAY_STEP_SECONDS}s` }}
-                  />
+                {DEMO_QUESTIONS.map((question) => (
+                  <Text key={question} variant="small">
+                    {question}
+                  </Text>
                 ))}
+                <Text variant="mini" color="supplementary">
+                  {typo("…ещё 57 вопросов")}
+                </Text>
               </VStack>
+              <HStack gap="xs" align="center">
+                <CalendarDays className="size-4 shrink-0 text-primary" />
+                <Text variant="mini" color="supplementary">
+                  {typo("Экзамен — 26 июля")}
+                </Text>
+              </HStack>
             </VStack>
           </div>
 
@@ -66,26 +81,75 @@ export function LandingDemo() {
             <ArrowRight className="hidden size-6 md:block" />
           </div>
 
+          {/* Выход: ответ с цитатой → атомарная карточка → план повторений к дате */}
           <div className="w-full max-w-md md:max-w-none md:flex-1">
             <VStack gap="sm">
-              {DEMO_QUESTIONS.map((question, index) => (
-                <div
-                  key={question}
-                  className="landing-demo-card rounded-2xl border border-border bg-card p-4 shadow-sm"
-                  style={{ animationDelay: `${CARD_DELAY_OFFSET_SECONDS + index * CARD_DELAY_STEP_SECONDS}s` }}
-                >
-                  <VStack gap="3xs">
+              <div className="landing-demo-card rounded-2xl border border-border bg-card p-4 shadow-sm" style={stageDelay(0)}>
+                <VStack gap="3xs">
+                  <Text variant="mini" color="supplementary">
+                    {typo("Ответ на вопрос 2")}
+                  </Text>
+                  <Text variant="small" bold>
+                    {typo("Активное припоминание — самостоятельное извлечение знания из памяти без подсказки…")}
+                  </Text>
+                  <HStack gap="xs" align="center">
+                    <Quote className="size-3.5 shrink-0 text-primary" />
                     <Text variant="mini" color="supplementary">
-                      {typo(`Карточка ${index + 1}`)}
+                      {typo("Из твоего конспекта: Лекции_по_психологии.pdf")}
                     </Text>
-                    <Text variant="small" bold>
-                      {question}
-                    </Text>
-                  </VStack>
-                </div>
-              ))}
+                  </HStack>
+                </VStack>
+              </div>
+
+              <div className="landing-demo-card rounded-2xl border border-border bg-card p-4 shadow-sm" style={stageDelay(1)}>
+                <VStack gap="3xs">
+                  <Text variant="mini" color="supplementary">
+                    {typo("Карточка · один факт")}
+                  </Text>
+                  <Text variant="small" bold>
+                    {typo("Чем припоминание полезнее перечитывания?")}
+                  </Text>
+                </VStack>
+              </div>
+
+              <div className="landing-demo-card rounded-2xl border border-border bg-card p-4 shadow-sm" style={stageDelay(2)}>
+                <VStack gap="xs">
+                  <Text variant="mini" color="supplementary">
+                    {typo("План повторений — точно к дате")}
+                  </Text>
+                  <HStack gap="xs" justify="between">
+                    {PLAN_DAYS.map((day) => (
+                      <VStack key={day.label} gap="3xs" align="center">
+                        <span
+                          className={
+                            day.exam
+                              ? "flex size-8 items-center justify-center rounded-lg bg-primary"
+                              : "flex size-8 items-center justify-center gap-0.5 rounded-lg bg-muted"
+                          }
+                        >
+                          {day.exam ? (
+                            <span className="text-primary-foreground">
+                              <Text variant="mini" bold>
+                                {typo("экз")}
+                              </Text>
+                            </span>
+                          ) : (
+                            Array.from({ length: day.dots }, (_slot, dotIndex) => (
+                              <span key={dotIndex} className="size-1.5 rounded-full bg-primary" />
+                            ))
+                          )}
+                        </span>
+                        <Text variant="mini" color="supplementary">
+                          {day.label}
+                        </Text>
+                      </VStack>
+                    ))}
+                  </HStack>
+                </VStack>
+              </div>
+
               <Text variant="mini" color="supplementary" align="center">
-                {typo("К каждой карточке — краткий и развёрнутый ответ")}
+                {typo("Ответы и карточки можно править — спорное помечается «проверить»")}
               </Text>
             </VStack>
           </div>

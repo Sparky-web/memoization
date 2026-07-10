@@ -53,7 +53,7 @@ export const createCheckout = createServerFn({ method: "POST" })
     const billingPlan = BILLING_PLANS[input.plan];
     const periodDays = billingPlan.days;
 
-    const description = typo(`Мемокарты Pro — тариф «${billingPlan.title}» на ${periodDays} ${daysWord(periodDays)}`);
+    const description = typo(`Домашник Pro — тариф «${billingPlan.title}» на ${periodDays} ${daysWord(periodDays)}`);
     const payment = await createPayment({
       amountRub: billingPlan.rub,
       description,

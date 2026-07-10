@@ -1,7 +1,15 @@
 import { Plus } from "lucide-react";
 
 import { Heading, Text, VStack } from "~/components";
-import { FREE_CHAT_PER_DAY, PRO_CHAT_PER_DAY, PRO_DECK_GENERATIONS_PER_DAY, typo } from "~/lib";
+import {
+  FREE_CHAT_PER_DAY,
+  FREE_QUESTIONS_PER_EXAM,
+  PRO_CHAT_PER_DAY,
+  PRO_DECK_GENERATIONS_PER_DAY,
+  PRO_EXAMS,
+  PRO_QUESTIONS_PER_EXAM,
+  typo,
+} from "~/lib";
 
 import { SUPPORT_EMAIL } from "../../../_lib";
 
@@ -20,13 +28,13 @@ const FAQ_ITEMS: readonly QaItem[] = [
   {
     question: typo("Что входит в Pro?"),
     answer: typo(
-      `До ${PRO_DECK_GENERATIONS_PER_DAY} ИИ-генераций колод в день, генерация тренажёров («вставь слово» и тесты) без ограничений и до ${PRO_CHAT_PER_DAY} сообщений чата по карточкам в день.`,
+      `До ${PRO_EXAMS} экзаменов с одним планом (до ${PRO_QUESTIONS_PER_EXAM} вопросов каждый), до ${PRO_DECK_GENERATIONS_PER_DAY} ИИ-генераций в день, загрузка конспектов с привязкой ответов к источникам, голосовой «объясни ученику», ИИ-сверка открытых ответов, режим умной зубрёжки и до ${PRO_CHAT_PER_DAY} ИИ-сообщений в день.`,
     ),
   },
   {
     question: typo("Что останется бесплатным?"),
     answer: typo(
-      `Колоды вручную (JSON-импорт), повторения свайпами и тренажёры — без ограничений. Плюс одна ИИ-генерация колоды, одна генерация тренажёров и ${FREE_CHAT_PER_DAY} сообщений чата в день. Pro нужен только для дорогого ИИ.`,
+      `Один активный экзамен до ${FREE_QUESTIONS_PER_EXAM} вопросов с одной ИИ-генерацией. Всё ядро подготовки — ежедневные сессии припоминания, план повторений к дате, честная готовность, серии — без ограничений. Плюс ${FREE_CHAT_PER_DAY} ИИ-сообщений в день.`,
     ),
   },
   {

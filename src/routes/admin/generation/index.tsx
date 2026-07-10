@@ -27,17 +27,17 @@ function AdminGenerationPage() {
     if (!generation.processing.length) {
       return <Text color="supplementary">{typo("Сейчас ничего не генерируется")}</Text>;
     }
-    return generation.processing.map((deck) => (
-      <HStack key={deck.id} justify="between" align="start" gap="sm" wrap>
+    return generation.processing.map((exam) => (
+      <HStack key={exam.id} justify="between" align="start" gap="sm" wrap>
         <VStack gap="3xs">
           <Text bold breakWords maxLines={1}>
-            {typo(deck.title)}
+            {typo(exam.title)}
           </Text>
           <Text variant="small" color="supplementary" breakWords>
-            {typo(`${deck.ownerEmail} · создана ${formatDateTimeMsk(deck.createdAt)}`)}
+            {typo(`${exam.ownerEmail} · создан ${formatDateTimeMsk(exam.createdAt)}`)}
           </Text>
         </VStack>
-        <Badge variant={deck.queuePosition === 0 ? "primary" : "muted"}>{queueLabel(deck.queuePosition)}</Badge>
+        <Badge variant={exam.queuePosition === 0 ? "primary" : "muted"}>{queueLabel(exam.queuePosition)}</Badge>
       </HStack>
     ));
   }
@@ -46,21 +46,21 @@ function AdminGenerationPage() {
     if (!generation.failed.length) {
       return <Text color="supplementary">{typo("Ошибок генерации нет")}</Text>;
     }
-    return generation.failed.map((deck) => (
-      <VStack key={deck.id} gap="3xs">
+    return generation.failed.map((exam) => (
+      <VStack key={exam.id} gap="3xs">
         <HStack justify="between" align="start" gap="sm" wrap>
           <Text bold breakWords maxLines={1}>
-            {typo(deck.title)}
+            {typo(exam.title)}
           </Text>
           <Text variant="small" color="supplementary">
-            {formatDateTimeMsk(deck.failedAt)}
+            {formatDateTimeMsk(exam.failedAt)}
           </Text>
         </HStack>
         <Text variant="small" color="supplementary" breakWords>
-          {deck.ownerEmail}
+          {exam.ownerEmail}
         </Text>
         <Text variant="small" color="destructive" breakWords>
-          {deck.error ? typo(deck.error) : typo("Текст ошибки не сохранился")}
+          {exam.error ? typo(exam.error) : typo("Текст ошибки не сохранился")}
         </Text>
       </VStack>
     ));

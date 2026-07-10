@@ -40,7 +40,7 @@ export async function assertChatQuota(db: PrismaClient, userId: string): Promise
   return pro;
 }
 
-/** Списывает попытку. refId: id колоды для генераций (по нему компенсация), id карточки для чата. */
+/** Списывает попытку. refId: id экзамена для генераций (по нему компенсация), id карточки для чата. */
 export async function recordUsage(db: PrismaClient, userId: string, kind: UsageKind, refId: string): Promise<void> {
   await db.usageEvent.create({ data: { userId, kind, refId } });
 }
@@ -74,7 +74,7 @@ export function tryChargeUsage(
 /** Компенсация: генерация упала — возвращаем по одной списанной попытке на каждый refId. */
 export async function refundUsage(db: PrismaClient, kind: UsageKind, refIds: readonly string[]): Promise<void> {
   for (const refId of refIds) {
-    // Удаляем только последнее событие: у колоды могла накопиться история успешных
+    // Удаляем только последнее событие: у экзамена могла накопиться история успешных
     // перегенераций (Pro), их учёт возврат текущей неудачи затрагивать не должен.
     const lastEvent = await db.usageEvent.findFirst({
       where: { kind, refId },

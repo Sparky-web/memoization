@@ -4,7 +4,7 @@ import { Users } from "lucide-react";
 import { Button, Heading, SimpleCard, Text, VStack } from "~/components";
 import { typo } from "~/lib";
 
-/** Акцент на вирусную механику: одну публичную колоду учит вся группа по ссылке. */
+/** Акцент на вирусную механику: экзамен по ссылке форкает вся группа, у каждого свой план. */
 export function LandingGroupCta() {
   const navigate = useNavigate();
 
@@ -22,13 +22,13 @@ export function LandingGroupCta() {
             <div className="max-w-2xl">
               <Text color="supplementary" align="center">
                 {typo(
-                  "Один загружает конспект — все учат по ссылке: карточки общие, прогресс у каждого свой. Сделал староста — сдаёт вся группа.",
+                  "Один вставляет вопросы — остальные забирают экзамен по ссылке себе. Карточки общие, а дата, план и прогресс у каждого свои. Сделал староста — готовится вся группа.",
                 )}
               </Text>
             </div>
           </VStack>
           <Button size="pill" onClick={() => void navigate({ to: "/auth/signup" })}>
-            {typo("Сделать колоду для группы")}
+            {typo("Собрать экзамен для группы")}
           </Button>
         </VStack>
       </SimpleCard>

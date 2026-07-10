@@ -51,7 +51,7 @@ export const Route = createFileRoute("/d/$examId/")({
         { name: "robots", content: "noindex, nofollow" },
         { property: "og:title", content: title },
         { property: "og:description", content: ogDescription(loaderData) },
-        { property: "og:site_name", content: typo("Мемокарты") },
+        { property: "og:site_name", content: typo("Домашник") },
         { property: "og:type", content: "website" },
       ],
     };
@@ -208,7 +208,7 @@ function PublicExamPage() {
         <VStack gap="xl" className="mx-auto w-full max-w-2xl">
           <VStack gap="sm">
             <Text variant="mini" color="supplementary">
-              {typo("Мемокарты · экзамен по ссылке")}
+              {typo("Домашник · экзамен по ссылке")}
             </Text>
             <Heading variant="h1" breakWords>
               {typo(exam.title)}

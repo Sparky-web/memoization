@@ -13,7 +13,7 @@ export const Route = createFileRoute("/pricing/success/")({
     const session = await getSession();
     if (!session) throw redirect({ to: "/auth/signin" });
   },
-  head: () => ({ meta: [{ title: typo("Оплата — Мемокарты") }] }),
+  head: () => ({ meta: [{ title: typo("Оплата — Домашник") }] }),
   component: PaymentSuccessPage,
 });
 
@@ -58,12 +58,14 @@ function PaymentSuccessPage() {
         <Text variant="large" color="supplementary" align="center">
           {billing.currentPeriodEnd
             ? typo(
-                `Генерация колод, тренажёры и чат открыты до ${formatDateRuMsk(billing.currentPeriodEnd)}. Платёж разовый — ничего не спишется автоматически.`,
+                `Мультиэкзамены, материалы, голосовой ученик и умная зубрёжка открыты до ${formatDateRuMsk(billing.currentPeriodEnd)}. Платёж разовый — ничего не спишется автоматически.`,
               )
-            : typo("Генерация колод, тренажёры и чат открыты. Платёж разовый — ничего не спишется автоматически.")}
+            : typo(
+                "Мультиэкзамены, материалы, голосовой ученик и умная зубрёжка открыты. Платёж разовый — ничего не спишется автоматически.",
+              )}
         </Text>
         <Button size="pill" onClick={goApp}>
-          {typo("К колодам")}
+          {typo("К экзаменам")}
         </Button>
       </Screen>
     );
@@ -88,7 +90,7 @@ function PaymentSuccessPage() {
             {typo("К тарифам")}
           </Button>
           <Button size="pill" variant="outline" onClick={goApp}>
-            {typo("К колодам")}
+            {typo("К экзаменам")}
           </Button>
         </HStack>
       </Screen>

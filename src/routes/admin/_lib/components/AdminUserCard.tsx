@@ -24,8 +24,14 @@ function SubscriptionBadge({ user }: { user: AdminUserItem }) {
 }
 
 function activityLine(user: AdminUserItem): string {
-  if (!user.lastReviewAt) return typo("повторений ещё не было");
+  if (!user.lastReviewAt) return typo("ответов ещё не было");
   return typo(`последняя активность ${formatDateTimeMsk(user.lastReviewAt)}`);
+}
+
+/** Строка «ближайший экзамен …» — только если у пользователя есть предстоящая дата. */
+function nextExamLine(user: AdminUserItem): string | null {
+  if (!user.nextExamAt) return null;
+  return typo(`ближайший экзамен ${formatDateRuMsk(user.nextExamAt)}`);
 }
 
 /** Карточка пользователя: метрики, подписка; раскрытие — платежи и ручное управление. */
@@ -97,11 +103,11 @@ export function AdminUserCard({ user }: { user: AdminUserItem }) {
             )}
             <Text variant="small" color="supplementary">
               {typo(
-                `регистрация ${formatDateRuMsk(user.createdAt)} · экзаменов ${user.examCount} · карточек ${user.cardCount} · повторений ${user.reviewCount} · генераций ${user.generationsUsed}`,
+                `регистрация ${formatDateRuMsk(user.createdAt)} · экзаменов ${user.examCount} · карточек ${user.cardCount} · ответов ${user.reviewCount} · генераций ${user.generationsUsed}`,
               )}
             </Text>
             <Text variant="small" color="supplementary">
-              {activityLine(user)}
+              {[nextExamLine(user), activityLine(user)].filter(Boolean).join(" · ")}
             </Text>
           </VStack>
 

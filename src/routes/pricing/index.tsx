@@ -33,11 +33,11 @@ export const Route = createFileRoute("/pricing/")({
   },
   head: () => ({
     meta: [
-      { title: typo("Тарифы Pro — Мемокарты") },
+      { title: typo("Тарифы Pro — Домашник") },
       {
         name: "description",
         content: typo(
-          "ИИ-генерация колод из конспектов, тренажёры и чат по карточкам без дневных лимитов. Разовый платёж без автосписаний — от 490 ₽.",
+          "Несколько экзаменов с одним планом, материалы с цитатами, голосовой «объясни ученику», умная зубрёжка и ИИ-сверка ответов. Разовый платёж без автосписаний — от 490 ₽.",
         ),
       },
     ],
@@ -96,7 +96,7 @@ function PricingPage() {
           <HStack align="center" justify="between" className="h-16">
             <Link to="/">
               <Text variant="large" bold>
-                {typo("Мемокарты")}
+                {typo("Домашник")}
               </Text>
             </Link>
             <Link to="/" variant="secondary">
@@ -114,11 +114,11 @@ function PricingPage() {
           {/* Hero */}
           <VStack gap="sm" justify="center" className="text-center">
             <Heading variant="h1" align="center">
-              {typo("Открой безлимитный ИИ на всю сессию")}
+              {typo("Открой Pro на всю сессию")}
             </Heading>
             <Text variant="large" color="supplementary" align="center">
               {typo(
-                "Pro снимает лимиты на дорогой ИИ: генерация колод из конспектов, тренажёры «вставь слово» и тесты, чат по карточкам. Повторения и ручные колоды бесплатны для всех.",
+                "Pro открывает несколько экзаменов с одним планом, материалы с привязкой ответов, голосовой режим «объясни ученику», умную зубрёжку и ИИ-сверку ответов. Сессии, план к дате и честная готовность бесплатны для всех.",
               )}
             </Text>
           </VStack>
@@ -138,7 +138,7 @@ function PricingPage() {
                 </Text>
                 <Button size="pill" className="mx-auto" onClick={() => void navigate({ to: "/app" })}>
                   <BookOpen className="size-5" />
-                  {typo("К колодам")}
+                  {typo("К экзаменам")}
                 </Button>
               </VStack>
             </SimpleCard>

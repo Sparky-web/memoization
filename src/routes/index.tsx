@@ -4,17 +4,17 @@ import { AdaptiveGrid, Button, Container, Heading, HStack, Link, SimpleCard, Tex
 import { BILLING_PLAN_IDS, BILLING_PLANS, type BillingPlanId, typo } from "~/lib";
 import { getSession } from "~/server/fn/auth";
 
+import { LandingDailyLoop } from "./_lib/components/LandingDailyLoop";
 import { LandingDemo } from "./_lib/components/LandingDemo";
 import { LandingFaq } from "./_lib/components/LandingFaq";
 import { LandingFeatures } from "./_lib/components/LandingFeatures";
-import { LandingFlipCard } from "./_lib/components/LandingFlipCard";
 import { LandingGroupCta } from "./_lib/components/LandingGroupCta";
-import { LandingSteps } from "./_lib/components/LandingSteps";
+import { LandingScience } from "./_lib/components/LandingScience";
 import { SELLER_REQUISITES, SITE_URL, SUPPORT_EMAIL } from "./_lib/lib/marketing";
 
-const PAGE_TITLE = typo("Мемокарты — загрузи конспект и получи тренажёр для запоминания");
+const PAGE_TITLE = typo("Домашник — вставь вопросы к экзамену и дойди до сдачи");
 const PAGE_DESCRIPTION = typo(
-  "ИИ превращает конспект в колоду карточек с тестами и тренажёром «вставь слово», а интервальные повторения напоминают, что забывается. Первая генерация — бесплатно, без карты.",
+  "ИИ отвечает на вопросы по твоим конспектам, дробит их на карточки, а план повторений доводит до экзамена точно к дате. 1 экзамен и генерация — бесплатно, без карты.",
 );
 
 export const Route = createFileRoute("/")({
@@ -30,7 +30,7 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: PAGE_TITLE },
       { property: "og:description", content: PAGE_DESCRIPTION },
       { property: "og:type", content: "website" },
-      { property: "og:site_name", content: typo("Мемокарты") },
+      { property: "og:site_name", content: typo("Домашник") },
       { property: "og:url", content: SITE_URL },
       { property: "og:image", content: `${SITE_URL}/og-image.png` },
       { property: "og:image:width", content: "1200" },
@@ -79,7 +79,7 @@ function HomePage() {
       <header className="border-b border-border/60">
         <Container className="py-3">
           <HStack justify="between" align="center" gap="md">
-            <Text bold>{typo("Мемокарты")}</Text>
+            <Text bold>{typo("Домашник")}</Text>
             <HStack gap="md" align="center">
               <Link to="/pricing" variant="secondary">
                 {typo("Тарифы")}
@@ -101,13 +101,13 @@ function HomePage() {
                 <VStack gap="md" justify="center">
                   <div className="max-w-3xl">
                     <Heading variant="h1" align="center">
-                      {typo("Загрузи конспект — получи тренажёр для запоминания")}
+                      {typo("Вставь вопросы к экзамену — Домашник доведёт до сдачи")}
                     </Heading>
                   </div>
                   <div className="max-w-2xl">
                     <Text variant="large" color="supplementary" align="center">
                       {typo(
-                        "Claude разберёт материал на карточки, а интервальные повторения закрепят его в памяти — ровно к экзамену.",
+                        "ИИ ответит на каждый вопрос по твоим конспектам, разобьёт ответы на карточки и составит план повторений точно к дате экзамена.",
                       )}
                     </Text>
                   </div>
@@ -115,29 +115,29 @@ function HomePage() {
                 <VStack gap="xs" justify="center">
                   <HStack gap="sm" justify="center" wrap>
                     <Button size="pill" onClick={goSignup}>
-                      {typo("Попробовать бесплатно")}
+                      {typo("Начать бесплатно")}
                     </Button>
                     <Button variant="outline" size="pill" onClick={goSignin}>
                       {typo("Войти")}
                     </Button>
                   </HStack>
                   <Text variant="mini" color="supplementary" align="center">
-                    {typo("1 генерация колоды бесплатно · без карты · ручные колоды не ограничены")}
+                    {typo("1 экзамен и генерация — бесплатно, без карты")}
                   </Text>
                 </VStack>
               </VStack>
             </section>
 
-            {/* 2. Живая демка «конспект → карточки» */}
+            {/* 2. Демка «вопросы → ответы с цитатой → карточки → план к дате» */}
             <LandingDemo />
 
-            {/* 3. Интерактивная флип-карточка */}
-            <LandingFlipCard />
+            {/* 3. Ежедневный цикл: план → сессия → честная готовность */}
+            <LandingDailyLoop />
 
-            {/* 4. Как это работает */}
-            <LandingSteps />
+            {/* 4. Наука кратко */}
+            <LandingScience />
 
-            {/* 5. Фичи */}
+            {/* 5. Фичи поверх ядра */}
             <LandingFeatures />
 
             {/* 6. Для группы */}
@@ -148,12 +148,12 @@ function HomePage() {
               <VStack gap="lg">
                 <VStack gap="xs">
                   <Heading variant="h2" align="center">
-                    {typo("Бесплатно — навсегда. Pro — на сессию")}
+                    {typo("Бесплатно — до экзамена. Pro — на сессию")}
                   </Heading>
                   <div className="mx-auto max-w-2xl">
                     <Text color="supplementary" align="center">
                       {typo(
-                        "Ручные колоды и повторения бесплатны. Pro снимает лимиты на ИИ-генерацию колод и тренажёров: разовый платёж без автосписаний — карта не привязывается.",
+                        "Один экзамен с сессиями, планом к дате и честной готовностью — бесплатно. Pro добавляет несколько экзаменов с одним планом, материалы с цитатами, голосового ученика и умную зубрёжку. Разовый платёж без автосписаний — карта не привязывается.",
                       )}
                     </Text>
                   </div>
@@ -211,12 +211,12 @@ function HomePage() {
                 <div className="max-w-xl">
                   <Text color="supplementary" align="center">
                     {typo(
-                      "Загрузи конспект — через несколько минут получишь колоду. Первая генерация бесплатно, карта не нужна.",
+                      "Вставь список вопросов и дату — через несколько минут будут ответы, карточки и план до дня «Х». Бесплатно, карта не нужна.",
                     )}
                   </Text>
                 </div>
                 <Button size="pill" onClick={goSignup}>
-                  {typo("Попробовать бесплатно")}
+                  {typo("Начать бесплатно")}
                 </Button>
               </VStack>
             </section>
@@ -228,10 +228,10 @@ function HomePage() {
         <Container>
           <AdaptiveGrid cols={{ base: 1, md: 3 }} gap="2xl" className="py-10">
             <VStack gap="sm">
-              <Text bold>{typo("Мемокарты")}</Text>
+              <Text bold>{typo("Домашник")}</Text>
               <Text variant="small" color="supplementary">
                 {typo(
-                  "Сервис подготовки к экзаменам: колоды карточек из ваших конспектов, интервальные повторения, тренажёры и чат по темам.",
+                  "Сервис подготовки к экзаменам: ИИ-ответы по вашим конспектам, карточки, план повторений к дате и честная готовность.",
                 )}
               </Text>
             </VStack>
@@ -273,7 +273,7 @@ function HomePage() {
 
           <div className="border-t border-border/60 py-5">
             <Text variant="mini" color="supplementary">
-              {typo(`© ${new Date().getFullYear()} Мемокарты. Все права защищены.`)}
+              {typo(`© ${new Date().getFullYear()} Домашник. Все права защищены.`)}
             </Text>
           </div>
         </Container>

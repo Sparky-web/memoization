@@ -13,7 +13,7 @@ export const Route = createFileRoute("/admin")({
     const access = await getAdminAccess().catch(() => null);
     if (!access?.isAdmin) throw redirect({ to: "/" });
   },
-  head: () => ({ meta: [{ title: typo("Админка — Мемокарты") }, { name: "robots", content: "noindex, nofollow" }] }),
+  head: () => ({ meta: [{ title: typo("Админка — Домашник") }, { name: "robots", content: "noindex, nofollow" }] }),
   component: AdminLayout,
 });
 
@@ -47,7 +47,7 @@ function AdminLayout() {
         <VStack gap="xl">
           <VStack gap="3xs" className="px-3">
             <Heading variant="h4" asParagraph>
-              {typo("Мемокарты")}
+              {typo("Домашник")}
             </Heading>
             <Text variant="mini" color="supplementary">
               {typo("админ-панель")}

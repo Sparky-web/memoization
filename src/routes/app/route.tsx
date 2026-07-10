@@ -14,7 +14,7 @@ export const Route = createFileRoute("/app")({
     // Имя и почта — для меню пользователя в шапке (доступны детям через route context).
     return { user: { name: session.user.name, email: session.user.email } };
   },
-  head: () => ({ meta: [{ title: typo("Мемокарты") }, { name: "robots", content: "noindex, nofollow" }] }),
+  head: () => ({ meta: [{ title: typo("Домашник") }, { name: "robots", content: "noindex, nofollow" }] }),
   component: AppLayout,
 });
 
