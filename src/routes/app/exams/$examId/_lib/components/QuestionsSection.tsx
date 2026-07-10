@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { GraduationCap } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -78,9 +80,14 @@ function QuestionRow({
   );
 }
 
-// Страница вопроса в модале: полный ответ, источник, карточки и точечная пересборка.
+// Потолок темы «объясни ученику» — как у validator'а createTeachSession.
+const TEACH_TOPIC_MAX_CHARS = 200;
+
+// Страница вопроса в модале: полный ответ, источник, карточки, точечная пересборка
+// и переход в «объясни ученику» с темой = текстом вопроса.
 function QuestionModal({ questionId, onClose }: { questionId: string; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const detail = useQuery(examQueries.question(questionId));
 
   const regenerate = useMutation({
@@ -111,9 +118,26 @@ function QuestionModal({ questionId, onClose }: { questionId: string; onClose: (
           <Text bold breakWords>
             {typo(question.text)}
           </Text>
-          <HStack gap="xs" wrap>
+          <HStack gap="xs" align="center" wrap>
             {question.topic && <Badge variant="outline">{typo(question.topic)}</Badge>}
             <CoverageBadge covered={question.covered} aiGenerated={question.aiGenerated} />
+          </HStack>
+          <HStack>
+            {/* Лучший способ проверить готовность по вопросу — объяснить его ученику. */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void navigate({
+                  to: "/app/exams/$examId/teach",
+                  params: { examId: question.exam.id },
+                  search: { topic: question.text.trim().slice(0, TEACH_TOPIC_MAX_CHARS) },
+                });
+              }}
+            >
+              <GraduationCap className="size-4" strokeWidth={1.8} />
+              {typo("Объяснить ученику")}
+            </Button>
           </HStack>
           {question.sourceRef && (
             <Text variant="blockquote" color="supplementary" breakWords>

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
 import { Lock, Mic, Send, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -15,9 +15,10 @@ import {
   SimpleCard,
   Text,
   Textarea,
+  useMountEffect,
   VStack,
 } from "~/components";
-import { formatDateRuMsk, isPaywallError, typo } from "~/lib";
+import { formatDateRuMsk, isPaywallError, typo, zodRussian } from "~/lib";
 
 import { Chip, examQueries } from "../../_lib";
 import { MicButton } from "./_lib/components/MicButton";
@@ -34,7 +35,17 @@ import { useSpeechPlayback, useVoiceRecorder } from "./_lib/model/voice";
 // «Объясни ученику»: пользователь объясняет тему ИИ-первокурснику текстом или голосом.
 // Проговаривание вслух вскрывает пробелы понимания мгновенно (спека, эффект ≈ 0,56).
 
+// Потолок темы — как у validator'а createTeachSession (200 символов).
+const TOPIC_MAX_CHARS = 200;
+
+// ?topic=… — предзаполненная тема (кнопки «Объяснить ученику» из вопроса и плеера):
+// экран выбора темы пропускается, сессия стартует сразу.
+const searchSchema = zodRussian.object({
+  topic: zodRussian.string().optional().catch(undefined),
+});
+
 export const Route = createFileRoute("/app/exams/$examId/teach/")({
+  validateSearch: (search) => searchSchema.parse(search),
   loader: async ({ context, params }) => {
     try {
       await context.queryClient.ensureQueryData(examQueries.detail(params.examId));
@@ -287,6 +298,63 @@ function SetupScreen({
   );
 }
 
+// Автостарт с предзаполненной темой (?topic=…): без экрана выбора, сразу текстовая сессия.
+function AutoStartScreen({
+  examId,
+  topic,
+  onStarted,
+  onFailed,
+}: {
+  examId: string;
+  topic: string;
+  onStarted: (session: ActiveSession, greeting: TeachTurnItem) => void;
+  onFailed: () => void;
+}) {
+  const queryClient = useQueryClient();
+  // Guard от двойного эффекта StrictMode: вторая сессия не создаётся.
+  const startedRef = useRef(false);
+
+  const create = useMutation({
+    mutationFn: () => createTeachSession({ data: { examId, topic, voice: false } }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ["teach"] });
+      onStarted(
+        { id: result.session.id, topic: result.session.topic ?? topic, voice: result.session.voice },
+        result.greeting,
+      );
+    },
+    onError: (error) => {
+      console.error(error);
+      const humanMessage = /[а-яё]/i.test(error.message) ? error.message : typo("Не удалось начать сессию");
+      toast.error(humanMessage);
+      onFailed();
+    },
+  });
+
+  const startMutate = create.mutate;
+  useMountEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    startMutate();
+  });
+
+  return (
+    <VStack gap="md">
+      <Heading variant="h1">{typo("Объясни ученику")}</Heading>
+      <SimpleCard size="lg">
+        <VStack gap="sm">
+          <Text bold breakWords>
+            {typo(topic)}
+          </Text>
+          <Text variant="small" color="supplementary">
+            {typo("Зовём ученика — сессия начнётся сама…")}
+          </Text>
+        </VStack>
+      </SimpleCard>
+    </VStack>
+  );
+}
+
 function avatarStateOf(input: { speaking: boolean; thinking: boolean; listening: boolean }): AvatarState {
   if (input.speaking) return "speaking";
   if (input.thinking) return "thinking";
@@ -529,14 +597,26 @@ function SummaryScreen({ examId, summaryMd, onRestart }: { examId: string; summa
 
 function TeachPage() {
   const { examId } = Route.useParams();
+  const { topic: searchTopic } = Route.useSearch();
   const [session, setSession] = useState<ActiveSession | null>(null);
   const [greeting, setGreeting] = useState<TeachTurnItem | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
+  // Тема из ?topic=…: одноразовый автостарт; после старта/ошибки/«ещё одну тему» — обычный выбор.
+  const [pendingTopic, setPendingTopic] = useState<string | null>(
+    () => searchTopic?.trim().slice(0, TOPIC_MAX_CHARS) || null,
+  );
 
   const reset = () => {
     setSession(null);
     setGreeting(null);
     setSummary(null);
+    setPendingTopic(null);
+  };
+
+  const startSession = (started: ActiveSession, greetingTurn: TeachTurnItem) => {
+    setSession(started);
+    setGreeting(greetingTurn);
+    setPendingTopic(null);
   };
 
   const renderPhase = () => {
@@ -551,15 +631,19 @@ function TeachPage() {
         />
       );
     }
-    return (
-      <SetupScreen
-        examId={examId}
-        onStarted={(started, greetingTurn) => {
-          setSession(started);
-          setGreeting(greetingTurn);
-        }}
-      />
-    );
+    if (pendingTopic) {
+      return (
+        <AutoStartScreen
+          examId={examId}
+          topic={pendingTopic}
+          onStarted={startSession}
+          onFailed={() => {
+            setPendingTopic(null);
+          }}
+        />
+      );
+    }
+    return <SetupScreen examId={examId} onStarted={startSession} />;
   };
 
   return <div className="mx-auto w-full max-w-2xl">{renderPhase()}</div>;

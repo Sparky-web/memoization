@@ -1,28 +1,131 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Moon, Sun } from "lucide-react";
+import { BellRing, Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Badge, Heading, HStack, PaywallCard, SimpleCard, Text, useTheme, VStack } from "~/components";
+import { Badge, Button, Heading, HStack, PaywallCard, SimpleCard, Text, useTheme, VStack } from "~/components";
 import { isPaywallError, typo } from "~/lib";
 import { logEvent } from "~/server/fn/events";
 import { updateUserSettings } from "~/server/fn/settings";
 
 import { Chip, examQueries, pluralRu } from "../exams/_lib";
+import { disablePushNotifications, enablePushNotifications, pushQueries } from "./_lib/model/pushModel";
 
-// Настройки пользователя: дневной бюджет, дни отдыха, предсонное напоминание, тема,
-// ИИ-сверка открытых ответов (Pro). Каждое изменение сохраняется сразу — без кнопки «Сохранить».
+// Настройки пользователя: дневной бюджет, дни отдыха, предсонное напоминание, уведомления,
+// тема, ИИ-сверка открытых ответов (Pro). Каждое изменение сохраняется сразу — без «Сохранить».
 
 export const Route = createFileRoute("/app/settings/")({
   loader: ({ context }) =>
     Promise.all([
       context.queryClient.ensureQueryData(examQueries.settings()),
       context.queryClient.ensureQueryData(examQueries.billing()),
+      context.queryClient.ensureQueryData(pushQueries.status()),
     ]),
   head: () => ({ meta: [{ title: typo("Настройки") }] }),
   component: SettingsPage,
 });
+
+// Человеческие тексты кодов ошибок включения push-напоминаний.
+const PUSH_ERROR_TEXTS: Record<string, string> = {
+  UNSUPPORTED: typo("Браузер не поддерживает push-уведомления"),
+  PERMISSION_DENIED: typo("Уведомления запрещены в браузере — разрешите их для этого сайта и попробуйте снова"),
+  SUBSCRIBE_FAILED: typo("Не удалось оформить подписку — попробуйте ещё раз"),
+};
+
+// Секция «Уведомления»: включение/отключение push-напоминаний. Виды напоминаний описаны
+// текстом — отдельные тумблеры не плодим.
+function NotificationsCard() {
+  const queryClient = useQueryClient();
+  const { data: push } = useSuspenseQuery(pushQueries.status());
+
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["push"] });
+
+  const enable = useMutation({
+    mutationFn: async () => {
+      if (!push.publicKey) throw new Error("UNSUPPORTED");
+      await enablePushNotifications(push.publicKey);
+    },
+    onSuccess: () => {
+      toast.success(typo("Напоминания включены"));
+      refresh();
+    },
+    onError: (error) => {
+      const known = PUSH_ERROR_TEXTS[error.message];
+      if (!known) console.error(error);
+      toast.error(known ?? typo("Не удалось включить напоминания"));
+    },
+  });
+
+  const disable = useMutation({
+    mutationFn: () => disablePushNotifications(),
+    onSuccess: (removed) => {
+      if (removed) {
+        toast.success(typo("Напоминания на этом устройстве отключены"));
+      } else {
+        toast.info(typo("На этом устройстве подписки нет — отключите на том, где включали"));
+      }
+      refresh();
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось отключить напоминания"));
+    },
+  });
+
+  if (!push.configured) {
+    return (
+      <SimpleCard title={typo("Уведомления")}>
+        <Text variant="small" color="supplementary">
+          {typo("Push-напоминания о плане дня скоро появятся — мы уже готовим их.")}
+        </Text>
+      </SimpleCard>
+    );
+  }
+
+  return (
+    <SimpleCard title={typo("Уведомления")}>
+      <Text variant="small" color="supplementary">
+        {typo(
+          "Напомним о плане дня (после 16:00), лёгком повторении перед сном и накануне экзамена — не больше пары напоминаний в день.",
+        )}
+      </Text>
+      {push.subscribed ? (
+        <HStack gap="sm" align="center" wrap>
+          <Badge variant="dot" dot="success">
+            {typo("включены")}
+          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disable.isPending}
+            onClick={() => {
+              disable.mutate();
+            }}
+          >
+            {typo("Отключить")}
+          </Button>
+        </HStack>
+      ) : (
+        <HStack>
+          <Button
+            variant="outline"
+            disabled={enable.isPending}
+            onClick={() => {
+              enable.mutate();
+            }}
+          >
+            <BellRing className="size-4" strokeWidth={1.8} />
+            {enable.isPending ? typo("Включаем…") : typo("Включить напоминания")}
+          </Button>
+        </HStack>
+      )}
+      <Text variant="mini" color="supplementary">
+        {typo("На iPhone — добавь приложение на экран «Домой»: уведомления работают в установленном приложении.")}
+      </Text>
+    </SimpleCard>
+  );
+}
 
 const MINUTES_OPTIONS: readonly number[] = [10, 15, 25, 40, 60];
 
@@ -161,6 +264,8 @@ function SettingsPage() {
           ))}
         </HStack>
       </SimpleCard>
+
+      <NotificationsCard />
 
       <SimpleCard title={typo("Тема")}>
         <HStack gap="2xs">

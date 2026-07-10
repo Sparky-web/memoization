@@ -61,8 +61,10 @@ export interface TodayState {
 export async function computeTodayState(db: PrismaClient, userId: string, now: Date): Promise<TodayState> {
   const settings = await loadUserSettings(db, userId);
 
+  // Пауза исключает экзамен из плана дня и всех предложений (bedtime/cram/канун) —
+  // строится всё отсюда, поэтому фильтра в одном месте достаточно.
   const exams = await db.exam.findMany({
-    where: { userId, archivedAt: null },
+    where: { userId, archivedAt: null, pausedAt: null },
     orderBy: { createdAt: "asc" },
     select: { id: true, title: true, examDate: true, mode: true, status: true },
   });

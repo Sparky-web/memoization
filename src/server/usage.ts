@@ -12,9 +12,16 @@ import { hasActivePro } from "./entitlement";
  * Вид события использования: генерация экзамена (имя историческое), перегенерация карточек
  * вопроса, сообщение чата (общая квота чата, «объясни ученику/почему», черновиков карт
  * и образов дворца), ИИ-сверка открытого ответа (отдельная квота — сверки идут в каждой
- * сессии и не должны съедать разговорный лимит), голосовой вызов SpeechKit (STT/TTS).
+ * сессии и не должны съедать разговорный лимит), голосовой вызов SpeechKit (STT/TTS),
+ * разбор файла с вопросами (мастер, 10/день всем тарифам).
  */
-export type UsageKind = "deck_generation" | "card_regeneration" | "chat_message" | "ai_check" | "speech";
+export type UsageKind =
+  | "deck_generation"
+  | "card_regeneration"
+  | "chat_message"
+  | "ai_check"
+  | "speech"
+  | "question_parse";
 
 /** Сколько событий вида kind за текущий календарный день МСК (дневные лимиты). */
 export function countUsageToday(db: PrismaClient, userId: string, kind: UsageKind): Promise<number> {

@@ -46,9 +46,10 @@ function daysToExamOf(examDate: Date | null, now: Date): number | null {
 }
 
 // Гейт мультиэкзаменов: Free — 1 активный (2-й — пейвол), Pro — до 10 (fair-use).
-// Вызывается в ОДНОЙ транзакции с созданием/разархивированием под advisory-локом по
-// пользователю: параллельные запросы (двойной сабмит, две вкладки) сериализуются
-// и не обходят лимит гонкой «прочитали count → записали».
+// Активный = не архивный И не на паузе: пауза освобождает слот, снятие с паузы проходит
+// этот же гейт. Вызывается в ОДНОЙ транзакции с созданием/разархивированием под
+// advisory-локом по пользователю: параллельные запросы (двойной сабмит, две вкладки)
+// сериализуются и не обходят лимит гонкой «прочитали count → записали».
 async function assertActiveExamCapacity(
   tx: Prisma.TransactionClient,
   userId: string,
@@ -57,7 +58,7 @@ async function assertActiveExamCapacity(
 ): Promise<void> {
   // ::text — pg_advisory_xact_lock возвращает void, который Prisma не умеет десериализовать.
   await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${userId}:active_exams`}, 0))::text`;
-  const activeCount = await tx.exam.count({ where: { userId, archivedAt: null } });
+  const activeCount = await tx.exam.count({ where: { userId, archivedAt: null, pausedAt: null } });
   if (!pro && activeCount + addedCount > FREE_EXAMS) {
     setResponseStatus(402);
     throw new Error(PAYWALL_ERRORS.MULTI_EXAM);
@@ -93,6 +94,7 @@ export const getExams = createServerFn({ method: "GET" })
         mode: true,
         isPublic: true,
         archivedAt: true,
+        pausedAt: true,
         createdAt: true,
         _count: { select: { cards: true, questions: true } },
       },
@@ -116,6 +118,7 @@ export const getExams = createServerFn({ method: "GET" })
       mode: exam.mode,
       isPublic: exam.isPublic,
       archivedAt: exam.archivedAt,
+      pausedAt: exam.pausedAt,
       createdAt: exam.createdAt,
       totalCards: exam._count.cards,
       totalQuestions: exam._count.questions,
@@ -146,6 +149,7 @@ export const getExamById = createServerFn({ method: "GET" })
         mode: true,
         isPublic: true,
         archivedAt: true,
+        pausedAt: true,
         createdAt: true,
         questions: {
           orderBy: { position: "asc" },
@@ -247,6 +251,7 @@ export const getExamById = createServerFn({ method: "GET" })
       mode: exam.mode,
       isPublic: exam.isPublic,
       archivedAt: exam.archivedAt,
+      pausedAt: exam.pausedAt,
       createdAt: exam.createdAt,
       queuePosition: exam.status === "processing" ? getGenerationQueuePosition(exam.id) : null,
       questions: exam.questions.map((question) => ({
@@ -361,6 +366,36 @@ async function setExamArchived(
     return tx.exam.updateMany({ where: { id: examId, userId }, data: { archivedAt: null } });
   });
 }
+
+// Пауза: экзамен выпадает из плана дня и предложений, но не архивируется. Снятие с паузы
+// проходит тот же гейт активных экзаменов, что и создание/разархивирование, — под локом.
+export const setExamPaused = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(zodRussian.object({ id: zodRussian.string(), paused: zodRussian.boolean() }))
+  .handler(async ({ data, context }) => {
+    const userId = context.session.user.id;
+    const result = await (async () => {
+      if (data.paused) {
+        return context.db.exam.updateMany({
+          where: { id: data.id, userId, pausedAt: null },
+          data: { pausedAt: new Date() },
+        });
+      }
+      const pro = await hasActivePro(context.db, userId);
+      return context.db.$transaction(async (tx) => {
+        const exam = await tx.exam.findFirst({ where: { id: data.id, userId }, select: { pausedAt: true } });
+        // Уже не на паузе — не занимаем слот повторно (даблклик/две вкладки).
+        if (exam && !exam.pausedAt) return { count: 1 };
+        await assertActiveExamCapacity(tx, userId, pro, 1);
+        return tx.exam.updateMany({ where: { id: data.id, userId }, data: { pausedAt: null } });
+      });
+    })();
+    if (!result.count) {
+      setResponseStatus(404);
+      throw new Error(typo("Экзамен не найден"));
+    }
+    return { paused: data.paused };
+  });
 
 // Архив «после экзамена».
 export const archiveExam = createServerFn({ method: "POST" })

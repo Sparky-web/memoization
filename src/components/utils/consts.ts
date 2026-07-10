@@ -67,5 +67,7 @@ export const maxLinesClasses = {
 };
 export type MaxLines = keyof typeof maxLinesClasses;
 
-/** Перенос только слишком длинных слов; без авто-дефисов — они рвут слова посреди. */
-export const breakWordsTypographyClasses = "break-words";
+/** Перенос только слишком длинных слов; без авто-дефисов — они рвут слова посреди.
+ * Именно wrap-anywhere (не break-words): break-word не влияет на min-content ширину,
+ * и длинное слово без пробелов распирает flex-родителей за край карточки. */
+export const breakWordsTypographyClasses = "wrap-anywhere";

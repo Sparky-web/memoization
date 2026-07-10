@@ -20,9 +20,9 @@ import {
   useMountEffect,
   VStack,
 } from "~/components";
-import { formatDateRuMsk, mskDayKey, typo } from "~/lib";
+import { formatDateRuMsk, isPaywallError, mskDayKey, typo } from "~/lib";
 import { logEvent } from "~/server/fn/events";
-import { archiveExam, deleteExam, updateExam } from "~/server/fn/exams";
+import { archiveExam, deleteExam, setExamPaused, updateExam } from "~/server/fn/exams";
 
 import {
   cardsCountLabel,
@@ -97,9 +97,7 @@ function TodayHero({ plan }: { plan: TodayPlan }) {
             </Text>
             <Text variant="mini" color="supplementary">
               <span
-                title={typo(
-                  "Заморозка сама закрывает пропущенный день; 2 штуки на месяц. Дни отдыха серию не рвут.",
-                )}
+                title={typo("Заморозка сама закрывает пропущенный день; 2 штуки на месяц. Дни отдыха серию не рвут.")}
               >
                 {typo(`заморозки: ${plan.freezesLeft} · `)}
                 <Link to="/app/settings" variant="underline">
@@ -339,6 +337,50 @@ function processingLine(exam: ExamListItem): string {
   return typo("генерируется прямо сейчас");
 }
 
+// Экзамены на паузе — одной тихой строкой: в план они не входят, но их легко вернуть.
+function PausedExamsLine({ exams }: { exams: readonly ExamListItem[] }) {
+  const queryClient = useQueryClient();
+  const resume = useMutation({
+    mutationFn: (examId: string) => setExamPaused({ data: { id: examId, paused: false } }),
+    onSuccess: () => {
+      toast.success(typo("Экзамен снова в плане"));
+      void queryClient.invalidateQueries({ queryKey: ["exams"] });
+      void queryClient.invalidateQueries({ queryKey: ["plan"] });
+    },
+    onError: (error) => {
+      if (isPaywallError(error, "MULTI_EXAM")) {
+        toast.info(typo("Лимит активных экзаменов занят — сначала поставьте на паузу или заархивируйте другой"));
+        return;
+      }
+      console.error(error);
+      toast.error(typo("Не удалось возобновить экзамен"));
+    },
+  });
+
+  if (!exams.length) return null;
+  return (
+    <HStack gap="xs" align="center" wrap>
+      <Text variant="mini" color="supplementary">
+        {typo(`На паузе: ${exams.map((exam) => exam.title).join(", ")} ·`)}
+      </Text>
+      {exams.map((exam) => (
+        <Button
+          key={exam.id}
+          variant="link"
+          size="inline"
+          className="font-semibold text-muted-foreground hover:text-primary"
+          disabled={resume.isPending}
+          onClick={() => {
+            resume.mutate(exam.id);
+          }}
+        >
+          {exams.length > 1 ? typo(`Возобновить «${exam.title}»`) : typo("Возобновить")}
+        </Button>
+      ))}
+    </HStack>
+  );
+}
+
 function TodayPage() {
   const navigate = useNavigate();
   const { data: exams } = useSuspenseQuery(examQueries.list());
@@ -346,7 +388,10 @@ function TodayPage() {
   const { data: favoriteExams } = useSuspenseQuery(examQueries.favorites());
   const [showCramPaywall, setShowCramPaywall] = useState(false);
 
-  const activeExams = exams.filter((exam) => !exam.archivedAt);
+  // Паузу считаем «не активен»: такие экзамены не попадают в карточки состояний
+  // и показываются одной тихой строкой внизу.
+  const activeExams = exams.filter((exam) => !exam.archivedAt && !exam.pausedAt);
+  const pausedExams = exams.filter((exam) => !exam.archivedAt && exam.pausedAt);
   const processingExams = activeExams.filter((exam) => exam.status === "processing");
   const failedExams = activeExams.filter((exam) => exam.status === "failed");
   const passedExams = activeExams.filter((exam) => exam.daysToExam !== null && exam.daysToExam < 0);
@@ -660,6 +705,8 @@ function TodayPage() {
       )}
 
       <FavoritesCard favorites={favoriteExams} />
+
+      <PausedExamsLine exams={pausedExams} />
 
       {activeExams.some((exam) => exam.examDate && exam.daysToExam !== null && exam.daysToExam >= 0) && (
         <Text variant="mini" color="supplementary">

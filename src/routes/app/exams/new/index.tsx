@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Check, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Check, FileUp, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Fragment, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -29,7 +29,9 @@ import {
   formatFileSize,
   MaterialDropzone,
   parseQuestionList,
+  parseQuestionsFile,
   pluralRu,
+  questionParseErrorText,
   questionsCountLabel,
   uploadExamMaterials,
 } from "../_lib";
@@ -210,7 +212,85 @@ function ExamDraftRow({
   );
 }
 
-// Шаг 2: textarea со списком вопросов, живой парсинг и лимиты тарифа.
+// Файл с вопросами — те же ограничения, что на сервере /api/questions/parse.
+const QUESTION_FILE_ACCEPT = ".pdf,.docx,.doc,.txt,.md";
+const QUESTION_FILE_MAX_BYTES = 10 * 1024 * 1024;
+
+// Импорт вопросов из файла: клод выписывает вопросы, результат попадает в тот же стейт,
+// что и ручной ввод (textarea), — список можно править перед созданием.
+function QuestionsFileImport({ onParsed }: { onParsed: (questions: string[]) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const parse = useMutation({
+    mutationFn: (file: File) => parseQuestionsFile(file),
+    onSuccess: (questions) => {
+      toast.success(
+        typo(`Распознали ${questionsCountLabel(questions.length)} — проверьте список и поправьте, если нужно`),
+      );
+      onParsed(questions);
+    },
+    onError: (error) => {
+      toast.error(questionParseErrorText(error));
+    },
+  });
+
+  const pickFile = (file: File) => {
+    if (file.size > QUESTION_FILE_MAX_BYTES) {
+      toast.error(typo("Файл больше 10 МБ"));
+      return;
+    }
+    parse.mutate(file);
+  };
+
+  return (
+    <VStack gap="sm" align="center" className="rounded-2xl border-2 border-dashed border-border bg-muted/30 p-6">
+      {parse.isPending ? (
+        <>
+          <span className="size-2 animate-pulse rounded-full bg-primary" aria-hidden />
+          <Text variant="small" color="supplementary" align="center">
+            {typo("Клод читает файл… это займёт до минуты")}
+          </Text>
+        </>
+      ) : (
+        <>
+          <span className="flex size-11 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+            <FileUp className="size-5" strokeWidth={1.8} />
+          </span>
+          <Text variant="small" color="supplementary" align="center">
+            {typo("Билеты или список вопросов файлом — клод выпишет вопросы сам")}
+          </Text>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              inputRef.current?.click();
+            }}
+          >
+            {typo("Выбрать файл")}
+          </Button>
+          <Text variant="mini" color="supplementary" align="center">
+            {typo("pdf, docx, doc, txt, md · до 10 МБ")}
+          </Text>
+        </>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={QUESTION_FILE_ACCEPT}
+        className="hidden"
+        aria-label={typo("Файл со списком вопросов")}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          // Сбрасываем value: повторный выбор того же файла снова вызовет onChange.
+          event.target.value = "";
+          if (file) pickFile(file);
+        }}
+      />
+    </VStack>
+  );
+}
+
+// Шаг 2: список вопросов текстом (textarea) или из файла, живой парсинг и лимиты тарифа.
 function QuestionsStep({
   draft,
   questionLimit,
@@ -222,21 +302,50 @@ function QuestionsStep({
   pro: boolean;
   onChange: (patch: Partial<DraftExam>) => void;
 }) {
+  const [source, setSource] = useState<"text" | "file">("text");
   const parsed = parseQuestionList(draft.questionsText);
   const overLimit = parsed.length > questionLimit;
 
   return (
     <VStack gap="md">
-      <Textarea
-        value={draft.questionsText}
-        rows={10}
-        placeholder={typo(
-          "Вставьте список вопросов — по одному в строке:\n1. Причины Смутного времени\n2. Реформы Петра I\n…",
-        )}
-        onChange={(event) => {
-          onChange({ questionsText: event.target.value });
-        }}
-      />
+      <HStack gap="2xs" wrap>
+        <Chip
+          active={source === "text"}
+          onClick={() => {
+            setSource("text");
+          }}
+        >
+          {typo("Вставить текстом")}
+        </Chip>
+        <Chip
+          active={source === "file"}
+          onClick={() => {
+            setSource("file");
+          }}
+        >
+          {typo("Из файла")}
+        </Chip>
+      </HStack>
+      {source === "file" ? (
+        <QuestionsFileImport
+          onParsed={(questions) => {
+            onChange({ questionsText: questions.join("\n") });
+            // Возврат в текстовый режим: распознанный список сразу можно править.
+            setSource("text");
+          }}
+        />
+      ) : (
+        <Textarea
+          value={draft.questionsText}
+          rows={10}
+          placeholder={typo(
+            "Вставьте список вопросов — по одному в строке:\n1. Причины Смутного времени\n2. Реформы Петра I\n…",
+          )}
+          onChange={(event) => {
+            onChange({ questionsText: event.target.value });
+          }}
+        />
+      )}
       <VStack gap="2xs">
         {/* Живой счётчик: цифра-герой растёт по мере вставки списка. */}
         <HStack justify="between" align="end" gap="sm" wrap>
@@ -408,7 +517,10 @@ function NewExamWizardPage() {
   // из-за двойного счёта черновика и его экзамена-двойника.
   const [wizardExamIds, setWizardExamIds] = useState<ReadonlySet<string>>(new Set());
 
-  const activeExamCount = existingExams.filter((exam) => !exam.archivedAt && !wizardExamIds.has(exam.id)).length;
+  // Паузу не считаем занятым слотом — как в серверном assertActiveExamCapacity.
+  const activeExamCount = existingExams.filter(
+    (exam) => !exam.archivedAt && !exam.pausedAt && !wizardExamIds.has(exam.id),
+  ).length;
 
   const activeDraft = drafts[Math.min(activeTab, drafts.length - 1)] ?? drafts[0];
 

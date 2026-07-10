@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
-import { CalendarDays, GraduationCap, Play, Waypoints } from "lucide-react";
+import { CalendarDays, GraduationCap, Pause, Play, Waypoints } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -27,6 +27,7 @@ import {
   examQueries,
   generateExam,
   type SessionKind,
+  setExamPaused,
   updateExam,
 } from "../_lib";
 import { CardsSection } from "./_lib/components/CardsSection";
@@ -201,6 +202,24 @@ function ExamHubPage() {
     },
   });
 
+  // Пауза: экзамен выпадает из плана дня; снятие проходит лимит активных экзаменов.
+  const togglePause = useMutation({
+    mutationFn: () => setExamPaused({ data: { id: examId, paused: !exam.pausedAt } }),
+    onSuccess: (result) => {
+      toast.success(result.paused ? typo("Экзамен на паузе — из плана дня исключён") : typo("Экзамен снова в плане"));
+      void queryClient.invalidateQueries({ queryKey: ["exams"] });
+      void queryClient.invalidateQueries({ queryKey: ["plan"] });
+    },
+    onError: (error) => {
+      if (isPaywallError(error, "MULTI_EXAM")) {
+        toast.info(typo("Лимит активных экзаменов занят — сначала поставьте на паузу или заархивируйте другой"));
+        return;
+      }
+      console.error(error);
+      toast.error(typo("Не удалось изменить паузу"));
+    },
+  });
+
   const goSession = (kind: SessionKind) => {
     void navigate({ to: "/app/exams/$examId/session", params: { examId }, search: { kind } });
   };
@@ -244,6 +263,11 @@ function ExamHubPage() {
                   {typo("в архиве")}
                 </Badge>
               )}
+              {exam.pausedAt && !exam.archivedAt && (
+                <Badge variant="dot" dot="warning">
+                  {typo("на паузе")}
+                </Badge>
+              )}
               {exam.isPublic && (
                 <Badge variant="dot" dot="success">
                   {typo("по ссылке")}
@@ -274,6 +298,18 @@ function ExamHubPage() {
             {typo("Умная зубрёжка")}
             <Badge variant="primary">Pro</Badge>
           </Chip>
+          {!exam.archivedAt && (
+            <Chip
+              active={Boolean(exam.pausedAt)}
+              disabled={togglePause.isPending}
+              onClick={() => {
+                togglePause.mutate();
+              }}
+            >
+              <Pause className="size-4" strokeWidth={1.8} />
+              {exam.pausedAt ? typo("На паузе — возобновить") : typo("На паузу")}
+            </Chip>
+          )}
         </HStack>
         {showCramPaywall && (
           <PaywallCard

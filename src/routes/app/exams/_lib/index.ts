@@ -11,6 +11,7 @@ export {
   daysToExamLabel,
   formatFileSize,
   pluralRu,
+  questionParseErrorText,
   questionsCountLabel,
   uploadErrorText,
 } from "./lib/texts";
@@ -26,8 +27,10 @@ export {
   generateExam,
   getCardChat,
   logEvent,
+  parseQuestionsFile,
   regenerateQuestionCards,
   resolveForecast,
+  setExamPaused,
   setExamPublic,
   setExamQuestions,
   suspendCard,

@@ -55,3 +55,18 @@ export const uploadErrorText: Record<string, string> = {
   EMPTY: typo("Выберите файлы"),
   UPLOAD_FAILED: typo("Не удалось загрузить материалы"),
 };
+
+/** Текст ошибки разбора файла с вопросами: код /api/questions/parse или русский текст сервера. */
+export function questionParseErrorText(error: Error): string {
+  const fallback = typo("Не удалось разобрать файл — попробуйте ещё раз");
+  const codeTexts: Record<string, string> = {
+    FILE_TOO_LARGE: typo("Файл больше 10 МБ"),
+    FILE_TYPE: typo("Поддерживаются файлы pdf, docx, doc, txt и md"),
+    EMPTY: typo("Выберите файл"),
+    QUESTIONS_NOT_FOUND: typo("В файле не нашлось списка вопросов — вставьте их текстом"),
+    PARSE_FAILED: fallback,
+  };
+  const known = codeTexts[error.message];
+  if (known) return known;
+  return /[а-яё]/i.test(error.message) ? typo(error.message) : fallback;
+}

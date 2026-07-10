@@ -33,6 +33,9 @@ model User {
   payments        Payment[]
   analyticsEvents AnalyticsEvent[]
   usageEvents     UsageEvent[]
+
+  pushSubscriptions PushSubscription[]
+  pushLogs          PushLog[]
 }
 
 model Session {
@@ -102,6 +105,8 @@ model Exam {
   isPublic Boolean @default(false)
   /// Прошёл экзамен — экзамен в архиве (скрыт из плана дня).
   archivedAt DateTime?
+  /// На паузе — исключён из плана дня и предложений, но не архивирован (лимит активных не ест).
+  pausedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -396,6 +401,40 @@ model UserSettings {
 
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Web-push подписка браузера: endpoint уникален глобально (один браузер — одна запись).
+model PushSubscription {
+  id String @id @default(cuid())
+
+  endpoint  String  @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Журнал отправленных пушей: уникальность (userId, kind, dayKey) — дедуп «не чаще раза в день».
+model PushLog {
+  id String @id @default(cuid())
+
+  /// "daily" | "bedtime" | "exam_eve".
+  kind   String
+  /// Ключ календарного дня МСК (см. mskDayKey).
+  dayKey String
+
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, dayKey])
 }
 
 /// История чата по карточке («вопрос по карточке» / «объясни почему»).

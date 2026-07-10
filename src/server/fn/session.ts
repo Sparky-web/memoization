@@ -41,6 +41,8 @@ interface QueueCard {
   prompt: string;
   options: string[];
   topic: string | null;
+  /** Текст исходного вопроса — тема для «объяснить ученику» из фидбека; null у ручных карточек. */
+  questionText: string | null;
   progress: {
     stability: number;
     difficulty: number;
@@ -99,7 +101,7 @@ export const startSession = createServerFn({ method: "POST" })
         format: true,
         prompt: true,
         options: true,
-        question: { select: { topic: true } },
+        question: { select: { topic: true, text: true } },
         progress: {
           where: { userId },
           select: {
@@ -121,6 +123,7 @@ export const startSession = createServerFn({ method: "POST" })
       prompt: row.prompt,
       options: row.options,
       topic: row.question?.topic ?? null,
+      questionText: row.question?.text ?? null,
       progress: row.progress[0] ?? null,
     }));
 
@@ -180,6 +183,7 @@ export const startSession = createServerFn({ method: "POST" })
             format: card.format,
             prompt: card.prompt,
             topic: card.topic,
+            questionText: card.questionText,
             // Варианты выбора перемешаны; правильный проверяется на сервере по тексту.
             options: card.format === "mcq" || card.format === "cloze" ? shuffleItems([...new Set(card.options)]) : [],
           },

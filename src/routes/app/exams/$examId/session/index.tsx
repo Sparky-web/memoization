@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Coffee, Footprints, Moon, MoveRight, X } from "lucide-react";
-import { type PropsWithChildren, useState } from "react";
+import { Coffee, Footprints, GraduationCap, Moon, MoveRight, X } from "lucide-react";
+import { type PropsWithChildren, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -266,16 +266,19 @@ interface AnswerInput {
 
 // ИИ-сверка (Pro): вердикт haiku предзаполняет самооценку, человек может поправить.
 // Тон вердикта — цветная точка (не заливка): спокойнее, «мимо» не кричит красным.
-const AI_VERDICT_VIEW: Record<string, { label: string; dot: "success" | "warning" | "muted"; suggestedRating: number }> =
-  {
-    match: { label: typo("ИИ: совпадает по смыслу"), dot: "success", suggestedRating: 3 },
-    partial: { label: typo("ИИ: частично совпало"), dot: "warning", suggestedRating: 2 },
-    miss: { label: typo("ИИ: не совпало"), dot: "muted", suggestedRating: 1 },
-  };
+const AI_VERDICT_VIEW: Record<
+  string,
+  { label: string; dot: "success" | "warning" | "muted"; suggestedRating: number }
+> = {
+  match: { label: typo("ИИ: совпадает по смыслу"), dot: "success", suggestedRating: 3 },
+  partial: { label: typo("ИИ: частично совпало"), dot: "warning", suggestedRating: 2 },
+  miss: { label: typo("ИИ: не совпало"), dot: "muted", suggestedRating: 1 },
+};
 
 // «Объясни почему» (elaborative interrogation): свёрнуто по умолчанию, ненавязчиво.
 // Показывается только с третьего показа карточки — гейт по repsBefore проверяет вызывающий.
-function ExplainWhyBlock({ cardId }: { cardId: string }) {
+// extraAction — соседняя тихая ссылка (переход «объяснить ученику» с темой = вопросом).
+function ExplainWhyBlock({ cardId, extraAction }: { cardId: string; extraAction?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [explanation, setExplanation] = useState("");
 
@@ -290,7 +293,7 @@ function ExplainWhyBlock({ cardId }: { cardId: string }) {
 
   if (!open) {
     return (
-      <HStack>
+      <HStack gap="md" align="center" wrap>
         <Button
           variant="link"
           size="inline"
@@ -300,44 +303,48 @@ function ExplainWhyBlock({ cardId }: { cardId: string }) {
         >
           {typo("Объяснить почему")}
         </Button>
+        {extraAction}
       </HStack>
     );
   }
 
   return (
-    <VStack gap="2xs" className="rounded-2xl bg-muted/50 p-3">
-      <Text variant="mini" color="supplementary">
-        {typo("Почему это так? Объясни своими словами — обоснование укрепляет память, а ИИ подсветит пробел.")}
-      </Text>
-      {ask.data ? (
-        <Text variant="small" breakWords>
-          {typo(ask.data.verdict)}
+    <VStack gap="2xs">
+      <VStack gap="2xs" className="rounded-2xl bg-muted/50 p-3">
+        <Text variant="mini" color="supplementary">
+          {typo("Почему это так? Объясни своими словами — обоснование укрепляет память, а ИИ подсветит пробел.")}
         </Text>
-      ) : (
-        <VStack gap="2xs">
-          <Textarea
-            value={explanation}
-            rows={2}
-            placeholder={typo("Потому что…")}
-            onChange={(event) => {
-              setExplanation(event.target.value);
-            }}
-          />
-          <HStack gap="sm">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!explanation.trim() || ask.isPending}
-              onClick={() => {
-                ask.mutate();
+        {ask.data ? (
+          <Text variant="small" breakWords>
+            {typo(ask.data.verdict)}
+          </Text>
+        ) : (
+          <VStack gap="2xs">
+            <Textarea
+              value={explanation}
+              rows={2}
+              placeholder={typo("Потому что…")}
+              onChange={(event) => {
+                setExplanation(event.target.value);
               }}
-            >
-              {ask.isPending ? typo("Оцениваем…") : typo("Проверить объяснение")}
-            </Button>
-          </HStack>
-        </VStack>
-      )}
-      {isPaywallError(ask.error, "CHAT") && <PaywallCard reason="CHAT" compact />}
+            />
+            <HStack gap="sm">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!explanation.trim() || ask.isPending}
+                onClick={() => {
+                  ask.mutate();
+                }}
+              >
+                {ask.isPending ? typo("Оцениваем…") : typo("Проверить объяснение")}
+              </Button>
+            </HStack>
+          </VStack>
+        )}
+        {isPaywallError(ask.error, "CHAT") && <PaywallCard reason="CHAT" compact />}
+      </VStack>
+      {extraAction && <HStack>{extraAction}</HStack>}
     </VStack>
   );
 }
@@ -383,15 +390,21 @@ function ActionPanel({ children }: PropsWithChildren) {
   );
 }
 
+// Потолок темы «объясни ученику» — как у validator'а createTeachSession.
+const TEACH_TOPIC_MAX_CHARS = 200;
+
 function CardPlayer({
   card,
+  examId,
   kind,
   onFinished,
 }: {
   card: SessionCard;
+  examId: string;
   kind: SessionKind;
   onFinished: (outcome: CardOutcome) => void;
 }) {
+  const navigate = useNavigate();
   const [confidence, setConfidence] = useState(35);
   const [typed, setTyped] = useState("");
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
@@ -567,6 +580,32 @@ function CardPlayer({
     </VStack>
   );
 
+  // Тихий переход «объяснить ученику» с темой = исходным вопросом карточки (есть у карточек
+  // с questionId; ручные без вопроса ссылку не показывают).
+  const questionTopic = card.questionText?.trim().slice(0, TEACH_TOPIC_MAX_CHARS) ?? null;
+  const teachAction = questionTopic ? (
+    <Button
+      variant="link"
+      size="inline"
+      className="font-semibold text-muted-foreground hover:text-primary"
+      onClick={() => {
+        void navigate({ to: "/app/exams/$examId/teach", params: { examId }, search: { topic: questionTopic } });
+      }}
+    >
+      <GraduationCap className="size-4" strokeWidth={1.8} />
+      {typo("Объяснить ученику")}
+    </Button>
+  ) : null;
+
+  // Глубокая проработка после ответа: «объясни почему» (с гейтом по повторам) + переход к ученику.
+  const renderDeepWorkActions = (graded: AnswerResult) => {
+    if (graded.repsBefore >= EXPLAIN_WHY_MIN_REPS) {
+      return <ExplainWhyBlock cardId={card.id} extraAction={teachAction} />;
+    }
+    if (teachAction) return <HStack>{teachAction}</HStack>;
+    return null;
+  };
+
   // Спокойный фидбек вариантов: верный — зелёный, свой промах — мягкий янтарный (не красный).
   const optionFeedbackClass = (option: string, graded: AnswerResult): string => {
     if (option === graded.answer) return "border-success/60 bg-success/10";
@@ -669,7 +708,7 @@ function CardPlayer({
 
           {graded.palace && <PalaceBlock title={graded.palace.title} loci={graded.palace.loci} />}
 
-          {kind !== "bedtime" && graded.repsBefore >= EXPLAIN_WHY_MIN_REPS && <ExplainWhyBlock cardId={card.id} />}
+          {kind !== "bedtime" && renderDeepWorkActions(graded)}
         </CardScene>
 
         <ActionPanel>
@@ -1198,7 +1237,7 @@ function SessionPage() {
           advanceQueue(outcome);
         }}
       >
-        <CardPlayer card={card} kind={kind} onFinished={handleCardFinished} />
+        <CardPlayer card={card} examId={examId} kind={kind} onFinished={handleCardFinished} />
       </div>
     );
   };

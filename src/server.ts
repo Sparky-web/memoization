@@ -7,10 +7,14 @@ import { createServerEntry } from "@tanstack/react-start/server-entry";
 import { typo } from "~/lib";
 import { ensureBootstrapAdmins } from "~/server/adminBootstrap";
 import { db } from "~/server/db";
+import { ensurePushJobs } from "~/server/pushJobs";
 import { refundUsage } from "~/server/usage";
 
 // Владелец получает роль администратора при старте контейнера (если аккаунт уже существует)
 void ensureBootstrapAdmins(db);
+
+// Планировщик push-напоминаний (идемпотентный; без VAPID-ключей — no-op)
+ensurePushJobs();
 
 // При старте контейнера сбрасываем «зависшие» генерации (claude-задание прервано рестартом)
 // и возвращаем списанные попытки — прерванная рестартом генерация не должна сжигать лимит.

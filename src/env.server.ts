@@ -18,6 +18,12 @@ export const serverEnv = createEnv({
     YANDEX_SPEECHKIT_API_KEY: z.string().optional(),
     YANDEX_SPEECHKIT_FOLDER_ID: z.string().optional(),
 
+    // Web-push (VAPID) опционален: без ключей секция уведомлений показывает «скоро»,
+    // подписки и планировщик напоминаний не работают
+    VAPID_PUBLIC_KEY: z.string().optional(),
+    VAPID_PRIVATE_KEY: z.string().optional(),
+    VAPID_SUBJECT: z.string().startsWith("mailto:").optional(),
+
     SENTRY_URL: z.string().optional(),
     SENTRY_ORG: z.string().optional(),
     SENTRY_PROJECT: z.string().optional(),

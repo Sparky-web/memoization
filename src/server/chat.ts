@@ -44,13 +44,15 @@ function buildChatPrompt(card: ChatCard, history: ChatTurn[], message: string): 
   return parts.filter(Boolean).join("\n");
 }
 
-// Запуск claude -p без инструментов в пустой временной папке. Возвращает текст ответа.
-function runClaudeChat(prompt: string, model: string, timeoutMs: number): Promise<string> {
+// Запуск claude -p во временной папке. Возвращает текст ответа. По умолчанию инструменты
+// выключены полностью; readDir разрешает ТОЛЬКО Read и делает папку рабочей (чтение pdf).
+function runClaudeChat(prompt: string, model: string, timeoutMs: number, readDir?: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     // «--tools ""» отключает ВСЕ инструменты: чат не может читать файлы, запускать
     // команды и т. п. — даже если в тексте вопроса попросят (защита от инъекций).
-    const child = spawn("claude", ["-p", prompt, "--model", model, "--tools", ""], {
-      cwd: tmpdir(),
+    const toolArgs = readDir ? ["--allowedTools", "Read"] : ["--tools", ""];
+    const child = spawn("claude", ["-p", prompt, "--model", model, ...toolArgs], {
+      cwd: readDir ?? tmpdir(),
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -117,6 +119,8 @@ export interface ModelPromptOptions {
   /** Быстрая haiku — для дешёвых сверок; по умолчанию sonnet (отзывчивый диалог). */
   model?: "sonnet" | "haiku";
   timeoutMs?: number;
+  /** Рабочая папка с входными файлами: включает инструмент Read (только его) — чтение pdf. */
+  readDir?: string;
 }
 
 /**
@@ -127,7 +131,12 @@ export interface ModelPromptOptions {
 export async function runModelPrompt(prompt: string, options: ModelPromptOptions = {}): Promise<string> {
   await acquireChatSlot();
   try {
-    return await runClaudeChat(prompt, options.model ?? CHAT_MODEL, options.timeoutMs ?? CHAT_TIMEOUT_MS);
+    return await runClaudeChat(
+      prompt,
+      options.model ?? CHAT_MODEL,
+      options.timeoutMs ?? CHAT_TIMEOUT_MS,
+      options.readDir,
+    );
   } finally {
     releaseChatSlot();
   }
