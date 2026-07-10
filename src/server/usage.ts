@@ -1,16 +1,43 @@
 import { type PrismaClient } from "@prisma/client";
+import { setResponseStatus } from "@tanstack/react-start/server";
 
-import { startOfDayMsk } from "~/lib";
+import { FREE_CHAT_PER_DAY, PAYWALL_ERRORS, PRO_CHAT_PER_DAY, startOfDayMsk, typo } from "~/lib";
+
+import { hasActivePro } from "./entitlement";
 
 // Учёт использования платных ИИ-функций: лимиты Free (за всё время) и fair-use Pro (за день МСК)
 // считаются по строкам UsageEvent. Запись — только после успешной постановки/ответа.
 
-/** Вид события использования: генерация экзамена (имя историческое), перегенерация карточек вопроса, сообщение чата. */
-export type UsageKind = "deck_generation" | "card_regeneration" | "chat_message";
+/**
+ * Вид события использования: генерация экзамена (имя историческое), перегенерация карточек
+ * вопроса, сообщение чата (общая квота чата, «объясни ученику/почему», черновиков карт
+ * и образов дворца), ИИ-сверка открытого ответа (отдельная квота — сверки идут в каждой
+ * сессии и не должны съедать разговорный лимит).
+ */
+export type UsageKind = "deck_generation" | "card_regeneration" | "chat_message" | "ai_check";
 
 /** Сколько событий вида kind за текущий календарный день МСК (дневные лимиты). */
 export function countUsageToday(db: PrismaClient, userId: string, kind: UsageKind): Promise<number> {
   return db.usageEvent.count({ where: { userId, kind, createdAt: { gte: startOfDayMsk(new Date()) } } });
+}
+
+/**
+ * Гейт общей разговорной квоты chat_message (чат по карточке, «объясни ученику/почему»,
+ * черновики карт, образы дворца): Free — пейвол-код 402, Pro — человеческий текст fair-use.
+ * Возвращает признак Pro — вызывающие переиспользуют его, чтобы не ходить в БД дважды.
+ */
+export async function assertChatQuota(db: PrismaClient, userId: string): Promise<boolean> {
+  const pro = await hasActivePro(db, userId);
+  const usedToday = await countUsageToday(db, userId, "chat_message");
+  if (!pro && usedToday >= FREE_CHAT_PER_DAY) {
+    setResponseStatus(402);
+    throw new Error(PAYWALL_ERRORS.CHAT);
+  }
+  if (pro && usedToday >= PRO_CHAT_PER_DAY) {
+    setResponseStatus(402);
+    throw new Error(typo("Дневной fair-use лимит сообщений исчерпан — продолжите завтра"));
+  }
+  return pro;
 }
 
 /** Списывает попытку. refId: id колоды для генераций (по нему компенсация), id карточки для чата. */

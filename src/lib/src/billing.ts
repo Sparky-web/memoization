@@ -36,11 +36,16 @@ export const FREE_CHAT_PER_DAY = 10;
  */
 export const CARD_REGENERATIONS_PER_DAY = 20;
 
+/** Карт связей на Free — всего (Pro: без потолка). */
+export const FREE_CONCEPT_MAPS = 1;
+
 // Лимиты Pro: потолки fair-use — защита от злоупотребления дорогими вызовами claude.
 export const PRO_EXAMS = 10;
 export const PRO_QUESTIONS_PER_EXAM = 300;
 export const PRO_DECK_GENERATIONS_PER_DAY = 5;
 export const PRO_CHAT_PER_DAY = 50;
+/** ИИ-сверок открытых ответов в день (Pro fair-use; у Free функция выключена настройкой). */
+export const PRO_AI_CHECKS_PER_DAY = 200;
 
 /**
  * Машиночитаемые коды paywall-ошибок: сервер кидает их в message при статусе 402,
@@ -54,6 +59,7 @@ export const PAYWALL_ERRORS: {
   readonly VOICE: "PAYWALL_VOICE";
   readonly AI_CHECK: "PAYWALL_AI_CHECK";
   readonly CRAM: "PAYWALL_CRAM";
+  readonly MAPS: "PAYWALL_MAPS";
 } = {
   GENERATION: "PAYWALL_GENERATION",
   CHAT: "PAYWALL_CHAT",
@@ -62,6 +68,7 @@ export const PAYWALL_ERRORS: {
   VOICE: "PAYWALL_VOICE",
   AI_CHECK: "PAYWALL_AI_CHECK",
   CRAM: "PAYWALL_CRAM",
+  MAPS: "PAYWALL_MAPS",
 };
 
 /** Идентификатор тарифа для покупки Pro. */
@@ -78,6 +85,7 @@ const PAYWALL_REASONS: readonly PaywallReason[] = [
   "VOICE",
   "AI_CHECK",
   "CRAM",
+  "MAPS",
 ];
 
 /** Причина пейвола из ошибки server function (сервер кладёт код в message при 402) или null. */

@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { CheckCheck, FileText, Layers, MessageCircle, Mic, Sparkles, Zap } from "lucide-react";
+import { CheckCheck, FileText, Layers, MessageCircle, Mic, Sparkles, Waypoints, Zap } from "lucide-react";
 
 import {
   BILLING_PLANS,
@@ -75,6 +75,13 @@ const PAYWALL_CONTENT: Record<PaywallReason, PaywallContent> = {
     title: typo("Умная зубрёжка — в Pro"),
     text: typo(
       "Экзамен уже завтра? Режим спринтов по самым слабым карточкам с повтором ошибок и защитой сна — максимум пользы за оставшиеся часы.",
+    ),
+  },
+  MAPS: {
+    icon: Waypoints,
+    title: typo("Больше карт связей — в Pro"),
+    text: typo(
+      "Бесплатно можно вести одну карту связей. В Pro — отдельная карта на каждую тему и экзамен: стройте схемы по всем предметам.",
     ),
   },
 };

@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { setResponseStatus } from "@tanstack/react-start/server";
 
-import { retrievability, typo, zodRussian } from "~/lib";
+import { palaceLociSchema, retrievability, typo, zodRussian } from "~/lib";
 import { authMiddleware } from "~/server/middleware";
 
 // Библиотека карточек экзамена: список с прогрессом и ручное управление
@@ -68,6 +68,7 @@ export const getExamCards = createServerFn({ method: "GET" })
         suspended: true,
         position: true,
         question: { select: { id: true, topic: true } },
+        memoryPalaces: { where: { userId }, select: { id: true, title: true, loci: true } },
         progress: {
           where: { userId },
           select: {
@@ -87,6 +88,8 @@ export const getExamCards = createServerFn({ method: "GET" })
 
     return cards.map((card) => {
       const progress = card.progress[0] ?? null;
+      const palaceRow = card.memoryPalaces[0] ?? null;
+      const palaceLoci = palaceRow ? palaceLociSchema.safeParse(palaceRow.loci).data : undefined;
       return {
         id: card.id,
         format: card.format,
@@ -103,6 +106,8 @@ export const getExamCards = createServerFn({ method: "GET" })
         position: card.position,
         questionId: card.question?.id ?? null,
         topic: card.question?.topic ?? null,
+        // Дворец памяти карточки: битый JSON локусов не валит библиотеку — просто без дворца.
+        palace: palaceRow && palaceLoci ? { id: palaceRow.id, title: palaceRow.title, loci: palaceLoci } : null,
         progress: progress
           ? {
               state: progress.state,

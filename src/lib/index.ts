@@ -5,18 +5,30 @@ export {
   BILLING_PLANS,
   CARD_REGENERATIONS_PER_DAY,
   FREE_CHAT_PER_DAY,
+  FREE_CONCEPT_MAPS,
   FREE_DECK_GENERATIONS,
   FREE_EXAMS,
   FREE_QUESTIONS_PER_EXAM,
   isPaywallError,
   PAYWALL_ERRORS,
   paywallReasonOf,
+  PRO_AI_CHECKS_PER_DAY,
   PRO_CHAT_PER_DAY,
   PRO_DECK_GENERATIONS_PER_DAY,
   PRO_EXAMS,
   PRO_QUESTIONS_PER_EXAM,
 } from "./src/billing";
 export { formatDateRuMsk, mskCalendarDaysBetween, mskDayKey, startOfDayMsk } from "./src/dates";
+export type { MapEdge, MapNode, PalaceLocus } from "./src/deepWork";
+export {
+  EXPLAIN_WHY_MIN_REPS,
+  MAP_CANVAS,
+  mapEdgesSchema,
+  mapNodesSchema,
+  palaceLociSchema,
+  parseConceptMapDraft,
+  parsePalaceImages,
+} from "./src/deepWork";
 export { exhaustiveCheck } from "./src/exhaustiveCheck";
 export type { ProgressLike, ReviewRating } from "./src/fsrs";
 export { makeScheduler, retrievability, reviewProgress } from "./src/fsrs";

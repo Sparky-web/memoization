@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 
 import { typo } from "~/lib";
 
-// Чат по теме карточки через тот же claude CLI, что и генерация (без выбора модели).
-// Для отзывчивости берём sonnet; инструменты выключены — чат не трогает ФС/систему.
+// Разговорные ИИ-функции через тот же claude CLI, что и генерация.
+// По умолчанию sonnet (отзывчивость); инструменты выключены — чат не трогает ФС/систему.
 const CHAT_MODEL = "sonnet";
 const CHAT_TIMEOUT_MS = 2 * 60 * 1000;
 
@@ -45,11 +45,11 @@ function buildChatPrompt(card: ChatCard, history: ChatTurn[], message: string): 
 }
 
 // Запуск claude -p без инструментов в пустой временной папке. Возвращает текст ответа.
-function runClaudeChat(prompt: string): Promise<string> {
+function runClaudeChat(prompt: string, model: string, timeoutMs: number): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     // «--tools ""» отключает ВСЕ инструменты: чат не может читать файлы, запускать
     // команды и т. п. — даже если в тексте вопроса попросят (защита от инъекций).
-    const child = spawn("claude", ["-p", prompt, "--model", CHAT_MODEL, "--tools", ""], {
+    const child = spawn("claude", ["-p", prompt, "--model", model, "--tools", ""], {
       cwd: tmpdir(),
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -67,7 +67,7 @@ function runClaudeChat(prompt: string): Promise<string> {
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       reject(new Error(typo("Превышено время ответа Claude.")));
-    }, CHAT_TIMEOUT_MS);
+    }, timeoutMs);
 
     child.on("error", (error) => {
       clearTimeout(timer);
@@ -113,11 +113,26 @@ function releaseChatSlot(): void {
   activeChats -= 1;
 }
 
-export async function generateChatReply(card: ChatCard, history: ChatTurn[], message: string): Promise<string> {
+export interface ModelPromptOptions {
+  /** Быстрая haiku — для дешёвых сверок; по умолчанию sonnet (отзывчивый диалог). */
+  model?: "sonnet" | "haiku";
+  timeoutMs?: number;
+}
+
+/**
+ * Общий вход для всех разговорных ИИ-функций (чат, «объясни ученику», «объясни почему»,
+ * черновики карт, образы дворца, ИИ-сверка): один пул слотов и один запуск claude без
+ * инструментов — параллельные процессы не душат сервер и очередь генерации.
+ */
+export async function runModelPrompt(prompt: string, options: ModelPromptOptions = {}): Promise<string> {
   await acquireChatSlot();
   try {
-    return await runClaudeChat(buildChatPrompt(card, history, message));
+    return await runClaudeChat(prompt, options.model ?? CHAT_MODEL, options.timeoutMs ?? CHAT_TIMEOUT_MS);
   } finally {
     releaseChatSlot();
   }
+}
+
+export function generateChatReply(card: ChatCard, history: ChatTurn[], message: string): Promise<string> {
+  return runModelPrompt(buildChatPrompt(card, history, message));
 }

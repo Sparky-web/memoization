@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
-import { Play } from "lucide-react";
+import { GraduationCap, Play, Waypoints } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -262,6 +262,24 @@ function ExamHubPage() {
             >
               <Play className="size-4" />
               {exam.mode === "cram" ? typo("Начать зубрёжку") : typo("Начать сессию")}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                void navigate({ to: "/app/exams/$examId/teach", params: { examId } });
+              }}
+            >
+              <GraduationCap className="size-4" />
+              {typo("Объяснить ученику")}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                void navigate({ to: "/app/exams/$examId/map", params: { examId } });
+              }}
+            >
+              <Waypoints className="size-4" />
+              {typo("Карта связей")}
             </Button>
           </HStack>
         )}

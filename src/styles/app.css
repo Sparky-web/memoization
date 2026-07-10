@@ -224,6 +224,96 @@ body {
   animation: landing-flow-pulse 2.4s ease-in-out infinite;
 }
 
+/* ===== «Объясни ученику»: аватар-ученик и голосовые индикаторы ===== */
+
+/* Idle: лёгкое «дыхание» аватара. */
+@keyframes teach-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.teach-avatar-idle {
+  animation: teach-breathe 3.2s ease-in-out infinite;
+}
+
+/* Listening: концентрические кольца расходятся от аватара, пока идёт запись. */
+@keyframes teach-ring {
+  from {
+    transform: scale(0.75);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
+.teach-ring {
+  animation: teach-ring 1.6s ease-out infinite;
+}
+
+.teach-ring-late {
+  animation-delay: 0.8s;
+}
+
+/* Thinking: три прыгающие точки (сдвиг фаз — классами-задержками). */
+@keyframes teach-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+
+.teach-dot {
+  animation: teach-dot 1.2s ease-in-out infinite;
+}
+
+.teach-dot-2 {
+  animation-delay: 0.15s;
+}
+
+.teach-dot-3 {
+  animation-delay: 0.3s;
+}
+
+/* Speaking: столбики эквалайзера; высоту задаёт JS по амплитуде из AnalyserNode,
+   transition сглаживает шаги requestAnimationFrame. Волна записи у микрофона — так же. */
+.teach-bar {
+  transform-origin: bottom;
+  transition: transform 90ms linear;
+}
+
+.teach-mic-wave {
+  transition: transform 90ms linear;
+}
+
+/* Плавная смена состояний аватара (idle → listening → thinking → speaking). */
+@keyframes teach-state-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.teach-state-enter {
+  animation: teach-state-enter 0.22s ease-out both;
+}
+
 /* Уважаем настройку «уменьшить движение». */
 @media (prefers-reduced-motion: reduce) {
   .page-enter {
@@ -239,6 +329,22 @@ body {
   .landing-demo-card,
   .landing-demo-flow {
     animation: none;
+  }
+  /* Статичные версии состояний аватара: кольцо и точки видимы, но неподвижны;
+     столбики и волну не дёргаем transition'ом (JS-обновления по RAF тоже отключены). */
+  .teach-avatar-idle,
+  .teach-dot,
+  .teach-state-enter {
+    animation: none;
+  }
+  .teach-ring {
+    animation: none;
+    transform: scale(1.25);
+    opacity: 0.25;
+  }
+  .teach-bar,
+  .teach-mic-wave {
+    transition: none;
   }
 }
 

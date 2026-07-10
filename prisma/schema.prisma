@@ -490,7 +490,9 @@ model AnalyticsEvent {
 }
 
 /// Учёт использования платных ИИ-функций — на нём лимиты Free и fair-use Pro.
-/// kind: "deck_generation" (генерация экзамена; имя историческое) | "chat_message".
+/// kind: "deck_generation" (генерация экзамена; имя историческое) | "card_regeneration"
+/// | "chat_message" (чат, «объясни ученику/почему», черновики карт, образы дворца)
+/// | "ai_check" (ИИ-сверка открытых ответов, отдельная квота).
 model UsageEvent {
   id   String @id @default(cuid())
   kind String

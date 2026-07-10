@@ -13,6 +13,11 @@ export const serverEnv = createEnv({
     YOOKASSA_SHOP_ID: z.string().optional(),
     YOOKASSA_SECRET_KEY: z.string().optional(),
 
+    // Яндекс SpeechKit опционален: без ключей /api/speech/* отвечают 503,
+    // голосовой режим «объясни ученику» деградирует в текстовый
+    YANDEX_SPEECHKIT_API_KEY: z.string().optional(),
+    YANDEX_SPEECHKIT_FOLDER_ID: z.string().optional(),
+
     SENTRY_URL: z.string().optional(),
     SENTRY_ORG: z.string().optional(),
     SENTRY_PROJECT: z.string().optional(),

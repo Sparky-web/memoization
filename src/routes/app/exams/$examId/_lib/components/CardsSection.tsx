@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -28,6 +29,7 @@ import {
   examQueries,
   flagCard,
   getCardChat,
+  PalaceBlock,
   suspendCard,
   updateCard,
 } from "../../../_lib";
@@ -250,9 +252,15 @@ function CardChatModal({ card, onClose }: { card: ExamCardItem; onClose: () => v
   );
 }
 
-function CardRow({ card, onEdit, onChat }: { card: ExamCardItem; onEdit: () => void; onChat: () => void }) {
+// «Упрямая» карточка: три и больше провалов — предлагаем дворец памяти (мнемоника
+// точечно для спотыкающихся карточек, спека «Мнемоники»).
+const STUBBORN_LAPSES = 3;
+
+function CardRow({ card, examId, onEdit, onChat }: { card: ExamCardItem; examId: string; onEdit: () => void; onChat: () => void }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["exams"] });
+  const stubborn = (card.progress?.lapses ?? 0) >= STUBBORN_LAPSES;
 
   const toggleFlag = useMutation({
     mutationFn: () => flagCard({ data: { id: card.id, flagged: !card.flagged } }),
@@ -293,6 +301,12 @@ function CardRow({ card, onEdit, onChat }: { card: ExamCardItem; onEdit: () => v
       <Text variant="mini" color="supplementary">
         {progressLine}
       </Text>
+      {stubborn && !card.palace && (
+        <HStack>
+          <Badge className="bg-warning/15 text-warning">{typo("упрямая карточка — попробуй дворец памяти")}</Badge>
+        </HStack>
+      )}
+      {card.palace && <PalaceBlock title={card.palace.title} loci={card.palace.loci} />}
       <HStack gap="sm" wrap>
         <Button variant="link" size="inline" onClick={onEdit}>
           {typo("Править")}
@@ -319,6 +333,15 @@ function CardRow({ card, onEdit, onChat }: { card: ExamCardItem; onEdit: () => v
           }}
         >
           {card.suspended ? typo("Включить") : typo("Выключить")}
+        </Button>
+        <Button
+          variant="link"
+          size="inline"
+          onClick={() => {
+            void navigate({ to: "/app/exams/$examId/palace/$cardId", params: { examId, cardId: card.id } });
+          }}
+        >
+          {card.palace ? typo("🏛️ Дворец") : typo("Дворец памяти")}
         </Button>
         <Button
           variant="link"
@@ -384,6 +407,7 @@ export function CardsSection({ examId }: { examId: string }) {
           <CardRow
             key={card.id}
             card={card}
+            examId={examId}
             onEdit={() => {
               setEditingCard(card);
             }}

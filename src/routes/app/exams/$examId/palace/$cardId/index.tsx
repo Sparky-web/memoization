@@ -1,0 +1,407 @@
+import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
+import { Plus, Sparkles, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+
+import { Button, Heading, HStack, Input, PaywallCard, SimpleCard, Text, Textarea, VStack } from "~/components";
+import { isPaywallError, type PalaceLocus, typo } from "~/lib";
+import {
+  createMemoryPalace,
+  deleteMemoryPalace,
+  generatePalaceImages,
+  getPalaceContext,
+  updateMemoryPalace,
+} from "~/server/fn/palaces";
+
+// Мастер дворца памяти для «упрямых» карточек-списков: знакомый маршрут → места по порядку →
+// яркие абсурдные образы (ИИ помогает, пользователь правит). Странное запоминается.
+
+const palaceContextQuery = (cardId: string) =>
+  queryOptions({
+    queryKey: ["palace", "context", cardId],
+    queryFn: () => getPalaceContext({ data: { cardId } }),
+  });
+
+export const Route = createFileRoute("/app/exams/$examId/palace/$cardId/")({
+  loader: async ({ context, params }) => {
+    try {
+      await context.queryClient.ensureQueryData(palaceContextQuery(params.cardId));
+    } catch {
+      throw notFound();
+    }
+  },
+  head: () => ({ meta: [{ title: typo("Дворец памяти") }] }),
+  notFoundComponent: () => (
+    <VStack gap="md">
+      <Heading variant="h1">{typo("Карточка не найдена")}</Heading>
+      <Text color="supplementary">{typo("Ссылка неверна или карточка удалена.")}</Text>
+    </VStack>
+  ),
+  component: PalacePage,
+});
+
+const ROUTE_PRESETS: readonly string[] = [typo("Моя квартира"), typo("Дорога до универа"), typo("Родительский дом")];
+
+const MIN_PLACES = 4;
+const MAX_PLACES = 8;
+
+// Шаг 1: знакомый маршрут. Знакомость мест — опора мнемоники, поэтому выбор из своих.
+function RouteStep({ onNext }: { onNext: (routeTitle: string) => void }) {
+  const [preset, setPreset] = useState<string | null>(null);
+  const [custom, setCustom] = useState("");
+  const routeTitle = custom.trim() || preset || "";
+
+  return (
+    <SimpleCard size="lg">
+      <VStack gap="md">
+        <VStack gap="2xs">
+          <Text bold>{typo("Шаг 1 · Выберите знакомый маршрут")}</Text>
+          <Text variant="small" color="supplementary">
+            {typo("Место, которое вы знаете наизусть: по нему пойдёт воображаемая прогулка с пунктами списка.")}
+          </Text>
+        </VStack>
+        <HStack gap="2xs" wrap>
+          {ROUTE_PRESETS.map((option) => (
+            <Button
+              key={option}
+              variant={preset === option && !custom.trim() ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => {
+                setPreset(option);
+                setCustom("");
+              }}
+            >
+              {option}
+            </Button>
+          ))}
+        </HStack>
+        <Input
+          value={custom}
+          placeholder={typo("Или свой маршрут: «дача», «спортзал»…")}
+          onChange={(event) => {
+            setCustom(event.target.value);
+          }}
+        />
+        <HStack>
+          <Button size="pill" disabled={!routeTitle} onClick={() => { onNext(routeTitle); }}>
+            {typo("Дальше")}
+          </Button>
+        </HStack>
+      </VStack>
+    </SimpleCard>
+  );
+}
+
+// Шаг 2: места маршрута по порядку — будущие «крючки» для пунктов списка.
+function PlacesStep({ routeTitle, onNext, onBack }: { routeTitle: string; onNext: (places: string[]) => void; onBack: () => void }) {
+  const [places, setPlaces] = useState<string[]>(["", "", "", ""]);
+  const filled = places.map((place) => place.trim()).filter(Boolean);
+
+  return (
+    <SimpleCard size="lg">
+      <VStack gap="md">
+        <VStack gap="2xs">
+          <Text bold>{typo(`Шаг 2 · Места маршрута «${routeTitle}»`)}</Text>
+          <Text variant="small" color="supplementary">
+            {typo("Перечислите 4–8 мест строго по порядку, как идёте: прихожая → кухня → балкон…")}
+          </Text>
+        </VStack>
+        <VStack gap="2xs">
+          {places.map((place, index) => (
+            <Input
+              key={index}
+              value={place}
+              placeholder={typo(`Место ${index + 1}`)}
+              onChange={(event) => {
+                setPlaces((current) => current.map((value, position) => (position === index ? event.target.value : value)));
+              }}
+            />
+          ))}
+        </VStack>
+        <HStack gap="sm" wrap>
+          {places.length < MAX_PLACES && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setPlaces((current) => [...current, ""]);
+              }}
+            >
+              <Plus className="size-4" />
+              {typo("Ещё место")}
+            </Button>
+          )}
+          <Button size="pill" disabled={filled.length < MIN_PLACES} onClick={() => { onNext(filled); }}>
+            {typo("Дальше")}
+          </Button>
+          <Button variant="ghost" onClick={onBack}>
+            {typo("Назад")}
+          </Button>
+        </HStack>
+      </VStack>
+    </SimpleCard>
+  );
+}
+
+// Редактируемые тройки «место ↔ пункт ↔ образ» — общий блок шага 3 и режима правки.
+function LociEditor({ loci, onChange }: { loci: PalaceLocus[]; onChange: (next: PalaceLocus[]) => void }) {
+  const patch = (index: number, field: "item" | "image", value: string) => {
+    onChange(loci.map((locus, position) => (position === index ? { ...locus, [field]: value } : locus)));
+  };
+
+  return (
+    <VStack gap="sm">
+      {loci.map((locus, index) => (
+        <VStack key={index} gap="2xs" className="rounded-2xl border border-border p-3">
+          <Text variant="mini" color="supplementary">
+            {typo(`${index + 1} · ${locus.place}`)}
+          </Text>
+          <Input
+            value={locus.item}
+            placeholder={typo("Пункт списка")}
+            onChange={(event) => {
+              patch(index, "item", event.target.value);
+            }}
+          />
+          <Textarea
+            value={locus.image}
+            rows={2}
+            placeholder={typo("Яркий абсурдный образ, связывающий пункт с местом")}
+            onChange={(event) => {
+              patch(index, "image", event.target.value);
+            }}
+          />
+        </VStack>
+      ))}
+    </VStack>
+  );
+}
+
+// Шаг 3: ИИ придумывает образы, пользователь правит и сохраняет дворец.
+function ImagesStep({
+  cardId,
+  routeTitle,
+  places,
+  onSaved,
+  onBack,
+}: {
+  cardId: string;
+  routeTitle: string;
+  places: string[];
+  onSaved: () => void;
+  onBack: () => void;
+}) {
+  const [loci, setLoci] = useState<PalaceLocus[]>([]);
+  const complete = loci.length > 0 && loci.every((locus) => locus.item.trim() && locus.image.trim());
+
+  const generate = useMutation({
+    mutationFn: () => generatePalaceImages({ data: { cardId, places } }),
+    onSuccess: (result) => {
+      setLoci(result.loci);
+    },
+    onError: (error) => {
+      if (isPaywallError(error, "CHAT")) return;
+      console.error(error);
+      const humanMessage = /[а-яё]/i.test(error.message) ? error.message : typo("Не удалось придумать образы");
+      toast.error(humanMessage);
+    },
+  });
+
+  const save = useMutation({
+    mutationFn: () =>
+      createMemoryPalace({
+        data: {
+          cardId,
+          title: routeTitle,
+          loci: loci.map((locus) => ({ place: locus.place, item: locus.item.trim(), image: locus.image.trim() })),
+        },
+      }),
+    onSuccess: onSaved,
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось сохранить дворец"));
+    },
+  });
+
+  const seedManual = () => {
+    setLoci(places.map((place) => ({ place, item: "", image: "" })));
+  };
+
+  return (
+    <SimpleCard size="lg">
+      <VStack gap="md">
+        <VStack gap="2xs">
+          <Text bold>{typo("Шаг 3 · Образы")}</Text>
+          <Text variant="small" color="supplementary">
+            {typo("Чем страннее и конкретнее образ, тем крепче он держится. Правьте варианты ИИ под себя — свои образы работают лучше.")}
+          </Text>
+        </VStack>
+
+        {!loci.length && (
+          <HStack gap="sm" wrap>
+            <Button
+              disabled={generate.isPending}
+              onClick={() => {
+                generate.mutate();
+              }}
+            >
+              <Sparkles className="size-4" />
+              {generate.isPending ? typo("Придумываем…") : typo("Придумать образы с ИИ")}
+            </Button>
+            <Button variant="outline" onClick={seedManual}>
+              {typo("Заполню сам")}
+            </Button>
+          </HStack>
+        )}
+
+        {isPaywallError(generate.error, "CHAT") && <PaywallCard reason="CHAT" compact />}
+
+        {loci.length > 0 && (
+          <VStack gap="md">
+            <LociEditor loci={loci} onChange={setLoci} />
+            <HStack gap="sm" wrap>
+              <Button size="pill" disabled={!complete || save.isPending} onClick={() => { save.mutate(); }}>
+                {typo("Сохранить дворец")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={generate.isPending}
+                onClick={() => {
+                  generate.mutate();
+                }}
+              >
+                {typo("Пересобрать образы")}
+              </Button>
+            </HStack>
+          </VStack>
+        )}
+
+        <HStack>
+          <Button variant="ghost" onClick={onBack}>
+            {typo("Назад к местам")}
+          </Button>
+        </HStack>
+      </VStack>
+    </SimpleCard>
+  );
+}
+
+// Существующий дворец: правка троек, сохранение, удаление.
+function EditPalace({
+  examId,
+  palace,
+}: {
+  examId: string;
+  palace: { id: string; title: string; loci: PalaceLocus[] };
+}) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [loci, setLoci] = useState<PalaceLocus[]>(palace.loci);
+  const complete = loci.length > 0 && loci.every((locus) => locus.item.trim() && locus.image.trim());
+
+  const exitToHub = () => {
+    void queryClient.invalidateQueries({ queryKey: ["exams"] });
+    void queryClient.invalidateQueries({ queryKey: ["palace"] });
+    void navigate({ to: "/app/exams/$examId", params: { examId } });
+  };
+
+  const save = useMutation({
+    mutationFn: () => updateMemoryPalace({ data: { id: palace.id, loci } }),
+    onSuccess: () => {
+      toast.success(typo("Дворец обновлён"));
+      exitToHub();
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось сохранить дворец"));
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: () => deleteMemoryPalace({ data: { id: palace.id } }),
+    onSuccess: exitToHub,
+    onError: (error) => {
+      console.error(error);
+      toast.error(typo("Не удалось удалить дворец"));
+    },
+  });
+
+  return (
+    <SimpleCard size="lg">
+      <VStack gap="md">
+        <Text bold>{typo(`Маршрут «${palace.title}»`)}</Text>
+        <LociEditor loci={loci} onChange={setLoci} />
+        <HStack gap="sm" wrap>
+          <Button disabled={!complete || save.isPending} onClick={() => { save.mutate(); }}>
+            {typo("Сохранить")}
+          </Button>
+          <Button variant="outline" size="sm" disabled={remove.isPending} onClick={() => { remove.mutate(); }}>
+            <Trash2 className="size-4" />
+            {typo("Удалить дворец")}
+          </Button>
+        </HStack>
+      </VStack>
+    </SimpleCard>
+  );
+}
+
+function PalacePage() {
+  const { examId, cardId } = Route.useParams();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { data: context } = useSuspenseQuery(palaceContextQuery(cardId));
+
+  const [routeTitle, setRouteTitle] = useState<string | null>(null);
+  const [places, setPlaces] = useState<string[] | null>(null);
+
+  const onSaved = () => {
+    toast.success(typo("Дворец сохранён — он появится на карточке"));
+    void queryClient.invalidateQueries({ queryKey: ["exams"] });
+    void queryClient.invalidateQueries({ queryKey: ["palace"] });
+    void navigate({ to: "/app/exams/$examId", params: { examId } });
+  };
+
+  const renderStep = () => {
+    if (context.palace) return <EditPalace examId={examId} palace={context.palace} />;
+    if (!routeTitle) return <RouteStep onNext={setRouteTitle} />;
+    if (!places) {
+      return (
+        <PlacesStep
+          routeTitle={routeTitle}
+          onNext={setPlaces}
+          onBack={() => {
+            setRouteTitle(null);
+          }}
+        />
+      );
+    }
+    return (
+      <ImagesStep
+        cardId={cardId}
+        routeTitle={routeTitle}
+        places={places}
+        onSaved={onSaved}
+        onBack={() => {
+          setPlaces(null);
+        }}
+      />
+    );
+  };
+
+  return (
+    <VStack gap="md" className="mx-auto w-full max-w-2xl">
+      <VStack gap="2xs">
+        <Heading variant="h1">{typo("🏛️ Дворец памяти")}</Heading>
+        <Text variant="small" color="supplementary" breakWords>
+          {typo(`Для карточки: ${context.card.prompt}`)}
+        </Text>
+        <Text variant="mini" color="supplementary" breakWords>
+          {typo(`Список для запоминания: ${context.card.answer}`)}
+        </Text>
+      </VStack>
+      {renderStep()}
+    </VStack>
+  );
+}

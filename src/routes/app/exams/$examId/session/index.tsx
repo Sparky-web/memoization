@@ -20,7 +20,8 @@ import {
   useMountEffect,
   VStack,
 } from "~/components";
-import { isPaywallError, mskDayKey, typo, zodRussian } from "~/lib";
+import { EXPLAIN_WHY_MIN_REPS, isPaywallError, mskDayKey, typo, zodRussian } from "~/lib";
+import { explainWhy } from "~/server/fn/chat";
 import { answerCard, type AnswerResult, type SessionCard, submitOpenRating } from "~/server/fn/session";
 
 import {
@@ -30,6 +31,7 @@ import {
   isSleepTimeMsk,
   isWalkNudgeDay,
   markFocusBreakShown,
+  PalaceBlock,
   pluralRu,
   recordFocusActivity,
   resolveForecast,
@@ -139,6 +141,82 @@ interface AnswerInput {
   boolAnswer?: boolean;
 }
 
+// ИИ-сверка (Pro): вердикт haiku предзаполняет самооценку, человек может поправить.
+const AI_VERDICT_VIEW: Record<string, { label: string; className: string; suggestedRating: number }> = {
+  match: { label: typo("ИИ: совпадает по смыслу"), className: "bg-success/15 text-success", suggestedRating: 3 },
+  partial: { label: typo("ИИ: частично совпало"), className: "bg-warning/15 text-warning", suggestedRating: 2 },
+  miss: { label: typo("ИИ: не совпало"), className: "bg-destructive/15 text-destructive", suggestedRating: 1 },
+};
+
+// «Объясни почему» (elaborative interrogation): свёрнуто по умолчанию, ненавязчиво.
+// Показывается только с третьего показа карточки — гейт по repsBefore проверяет вызывающий.
+function ExplainWhyBlock({ cardId }: { cardId: string }) {
+  const [open, setOpen] = useState(false);
+  const [explanation, setExplanation] = useState("");
+
+  const ask = useMutation({
+    mutationFn: () => explainWhy({ data: { cardId, explanation: explanation.trim() } }),
+    onError: (error) => {
+      if (isPaywallError(error, "CHAT")) return;
+      console.error(error);
+      toast.error(typo("Не удалось проверить объяснение"));
+    },
+  });
+
+  if (!open) {
+    return (
+      <HStack>
+        <Button
+          variant="link"
+          size="inline"
+          onClick={() => {
+            setOpen(true);
+          }}
+        >
+          {typo("Объяснить почему")}
+        </Button>
+      </HStack>
+    );
+  }
+
+  return (
+    <VStack gap="2xs" className="rounded-2xl border border-border p-3">
+      <Text variant="mini" color="supplementary">
+        {typo("Почему это так? Объясни своими словами — обоснование укрепляет память, а ИИ подсветит пробел.")}
+      </Text>
+      {ask.data ? (
+        <Text variant="small" breakWords>
+          {typo(ask.data.verdict)}
+        </Text>
+      ) : (
+        <VStack gap="2xs">
+          <Textarea
+            value={explanation}
+            rows={2}
+            placeholder={typo("Потому что…")}
+            onChange={(event) => {
+              setExplanation(event.target.value);
+            }}
+          />
+          <HStack gap="sm">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!explanation.trim() || ask.isPending}
+              onClick={() => {
+                ask.mutate();
+              }}
+            >
+              {ask.isPending ? typo("Оцениваем…") : typo("Проверить объяснение")}
+            </Button>
+          </HStack>
+        </VStack>
+      )}
+      {isPaywallError(ask.error, "CHAT") && <PaywallCard reason="CHAT" compact />}
+    </VStack>
+  );
+}
+
 function CardPlayer({ card, kind, onFinished }: { card: SessionCard; kind: SessionKind; onFinished: (outcome: CardOutcome) => void }) {
   const [confidence, setConfidence] = useState(35);
   const [typed, setTyped] = useState("");
@@ -171,6 +249,8 @@ function CardPlayer({ card, kind, onFinished }: { card: SessionCard; kind: Sessi
           rating,
           confidence,
           answerText: typed.trim() || undefined,
+          // Вердикт ИИ-сверки уходит в журнал вместе с итоговой (возможно исправленной) оценкой.
+          aiVerdict: result?.aiVerdict ?? null,
           durationMs: Math.min(Date.now() - startedAt, 3_600_000),
         },
       }),
@@ -320,9 +400,14 @@ function CardPlayer({ card, kind, onFinished }: { card: SessionCard; kind: Sessi
   const renderFeedback = (graded: AnswerResult) => {
     const isOpenReveal = graded.correct === null;
     const showFlash = graded.correct === true && kind !== "bedtime";
+    const aiView = graded.aiVerdict ? AI_VERDICT_VIEW[graded.aiVerdict] : null;
 
     const verdictBadge = () => {
-      if (isOpenReveal) return null;
+      if (isOpenReveal) {
+        // ИИ-сверка открытого ответа: вердикт вместо пустоты, самооценка остаётся за человеком.
+        if (!aiView) return null;
+        return <Badge className={aiView.className}>{aiView.label}</Badge>;
+      }
       if (graded.correct) {
         return <Badge className="bg-success/15 text-success">{typo("Верно!")}</Badge>;
       }
@@ -330,6 +415,8 @@ function CardPlayer({ card, kind, onFinished }: { card: SessionCard; kind: Sessi
     };
 
     const ratings = kind === "bedtime" ? BEDTIME_RATINGS : OPEN_RATINGS;
+    // Предзаполненная самооценка из вердикта ИИ — подсвечиваем предложенную кнопку.
+    const suggestedRating = kind === "bedtime" ? null : aiView?.suggestedRating ?? null;
 
     return (
       <SimpleCard size="lg">
@@ -383,6 +470,11 @@ function CardPlayer({ card, kind, onFinished }: { card: SessionCard; kind: Sessi
             </VStack>
           )}
 
+          {aiView && graded.aiComment && (
+            <Text variant="small" color="supplementary" breakWords>
+              {typo(graded.aiComment)}
+            </Text>
+          )}
           {graded.explanation && (
             <Text variant="small" color="supplementary" breakWords>
               {typo(graded.explanation)}
@@ -394,16 +486,20 @@ function CardPlayer({ card, kind, onFinished }: { card: SessionCard; kind: Sessi
             </Text>
           )}
 
+          {graded.palace && <PalaceBlock title={graded.palace.title} loci={graded.palace.loci} />}
+
+          {kind !== "bedtime" && graded.repsBefore >= EXPLAIN_WHY_MIN_REPS && <ExplainWhyBlock cardId={card.id} />}
+
           {isOpenReveal ? (
             <VStack gap="2xs">
               <Text variant="mini" color="supplementary">
-                {typo("Насколько точно вспомнил?")}
+                {suggestedRating ? typo("ИИ предлагает оценку — поправь, если не согласен") : typo("Насколько точно вспомнил?")}
               </Text>
               <HStack gap="2xs" wrap>
                 {ratings.map((option) => (
                   <Button
                     key={option.rating}
-                    variant="outline"
+                    variant={option.rating === suggestedRating ? "secondary" : "outline"}
                     disabled={rate.isPending}
                     onClick={() => {
                       rate.mutate(option.rating);
