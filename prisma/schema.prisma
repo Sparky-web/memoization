@@ -444,7 +444,7 @@ model PushLog {
 /// История чата по карточке («вопрос по карточке» / «объясни почему»).
 model ChatMessage {
   id String @id @default(cuid())
-  /// "user" — вопрос пользователя | "assistant" — ответ Claude.
+  /// "user" — вопрос пользователя | "assistant" — ответ ИИ.
   role    String
   content String
 

@@ -16,7 +16,7 @@ import { refundUsage, tryChargeUsage } from "~/server/usage";
 
 // Вопросы экзамена: замена списка (мастер/textarea) с сохранением неизменённых строк,
 // страница вопроса и точечная перегенерация его карточек (sonnet, без списания квоты
-// генераций, но с собственным мягким дневным лимитом — каждый вызов запускает claude).
+// генераций, но с собственным мягким дневным лимитом — каждый вызов запускает ИИ).
 
 export const setExamQuestions = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
@@ -271,7 +271,7 @@ export const addFullQuestionCards = createServerFn({ method: "POST" })
       throw new Error(typo("У всех вопросов с ответами уже есть карточки полного вопроса"));
     }
 
-    // Один живой вызов claude — то же атомарное списание, что у точечной перегенерации.
+    // Один живой вызов ИИ — то же атомарное списание, что у точечной перегенерации.
     const charged = await tryChargeUsage(context.db, {
       userId,
       kind: "card_regeneration",

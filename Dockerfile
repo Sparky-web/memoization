@@ -28,10 +28,10 @@ FROM base AS runtime
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOME=/root
-# claude CLI для режима «Сгенерировать» (claude -p). Авторизация — через том /root/.claude (вход один раз).
-RUN npm install -g @anthropic-ai/claude-code
-# ffmpeg — перепаковка голосовых записей MediaRecorder (webm/mp4 → ogg/opus): SpeechKit v1 принимает только oggopus
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+# Codex — основной ИИ-провайдер; Claude установлен как переключаемый резервный провайдер.
+RUN npm install -g @openai/codex @anthropic-ai/claude-code
+# ffmpeg — голосовые записи; poppler-utils — одинаковое извлечение текста PDF для обоих ИИ-провайдеров.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg poppler-utils && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma

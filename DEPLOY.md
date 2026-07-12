@@ -35,7 +35,13 @@ BETTER_AUTH_URL=https://memoization.studentto.ru
 BETTER_AUTH_SECRET=...        # openssl rand -hex 32
 VITE_SENTRY_DSN=              # опционально
 
-# Прокси для Claude (из РФ api.anthropic.com отдаёт 403 — нужен HTTP(S)-прокси вне РФ):
+# ИИ-провайдер через CLI. Модели Codex можно не задавать — тогда используется актуальная по умолчанию.
+AI_PROVIDER=codex
+CODEX_GENERATION_MODEL=
+CODEX_CHAT_MODEL=
+CODEX_FAST_MODEL=
+
+# Прокси, если доступ к провайдеру с сервера ограничен:
 HTTPS_PROXY=http://ЛОГИН:ПАРОЛЬ@ХОСТ:ПОРТ
 HTTP_PROXY=http://ЛОГИН:ПАРОЛЬ@ХОСТ:ПОРТ
 NO_PROXY=localhost,127.0.0.1,host.docker.internal
@@ -85,27 +91,30 @@ cd ~/memoization && docker compose up -d --force-recreate
 
 Клиентские `VITE_*` впекаются в бандл на сборке → их смена требует пересборки (`docker compose build`).
 
-## Генерация колод (Claude CLI)
+## Генерация материалов (Codex CLI)
 
-Режим «Сгенерировать» запускает `claude -p` (модель `opus`) внутри контейнера: claude читает материалы
-пользователя из `data/jobs/<deckId>/inputs/` и пишет `output.json` с карточками (вопрос + краткий и
-развёрнутый ответы). Процесс асинхронный: колода создаётся со статусом `processing`, по готовности —
-`ready`, при ошибке — `failed`. Очередь последовательная (один claude за раз).
+Приложение по умолчанию запускает `codex exec` внутри контейнера. Большая генерация получает доступ
+на запись только к каталогу задания `data/jobs/<examId>/`, разговорные функции работают в режиме
+`read-only`. Процесс асинхронный: экзамен создаётся со статусом `processing`, по готовности — `ready`,
+при ошибке — `failed`. Очередь большой генерации последовательная.
 
-- **claude CLI** ставится в образ (`Dockerfile`: `npm i -g @anthropic-ai/claude-code`).
-- **Авторизация** хранится в томе `./claude-home:/root/.claude` и переживает пересоздание/деплой.
-  Каталог `claude-home` (и `data`) исключён из rsync деплоя (как `.env`) — иначе `--delete` падает
-  на root-овых файлах, созданных claude в контейнере.
-  Войти нужно один раз:
+- **Codex CLI** и резервный Claude CLI ставятся в образ. Провайдер выбирается через
+  `AI_PROVIDER=codex|claude`; смена переменной требует пересоздания контейнера.
+- **Авторизация Codex** хранится в `./codex-home:/root/.codex` и переживает деплои. Каталоги
+  `codex-home`, `claude-home` и `data` исключены из rsync. После первой сборки войдите один раз:
   ```bash
   cd ~/memoization
-  docker compose exec -it app claude   # выбрать вход в аккаунт, открыть ссылку в браузере, затем /exit
+  docker compose exec -it app codex login --device-auth
   ```
-- **Прокси (для РФ обязателен):** `api.anthropic.com` напрямую отдаёт 403 — нужен HTTP(S)-прокси вне РФ.
-  Пропишите `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` в `.env` (см. выше) и пересоздайте контейнер
-  (`docker compose up -d --force-recreate`). Приложение спавнит claude с `env: process.env` — прокси
-  подхватывается автоматически и для входа, и для генерации.
-- **Файлы**: до 5 шт по 10 МБ в каждом поле. `.doc/.docx` конвертируются в текст на сервере
-  (`word-extractor`) до передачи claude; `.pdf`, изображения и текстовые форматы claude читает сам.
-- **Проверка связи/входа:** `docker compose exec -T app claude -p "ответь: ок"` — должен ответить.
-- При рестарте контейнера «зависшие» задания `processing` помечаются `failed` (сброс на старте `src/server.ts`).
+- **Проверка входа:**
+  ```bash
+  printf 'Ответь одним словом: ок' | docker compose exec -T app codex exec \
+    --skip-git-repo-check --sandbox read-only --ephemeral --ignore-user-config -
+  ```
+- `CODEX_GENERATION_MODEL`, `CODEX_CHAT_MODEL` и `CODEX_FAST_MODEL` опциональны. Пустое значение
+  оставляет выбор актуальной модели самому Codex CLI.
+- Для временного возврата на Claude задайте `AI_PROVIDER=claude`; его прежний том авторизации
+  сохранён. Прокси из `.env` передаётся обоим CLI.
+- `.doc/.docx` конвертируются в текст через `word-extractor`, PDF — через `pdftotext`; ИИ получает
+  уже извлечённый текст в изолированной папке задания. PDF-сканам без текстового слоя потребуется OCR.
+- При рестарте контейнера зависшие задания `processing` помечаются `failed` в `src/server.ts`.

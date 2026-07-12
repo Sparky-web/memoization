@@ -9,6 +9,12 @@ export const serverEnv = createEnv({
     BETTER_AUTH_SECRET: process.env.NODE_ENV === "production" ? z.string().min(1) : z.string().min(1).optional(),
     BETTER_AUTH_URL: z.url(),
 
+    // ИИ запускается через CLI. Codex выбран по умолчанию; Claude остаётся быстрым откатом.
+    AI_PROVIDER: z.enum(["codex", "claude"]).default("codex"),
+    CODEX_GENERATION_MODEL: z.string().optional(),
+    CODEX_CHAT_MODEL: z.string().optional(),
+    CODEX_FAST_MODEL: z.string().optional(),
+
     // Ключи ЮKassa опциональны: без них оплата отвечает 503, остальное приложение работает
     YOOKASSA_SHOP_ID: z.string().optional(),
     YOOKASSA_SECRET_KEY: z.string().optional(),

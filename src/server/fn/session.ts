@@ -317,8 +317,8 @@ function ratingForClosedAnswer(correct: boolean, confidence: number | null): Rev
   return 3;
 }
 
-// ИИ-сверка открытого ответа (Pro + настройка): быстрая haiku без инструментов.
-// Жёсткий дедлайн (включая ожидание слота claude) — сверка не смеет блокировать сессию.
+// ИИ-сверка открытого ответа (Pro + настройка): быстрый уровень модели без записи в ФС.
+// Жёсткий дедлайн (включая ожидание слота ИИ) — сверка не смеет блокировать сессию.
 const AI_CHECK_TIMEOUT_MS = 30_000;
 
 interface AiCheckResult {
@@ -348,7 +348,7 @@ function parseAiCheckReply(raw: string): AiCheckResult | null {
 }
 
 // Фолбэк по дедлайну: null вместо вердикта. Исходный промис гасится catch'ем заранее —
-// поздний отказ claude не станет unhandled rejection.
+// поздний отказ провайдера не станет unhandled rejection.
 function withDeadline<T>(promise: Promise<T | null>, ms: number): Promise<T | null> {
   return Promise.race([
     promise,
@@ -380,7 +380,7 @@ async function maybeAiCheck(
   if (!charged) return null;
 
   const guarded = runModelPrompt(buildAiCheckPrompt(card.answer, answerText), {
-    model: "haiku",
+    model: "fast",
     timeoutMs: AI_CHECK_TIMEOUT_MS,
   }).catch((error: unknown) => {
     console.error("ИИ-сверка не удалась", error);

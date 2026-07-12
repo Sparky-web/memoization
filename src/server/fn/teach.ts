@@ -15,7 +15,7 @@ const turnSelect = { id: true, role: true, content: true };
 // Окно истории в промпт — как в чате по карточке: без потолка промпт растёт до таймаута.
 const TEACH_HISTORY_WINDOW = 16;
 const MAX_REPLY_CHARS = 4000;
-// Один живой запрос к claude на пользователя — защита от даблкликов и параллельных вкладок.
+// Один живой запрос к ИИ на пользователя — защита от даблкликов и параллельных вкладок.
 const inFlightUsers = new Set<string>();
 
 /** Доступность голосового режима для UI: настроен ли SpeechKit и есть ли Pro. */
@@ -132,7 +132,7 @@ export const sendTeachMessage = createServerFn({ method: "POST" })
       });
       const history = recent.reverse();
 
-      // Реплику сохраняем сразу (createdAt раньше ответа); Claude не ответил — откатываем.
+      // Реплику сохраняем сразу (createdAt раньше ответа); ИИ не ответил — откатываем.
       const userTurn = await context.db.teachTurn.create({
         data: { sessionId: session.id, role: "user", content: data.content },
         select: turnSelect,

@@ -1,11 +1,8 @@
-import { spawn } from "node:child_process";
-import { tmpdir } from "node:os";
-
 import { typo } from "~/lib";
 
-// Разговорные ИИ-функции через тот же claude CLI, что и генерация.
-// По умолчанию sonnet (отзывчивость); инструменты выключены — чат не трогает ФС/систему.
-const CHAT_MODEL = "sonnet";
+import { type AiModelTier, runAiText } from "./aiProvider";
+
+// Разговорные ИИ-функции используют стандартный уровень модели; быстрый — для дешёвых сверок.
 const CHAT_TIMEOUT_MS = 2 * 60 * 1000;
 
 export interface ChatCard {
@@ -44,52 +41,7 @@ function buildChatPrompt(card: ChatCard, history: ChatTurn[], message: string): 
   return parts.filter(Boolean).join("\n");
 }
 
-// Запуск claude -p во временной папке. Возвращает текст ответа. По умолчанию инструменты
-// выключены полностью; readDir разрешает ТОЛЬКО Read и делает папку рабочей (чтение pdf).
-function runClaudeChat(prompt: string, model: string, timeoutMs: number, readDir?: string): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    // «--tools ""» отключает ВСЕ инструменты: чат не может читать файлы, запускать
-    // команды и т. п. — даже если в тексте вопроса попросят (защита от инъекций).
-    const toolArgs = readDir ? ["--allowedTools", "Read"] : ["--tools", ""];
-    const child = spawn("claude", ["-p", prompt, "--model", model, ...toolArgs], {
-      cwd: readDir ?? tmpdir(),
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.on("data", (data: Buffer) => {
-      stdout += data.toString();
-    });
-    child.stderr?.on("data", (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error(typo("Превышено время ответа Claude.")));
-    }, timeoutMs);
-
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-
-    child.on("close", () => {
-      clearTimeout(timer);
-      if (stderr.trim()) console.error("claude chat stderr:", stderr.slice(0, 500));
-      const text = stdout.trim();
-      if (!text) {
-        reject(new Error(typo("Пустой ответ от Claude.")));
-        return;
-      }
-      resolve(text);
-    });
-  });
-}
-
-// Глобальный лимит одновременных процессов claude для чата: дорогой Opus/Sonnet не должен
+// Глобальный лимит одновременных процессов ИИ для чата: дорогая модель не должна
 // плодить десятки процессов и душить веб-сервер и очередь генерации. Лишние ждут слот.
 const MAX_CONCURRENT_CHATS = 3;
 let activeChats = 0;
@@ -116,27 +68,23 @@ function releaseChatSlot(): void {
 }
 
 export interface ModelPromptOptions {
-  /** Быстрая haiku — для дешёвых сверок; по умолчанию sonnet (отзывчивый диалог). */
-  model?: "sonnet" | "haiku";
+  /** Быстрый уровень — для дешёвых сверок; по умолчанию стандартный диалоговый. */
+  model?: Extract<AiModelTier, "standard" | "fast">;
   timeoutMs?: number;
-  /** Рабочая папка с входными файлами: включает инструмент Read (только его) — чтение pdf. */
-  readDir?: string;
 }
 
 /**
  * Общий вход для всех разговорных ИИ-функций (чат, «объясни ученику», «объясни почему»,
- * черновики карт, образы дворца, ИИ-сверка): один пул слотов и один запуск claude без
- * инструментов — параллельные процессы не душат сервер и очередь генерации.
+ * черновики карт, образы дворца, ИИ-сверка): один пул слотов и один безопасный запуск провайдера —
+ * параллельные процессы не душат сервер и очередь генерации.
  */
 export async function runModelPrompt(prompt: string, options: ModelPromptOptions = {}): Promise<string> {
   await acquireChatSlot();
   try {
-    return await runClaudeChat(
-      prompt,
-      options.model ?? CHAT_MODEL,
-      options.timeoutMs ?? CHAT_TIMEOUT_MS,
-      options.readDir,
-    );
+    return await runAiText(prompt, {
+      tier: options.model,
+      timeoutMs: options.timeoutMs ?? CHAT_TIMEOUT_MS,
+    });
   } finally {
     releaseChatSlot();
   }

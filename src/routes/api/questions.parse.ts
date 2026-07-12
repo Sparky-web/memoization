@@ -12,7 +12,7 @@ import { refundUsage, tryChargeUsage } from "~/server/usage";
 // Лимиты вопросов тарифа применяет существующий setExamQuestions — здесь только извлечение.
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_EXTENSIONS: readonly string[] = [".pdf", ".docx", ".doc", ".txt", ".md"];
-// Анти-абьюз: каждый вызов — живой запуск claude; 10 разборов в день всем тарифам.
+// Анти-абьюз: каждый вызов — живой запуск ИИ; 10 разборов в день всем тарифам.
 const PARSES_PER_DAY = 10;
 
 export const Route = createFileRoute("/api/questions/parse")({

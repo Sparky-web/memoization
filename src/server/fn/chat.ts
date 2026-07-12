@@ -6,7 +6,7 @@ import { generateChatReply, runModelPrompt } from "~/server/chat";
 import { authMiddleware } from "~/server/middleware";
 import { assertChatQuota, recordUsage } from "~/server/usage";
 
-// Чат по теме карточки: история диалога, вопросы в Claude и «объясни почему»
+// Чат по теме карточки: история диалога, вопросы к ИИ и «объясни почему»
 // (elaborative interrogation — оценка объяснения студента после ответа).
 
 const messageSelect = { id: true, role: true, content: true };
@@ -15,7 +15,7 @@ const messageSelect = { id: true, role: true, content: true };
 const CHAT_HISTORY_WINDOW = 16;
 // Потолок длины сохраняемого ответа — защита от разрастания контента.
 const MAX_REPLY_CHARS = 12000;
-// Не даём одному пользователю держать несколько одновременных запросов к claude.
+// Не даём одному пользователю держать несколько одновременных запросов к ИИ.
 const inFlightUsers = new Set<string>();
 
 export const getCardChat = createServerFn({ method: "GET" })
@@ -71,7 +71,7 @@ export const askCardChat = createServerFn({ method: "POST" })
       });
       const history = recent.reverse();
 
-      // Вопрос сохраняем сразу (его createdAt заведомо раньше ответа); если Claude не ответил —
+      // Вопрос сохраняем сразу (его createdAt заведомо раньше ответа); если ИИ не ответил —
       // откатываем висящий вопрос.
       const userMessage = await context.db.chatMessage.create({
         data: { cardId: card.id, role: "user", content: data.message },
@@ -80,7 +80,7 @@ export const askCardChat = createServerFn({ method: "POST" })
 
       let reply: string;
       try {
-        // Контекст для Claude: prompt/answer/deepMd новой карточки в полях ChatCard.
+        // Контекст для ИИ: prompt/answer/deepMd новой карточки в полях ChatCard.
         reply = await generateChatReply(
           { question: card.prompt, answer: card.answer, answerDeep: card.deepMd },
           history,

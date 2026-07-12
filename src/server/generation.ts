@@ -1,6 +1,4 @@
-import { spawn } from "node:child_process";
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import WordExtractor from "word-extractor";
@@ -16,22 +14,21 @@ import {
   typo,
 } from "~/lib";
 
+import { runAiFile, runAiText } from "./aiProvider";
 import { db } from "./db";
 import { materialAbsolutePath } from "./materialStorage";
+import { extractPdfText } from "./pdfText";
 import { refundUsage } from "./usage";
 
-// Очередь ИИ-генерации экзаменов: один claude за раз, статусы на Exam.status.
+// Очередь ИИ-генерации экзаменов: один агент за раз, статусы на Exam.status.
 // Двухпроходный пайплайн (docs/domashnik.md, раздел 4): проход A «Ответы и темы» →
 // answers.json, проход B «Карточки» → cards.json, затем транзакционная запись в БД.
 
 const JOBS_ROOT = path.join(process.cwd(), "data", "jobs");
-const GENERATION_MODEL = "opus";
-// Точечная перегенерация карточек одного вопроса — задача маленькая, sonnet дешевле и быстрее.
-const REGENERATION_MODEL = "sonnet";
 const JOB_TIMEOUT_MS = 30 * 60 * 1000;
 const REGENERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
-// Word (.doc/.docx) claude напрямую не читает — извлекаем текст на сервере.
+// Word (.doc/.docx) извлекаем в текст на сервере для одинакового поведения провайдеров.
 const wordExtractor = new WordExtractor();
 
 const MATH_RULES = typo(
@@ -65,7 +62,7 @@ const DEFAULT_FORMAT_MIX = typo(
 // Проход A: ответы на каждый вопрос (из материалов с цитатой, иначе из общих знаний) + темы.
 function buildAnswersPrompt(hasMaterials: boolean, questionCount: number): string {
   const materialsRules = hasMaterials
-    ? typo(`В папке ./inputs/materials/ — конспекты и материалы пользователя (txt/md/pdf; Read умеет читать PDF).
+    ? typo(`В папке ./inputs/materials/ — конспекты и материалы пользователя (txt/md; PDF и Word заранее преобразованы в txt).
 Для КАЖДОГО вопроса сначала ищи ответ в материалах: Grep по ключевым словам, Read нужных файлов (большие файлы читай частями). Нашёл ответ в материалах — пиши answerMd СТРОГО по ним и ставь covered=true, aiGenerated=false, sourceRef в формате «имя-файла: короткая точная цитата из этого файла не длиннее 120 символов». Не нашёл — ставь covered=false, aiGenerated=true, sourceRef=null и отвечай из общих знаний предмета.`)
     : typo(
         "Материалов пользователя нет: отвечай из общих знаний предмета, у всех вопросов ставь covered=true, aiGenerated=true, sourceRef=null.",
@@ -119,56 +116,6 @@ ${typo(
 )}`;
 }
 
-// Запуск claude -p в папке задания: читает ./inputs, пишет файл outFile. Возвращает его содержимое.
-function runClaude(jobDir: string, prompt: string, outFile: string): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const child = spawn(
-      "claude",
-      [
-        "-p",
-        prompt,
-        "--model",
-        GENERATION_MODEL,
-        "--permission-mode",
-        "acceptEdits",
-        "--allowedTools",
-        "Read,Write,Edit,Bash,Grep,Glob",
-      ],
-      { cwd: jobDir, env: process.env, stdio: ["ignore", "ignore", "pipe"] },
-    );
-
-    let stderr = "";
-    child.stderr?.on("data", (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error(typo("Превышено время генерации (30 минут).")));
-    }, JOB_TIMEOUT_MS);
-
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-
-    child.on("close", () => {
-      clearTimeout(timer);
-      if (stderr.trim()) console.error("claude stderr:", stderr.slice(0, 1000));
-      readFile(path.join(jobDir, outFile), "utf8").then(
-        (content) => {
-          resolve(content);
-        },
-        () => {
-          reject(
-            new Error(typo("Claude не создал результат. Проверьте материалы и вход в аккаунт Claude в контейнере.")),
-          );
-        },
-      );
-    });
-  });
-}
-
 interface JobQuestion {
   id: string;
   text: string;
@@ -196,6 +143,10 @@ async function writeJobInputs(inputsDir: string, questions: JobQuestion[], mater
       if (lower.endsWith(".doc") || lower.endsWith(".docx")) {
         const document = await wordExtractor.extract(sourcePath);
         await writeFile(path.join(materialsDir, `${baseName}.txt`), document.getBody(), "utf8");
+        continue;
+      }
+      if (lower.endsWith(".pdf")) {
+        await writeFile(path.join(materialsDir, `${baseName}.txt`), await extractPdfText(sourcePath), "utf8");
         continue;
       }
       await copyFile(sourcePath, path.join(materialsDir, baseName));
@@ -301,14 +252,20 @@ async function runGenerationJob(examId: string): Promise<void> {
     await rm(jobDir, { recursive: true, force: true });
     await writeJobInputs(inputsDir, questions, materials);
 
-    const answersRaw = await runClaude(
+    const answersRaw = await runAiFile(
       jobDir,
       buildAnswersPrompt(materials.length > 0, questions.length),
       "answers.json",
+      JOB_TIMEOUT_MS,
     );
     const answers = parseGeneratedAnswers(answersRaw, questions.length);
 
-    const cardsRaw = await runClaude(jobDir, buildCardsPrompt(exam.examFormat, questions.length), "cards.json");
+    const cardsRaw = await runAiFile(
+      jobDir,
+      buildCardsPrompt(exam.examFormat, questions.length),
+      "cards.json",
+      JOB_TIMEOUT_MS,
+    );
     const questionCards = parseGeneratedCards(cardsRaw, questions.length);
 
     await persistGenerationResult(examId, questions, answers, questionCards);
@@ -326,7 +283,7 @@ async function runGenerationJob(examId: string): Promise<void> {
   }
 }
 
-// Очередь: один claude за раз (Opus ресурсоёмкий). Задания сами не бросают — цепочка живёт.
+// Очередь: один большой ИИ-вызов за раз. Задания сами не бросают — цепочка живёт.
 // Ключи заданий держим в массиве в порядке постановки: голова — выполняющееся сейчас,
 // индекс — позиция в очереди (для «В очереди: N-я» в интерфейсе).
 let queueTail: Promise<void> = Promise.resolve();
@@ -401,50 +358,12 @@ function buildQuestionCardsPrompt(question: RegenerationQuestion): string {
   return parts.filter(Boolean).join("\n");
 }
 
-// Запуск claude -p без инструментов (ответ в stdout): маленькая задача, ФС ей не нужна.
-function runClaudeText(prompt: string, timeoutMs: number = REGENERATION_TIMEOUT_MS): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const child = spawn("claude", ["-p", prompt, "--model", REGENERATION_MODEL, "--tools", ""], {
-      cwd: tmpdir(),
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.on("data", (data: Buffer) => {
-      stdout += data.toString();
-    });
-    child.stderr?.on("data", (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error(typo("Превышено время перегенерации карточек.")));
-    }, timeoutMs);
-
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-
-    child.on("close", () => {
-      clearTimeout(timer);
-      if (stderr.trim()) console.error("claude regenerate stderr:", stderr.slice(0, 500));
-      const text = stdout.trim();
-      if (!text) {
-        reject(new Error(typo("Пустой ответ от Claude.")));
-        return;
-      }
-      resolve(text);
-    });
-  });
-}
-
-/** Генерирует новый набор карточек для одного вопроса (sonnet); валидация — та же схема, что в проходе B. */
+/** Генерирует новый набор карточек для одного вопроса; валидация — та же схема, что в проходе B. */
 export async function generateQuestionCards(question: RegenerationQuestion): Promise<GeneratedCard[]> {
-  const raw = await runClaudeText(buildQuestionCardsPrompt(question));
+  const raw = await runAiText(buildQuestionCardsPrompt(question), {
+    tier: "standard",
+    timeoutMs: REGENERATION_TIMEOUT_MS,
+  });
   return parseGeneratedCardList(raw);
 }
 
@@ -483,10 +402,13 @@ function buildFullAnswersPrompt(questions: readonly FullBackfillQuestion[]): str
   ].join("\n");
 }
 
-/** Батч сжатых ответов «полных вопросов» (sonnet, один вызов на экзамен) — бэкфилл старых экзаменов. */
+/** Батч сжатых ответов «полных вопросов» одним вызовом на экзамен — бэкфилл старых экзаменов. */
 export async function generateFullQuestionAnswers(
   questions: readonly FullBackfillQuestion[],
 ): Promise<GeneratedFullAnswer[]> {
-  const raw = await runClaudeText(buildFullAnswersPrompt(questions), FULL_BACKFILL_TIMEOUT_MS);
+  const raw = await runAiText(buildFullAnswersPrompt(questions), {
+    tier: "standard",
+    timeoutMs: FULL_BACKFILL_TIMEOUT_MS,
+  });
   return parseGeneratedFullAnswers(raw, questions.length);
 }

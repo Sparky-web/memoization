@@ -7,11 +7,12 @@ import WordExtractor from "word-extractor";
 import { typo } from "~/lib";
 
 import { runModelPrompt } from "./chat";
+import { extractPdfText } from "./pdfText";
 
 // Разбор загруженного файла со списком вопросов (мастер, шаг «Вопросы»): docx/doc/txt/md
-// превращаются в текст на сервере, pdf читает сам claude (Read) во временной папке.
+// и pdf превращаются в текст на сервере до передачи ИИ-провайдеру.
 
-const PARSE_MODEL = "sonnet";
+const PARSE_MODEL = "standard";
 const PARSE_TIMEOUT_MS = 3 * 60 * 1000;
 // Потолок текста в промпт: длиннее — почти наверняка не список вопросов, а учебник целиком.
 const MAX_PROMPT_TEXT_CHARS = 150_000;
@@ -27,14 +28,6 @@ const TASK_RULES = typo(
 
 function buildTextPrompt(documentText: string): string {
   return [TASK_RULES, "", typo("Документ:"), documentText.slice(0, MAX_PROMPT_TEXT_CHARS)].join("\n");
-}
-
-function buildPdfPrompt(fileName: string): string {
-  return [
-    typo(`В текущей папке лежит файл ./${fileName} — прочитай его целиком (Read умеет читать PDF, большие — частями).`),
-    "",
-    TASK_RULES,
-  ].join("\n");
 }
 
 // Ответ модели → список вопросов: остаточная нумерация и маркеры срезаются (как в textarea).
@@ -53,7 +46,7 @@ export interface UploadedQuestionFile {
 }
 
 /**
- * Извлекает список вопросов из файла живым sonnet. Бросает Error с QUESTIONS_NOT_FOUND,
+ * Извлекает список вопросов живым вызовом ИИ. Бросает Error с QUESTIONS_NOT_FOUND,
  * если документ не похож на список вопросов; прочие ошибки — технические (текст по-русски).
  */
 export async function parseQuestionsFromFile(file: UploadedQuestionFile): Promise<string[]> {
@@ -62,12 +55,11 @@ export async function parseQuestionsFromFile(file: UploadedQuestionFile): Promis
   try {
     let reply: string;
     if (extension === ".pdf") {
-      // PDF отдаём клоду как файл: Read умеет читать его постранично, cwd — временная папка.
-      await writeFile(path.join(workDir, "questions.pdf"), file.buffer);
-      reply = await runModelPrompt(buildPdfPrompt("questions.pdf"), {
+      const pdfPath = path.join(workDir, "questions.pdf");
+      await writeFile(pdfPath, file.buffer);
+      reply = await runModelPrompt(buildTextPrompt(await extractPdfText(pdfPath)), {
         model: PARSE_MODEL,
         timeoutMs: PARSE_TIMEOUT_MS,
-        readDir: workDir,
       });
     } else {
       const text =

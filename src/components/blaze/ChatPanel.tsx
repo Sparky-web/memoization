@@ -71,7 +71,7 @@ export function ChatPanel({ messages, pending, pendingQuestion, onSend }: ChatPa
             <div className="flex justify-start">
               <div className="rounded-2xl rounded-bl-sm bg-muted px-3 py-2">
                 <Text variant="small" color="supplementary">
-                  {typo("Claude печатает…")}
+                  {typo("Помощник печатает…")}
                 </Text>
               </div>
             </div>
@@ -79,7 +79,7 @@ export function ChatPanel({ messages, pending, pendingQuestion, onSend }: ChatPa
         </VStack>
       ) : (
         <Text variant="small" color="supplementary">
-          {typo("Задайте вопрос по теме — Claude ответит с учётом этой карточки.")}
+          {typo("Задайте вопрос по теме — помощник ответит с учётом этой карточки.")}
         </Text>
       )}
 
