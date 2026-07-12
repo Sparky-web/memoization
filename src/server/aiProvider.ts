@@ -23,10 +23,12 @@ const CLAUDE_MODELS: Record<AiModelTier, string> = {
   fast: "haiku",
 };
 
-function codexModel(tier: AiModelTier): string | undefined {
-  if (tier === "large") return serverEnv.CODEX_GENERATION_MODEL;
-  if (tier === "fast") return serverEnv.CODEX_FAST_MODEL;
-  return serverEnv.CODEX_CHAT_MODEL;
+const DEFAULT_CODEX_MODEL = "gpt-5.6-terra";
+
+function codexModel(tier: AiModelTier): string {
+  if (tier === "large") return serverEnv.CODEX_GENERATION_MODEL ?? DEFAULT_CODEX_MODEL;
+  if (tier === "fast") return serverEnv.CODEX_FAST_MODEL ?? DEFAULT_CODEX_MODEL;
+  return serverEnv.CODEX_CHAT_MODEL ?? DEFAULT_CODEX_MODEL;
 }
 
 // Дочерние shell-команды модели не должны видеть секреты БД, оплаты и авторизации приложения.
@@ -138,7 +140,7 @@ function codexArgs(options: AiProcessOptions): string[] {
     'shell_environment_policy.inherit="none"',
   ];
   const model = codexModel(options.tier);
-  if (model) args.push("--model", model);
+  args.push("--model", model);
   // Разговорным запросам достаточно финального текста: отключаем shell, чтобы пользовательский
   // промпт не мог заставить агента читать файлы контейнера.
   if (options.mode === "read-only") args.push("--disable", "shell_tool");

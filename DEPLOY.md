@@ -35,7 +35,7 @@ BETTER_AUTH_URL=https://memoization.studentto.ru
 BETTER_AUTH_SECRET=...        # openssl rand -hex 32
 VITE_SENTRY_DSN=              # опционально
 
-# ИИ-провайдер через CLI. Модели Codex можно не задавать — тогда используется актуальная по умолчанию.
+# ИИ-провайдер через CLI. Модели Codex можно не задавать — приложение использует gpt-5.6-terra.
 AI_PROVIDER=codex
 CODEX_GENERATION_MODEL=
 CODEX_CHAT_MODEL=
@@ -112,7 +112,7 @@ cd ~/memoization && docker compose up -d --force-recreate
     --skip-git-repo-check --sandbox read-only --ephemeral --ignore-user-config -
   ```
 - `CODEX_GENERATION_MODEL`, `CODEX_CHAT_MODEL` и `CODEX_FAST_MODEL` опциональны. Пустое значение
-  оставляет выбор актуальной модели самому Codex CLI.
+  использует `gpt-5.6-terra`, заданную приложением по умолчанию.
 - Для временного возврата на Claude задайте `AI_PROVIDER=claude`; его прежний том авторизации
   сохранён. Прокси из `.env` передаётся обоим CLI.
 - `.doc/.docx` конвертируются в текст через `word-extractor`, PDF — через `pdftotext`; ИИ получает
