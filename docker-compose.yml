@@ -18,6 +18,8 @@ services:
       - .env
     environment:
       PORT: "3000"
+      # Docker уже изолирует процесс от хоста, а вложенный bwrap запрещён стандартным seccomp-профилем.
+      CODEX_GENERATION_SANDBOX: "danger-full-access"
     # Авторизация CLI сохраняется между пересозданиями контейнера.
     volumes:
       - ./codex-home:/root/.codex

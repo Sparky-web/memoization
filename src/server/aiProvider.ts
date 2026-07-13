@@ -17,6 +17,13 @@ interface AiProcessOptions {
   outputFile?: string;
 }
 
+interface AiProcessResult {
+  stdout: string;
+  stderr: string;
+}
+
+type CodexSandboxMode = AiProcessOptions["mode"] | "danger-full-access";
+
 const CLAUDE_MODELS: Record<AiModelTier, string> = {
   large: "opus",
   standard: "sonnet",
@@ -65,8 +72,8 @@ function runProcess(
   options: AiProcessOptions,
   env: NodeJS.ProcessEnv,
   promptViaStdin: boolean,
-): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
+): Promise<AiProcessResult> {
+  return new Promise<AiProcessResult>((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
       env,
@@ -104,11 +111,16 @@ function runProcess(
         reject(new Error(typo(`ИИ-провайдер завершился с кодом ${code ?? "unknown"}${details ? `: ${details}` : ""}`)));
         return;
       }
-      resolve(stdout);
+      resolve({ stdout, stderr });
     });
 
     child.stdin?.end(promptViaStdin ? options.prompt : undefined);
   });
+}
+
+function codexSandboxMode(mode: AiProcessOptions["mode"]): CodexSandboxMode {
+  if (mode === "workspace-write") return serverEnv.CODEX_GENERATION_SANDBOX;
+  return mode;
 }
 
 function claudeArgs(options: AiProcessOptions): string[] {
@@ -127,7 +139,7 @@ function codexArgs(options: AiProcessOptions): string[] {
   const args = [
     "exec",
     "--sandbox",
-    options.mode,
+    codexSandboxMode(options.mode),
     "--cd",
     options.cwd,
     "--skip-git-repo-check",
@@ -150,7 +162,7 @@ function codexArgs(options: AiProcessOptions): string[] {
   return args;
 }
 
-function runProvider(options: AiProcessOptions): Promise<string> {
+function runProvider(options: AiProcessOptions): Promise<AiProcessResult> {
   if (serverEnv.AI_PROVIDER === "claude") {
     return runProcess("claude", claudeArgs(options), options, process.env, false);
   }
@@ -167,7 +179,7 @@ export async function runAiText(prompt: string, options: RunAiTextOptions): Prom
   const outputDir = await mkdtemp(path.join(tmpdir(), "memoization-ai-"));
   const outputFile = path.join(outputDir, "response.txt");
   try {
-    const stdout = await runProvider({
+    const result = await runProvider({
       cwd: tmpdir(),
       prompt,
       timeoutMs: options.timeoutMs,
@@ -175,7 +187,7 @@ export async function runAiText(prompt: string, options: RunAiTextOptions): Prom
       mode: "read-only",
       outputFile: serverEnv.AI_PROVIDER === "codex" ? outputFile : undefined,
     });
-    let text = stdout;
+    let text = result.stdout;
     if (serverEnv.AI_PROVIDER === "codex") {
       try {
         text = await readFile(outputFile, "utf8");
@@ -197,7 +209,7 @@ export async function runAiFile(
   outputName: string,
   timeoutMs: number,
 ): Promise<string> {
-  await runProvider({
+  const result = await runProvider({
     cwd: jobDir,
     prompt,
     timeoutMs,
@@ -207,6 +219,12 @@ export async function runAiFile(
   try {
     return await readFile(path.join(jobDir, outputName), "utf8");
   } catch {
-    throw new Error(typo(`ИИ-провайдер не создал ${outputName}. Проверьте материалы и авторизацию CLI в контейнере.`));
+    const providerOutput = result.stderr.trim() || result.stdout.trim();
+    const details = providerOutput.slice(-1000);
+    throw new Error(
+      typo(
+        `ИИ-провайдер не создал ${outputName}. Проверьте материалы и авторизацию CLI в контейнере.${details ? ` Вывод провайдера: ${details}` : ""}`,
+      ),
+    );
   }
 }

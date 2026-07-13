@@ -14,6 +14,7 @@ export const serverEnv = createEnv({
     CODEX_GENERATION_MODEL: z.string().optional(),
     CODEX_CHAT_MODEL: z.string().optional(),
     CODEX_FAST_MODEL: z.string().optional(),
+    CODEX_GENERATION_SANDBOX: z.enum(["workspace-write", "danger-full-access"]).default("workspace-write"),
 
     // Ключи ЮKassa опциональны: без них оплата отвечает 503, остальное приложение работает
     YOOKASSA_SHOP_ID: z.string().optional(),
